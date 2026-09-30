@@ -1,6 +1,7 @@
 import unittest
 
 from core.models.base import ModelAdapter, ModelResponse
+from core.models.registry import ModelDefinition, ModelRegistry
 from core.orchestrator.omnitrix import Omnitrix
 
 
@@ -22,9 +23,26 @@ class FakeModel(ModelAdapter):
 
 
 class CoreTests(unittest.TestCase):
-    def test_omnitrix_uses_model(self):
-        omnitrix = Omnitrix(FakeModel())
+    def test_omnitrix_analyzes_routes_and_runs_model(self):
+        registry = ModelRegistry()
+
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        adapter = FakeModel()
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapters={"fake-model": adapter},
+        )
+
         result = omnitrix.run("Hello Omnitrix")
+
         self.assertEqual(result, "Received: Hello Omnitrix")
 
 

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from core.router import RoutingRequirements
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -13,6 +15,9 @@ class TaskStatus(str, Enum):
 @dataclass
 class Task:
     objective: str
+    requirements: RoutingRequirements = field(
+        default_factory=RoutingRequirements
+    )
     status: TaskStatus = TaskStatus.PENDING
     metadata: dict[str, Any] = field(default_factory=dict)
 
