@@ -1,0 +1,14 @@
+{
+  "models": [
+    {
+      "name": "test-model",
+      "provider": "test",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 32000,
+      "enabled": true
+    }
+  ]
+}

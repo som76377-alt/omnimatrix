@@ -45,6 +45,35 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(result, "Received: Hello Omnitrix")
 
+    def test_omnitrix_can_load_models_from_config(self):
+        import json
+        import tempfile
+        from pathlib import Path
 
+        config = {
+            "models": [
+                {
+                    "name": "fake-model",
+                    "provider": "test",
+                    "capabilities": ["reasoning"],
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "models.json"
+            path.write_text(
+                json.dumps(config),
+                encoding="utf-8",
+            )
+
+            omnitrix = Omnitrix.from_config(
+                path,
+                adapters={"fake-model": FakeModel()},
+            )
+
+            result = omnitrix.run("Hello from config")
+
+        self.assertEqual(result, "Received: Hello from config")
 if __name__ == "__main__":
     unittest.main()
