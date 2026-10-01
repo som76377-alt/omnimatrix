@@ -13,6 +13,7 @@ class ModelDefinition:
 
     name: str
     provider: str
+    model_id: str | None = None
     capabilities: frozenset[str] = field(default_factory=frozenset)
     context_window: int | None = None
     enabled: bool = True

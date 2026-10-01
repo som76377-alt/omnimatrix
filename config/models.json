@@ -3,6 +3,7 @@
     {
       "name": "test-model",
       "provider": "test",
+      "model_id": "test-model-v1",
       "capabilities": [
         "reasoning",
         "coding"

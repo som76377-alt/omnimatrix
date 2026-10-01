@@ -30,6 +30,7 @@ class ModelConfigLoader:
             model = ModelDefinition(
                 name=entry["name"],
                 provider=entry["provider"],
+                model_id=entry.get("model_id"),
                 capabilities=frozenset(entry.get("capabilities", [])),
                 context_window=entry.get("context_window"),
                 enabled=entry.get("enabled", True),
@@ -48,6 +49,7 @@ class ModelConfigLoader:
 
         name = entry.get("name")
         provider = entry.get("provider")
+        model_id = entry.get("model_id")
         capabilities = entry.get("capabilities", [])
         context_window = entry.get("context_window")
         enabled = entry.get("enabled", True)
@@ -63,9 +65,18 @@ class ModelConfigLoader:
                 f"Model '{name}' has an invalid provider."
             )
 
+        if model_id is not None:
+            if not isinstance(model_id, str) or not model_id.strip():
+                raise ValueError(
+                    f"Model '{name}' has an invalid model_id."
+                )
+
         if (
             not isinstance(capabilities, list)
-            or not all(isinstance(item, str) and item.strip() for item in capabilities)
+            or not all(
+                isinstance(item, str) and item.strip()
+                for item in capabilities
+            )
         ):
             raise ValueError(
                 f"Model '{name}' has invalid capabilities."

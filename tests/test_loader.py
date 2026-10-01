@@ -123,6 +123,38 @@ class ModelConfigLoaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ModelConfigLoader().load(path)
 
+    def test_loads_model_id(self):
+        path = self.write_config(
+            {
+                "models": [
+                    {
+                        "name": "test-model",
+                        "provider": "test",
+                        "model_id": "test-model-v1",
+                    }
+                ]
+            }
+        )
 
+        registry = ModelConfigLoader().load(path)
+        model = registry.get("test-model")
+
+        self.assertEqual(model.model_id, "test-model-v1")
+
+    def test_invalid_model_id_fails(self):
+        path = self.write_config(
+            {
+                "models": [
+                    {
+                        "name": "test-model",
+                        "provider": "test",
+                        "model_id": "",
+                    }
+                ]
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            ModelConfigLoader().load(path)
 if __name__ == "__main__":
     unittest.main()
