@@ -7,6 +7,9 @@ from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.registry import ModelDefinition, ModelRegistry
 from core.orchestrator.omnitrix import Omnitrix
+from core.tools.bootstrap import build_tool_registry
+from core.tools.permissions import ToolPermission
+from core.tools.request import ToolRequest
 
 
 class FakeModel(ModelAdapter):
@@ -144,5 +147,61 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(adapter.name, "gemini-primary")
         self.assertEqual(adapter.provider, "google")
+
+    def test_omnitrix_executes_authorized_tool(self):
+        registry = ModelRegistry()
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=AdapterRegistry(),
+            tool_registry=build_tool_registry(),
+            tool_permission=ToolPermission.from_capabilities({"calculation"}),
+        )
+
+        result = omnitrix.execute_tool(
+            ToolRequest(
+                tool_name="calculator",
+                arguments={"expression": "6 * 7"},
+            )
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.output, 42)
+
+    def test_omnitrix_rejects_unauthorized_tool(self):
+        registry = ModelRegistry()
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=AdapterRegistry(),
+            tool_registry=build_tool_registry(),
+            tool_permission=ToolPermission.from_capabilities(set()),
+        )
+
+        result = omnitrix.execute_tool(
+            ToolRequest(
+                tool_name="calculator",
+                arguments={"expression": "6 * 7"},
+            )
+        )
+
+        self.assertFalse(result.success)
+        self.assertIn("Permission denied", result.error)
+
+
 if __name__ == "__main__":
     unittest.main()
