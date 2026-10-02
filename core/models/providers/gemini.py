@@ -12,6 +12,7 @@ from core.models.base import (
     ModelResponse,
     ModelResponseError,
 )
+from core.models.messages import ModelRequest
 
 
 class GeminiAdapter(ModelAdapter):
@@ -55,13 +56,15 @@ class GeminiAdapter(ModelAdapter):
     def provider(self) -> str:
         return "google"
 
-    def generate(self, prompt: str) -> ModelResponse:
+    def generate(self, request: ModelRequest) -> ModelResponse:
         api_key = self._api_key or os.getenv(self._api_key_env)
 
         if not api_key:
             raise ModelAuthenticationError(
                 f"Gemini API key not found. Set {self._api_key_env}."
             )
+
+        prompt = self._build_prompt(request)
 
         payload = json.dumps(
             {
@@ -126,6 +129,39 @@ class GeminiAdapter(ModelAdapter):
             provider=self.provider,
             usage=usage,
         )
+
+    def _build_prompt(self, request: ModelRequest) -> str:
+        """Convert a structured model request into a temporary text prompt."""
+
+        parts: list[str] = []
+
+        for message in request.messages:
+            parts.append(
+                f"{message.role.value}: {message.content}"
+            )
+
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    parts.append(
+                        f"tool_call: {tool_call.tool_name} "
+                        f"{tool_call.arguments}"
+                    )
+
+            if message.tool_result is not None:
+                result = message.tool_result
+
+                if result.success:
+                    parts.append(
+                        f"tool_result ({result.tool_name}): "
+                        f"{result.output}"
+                    )
+                else:
+                    parts.append(
+                        f"tool_result ({result.tool_name}) error: "
+                        f"{result.error}"
+                    )
+
+        return "\n".join(parts)
 
     def _extract_text(self, data: Any) -> str:
         steps = data.get("steps")

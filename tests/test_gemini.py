@@ -7,6 +7,7 @@ from core.models.base import (
     ModelAuthenticationError,
     ModelResponseError,
 )
+from core.models.messages import MessageRole, ModelMessage, ModelRequest
 from core.models.providers.gemini import GeminiAdapter
 
 
@@ -51,11 +52,20 @@ class GeminiAdapterTests(unittest.TestCase):
             },
         }
 
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Hello Omnitrix",
+                ),
+            )
+        )
+
         with patch(
             "core.models.providers.gemini.urlopen",
             return_value=FakeHTTPResponse(payload),
         ):
-            response = self.adapter.generate("Hello Omnitrix")
+            response = self.adapter.generate(request)
 
         self.assertEqual(response.content, "Hello from Gemini.")
         self.assertEqual(response.model, "gemini-3.8-flash")
@@ -69,13 +79,22 @@ class GeminiAdapterTests(unittest.TestCase):
             api_key_env="OMNITRIX_TEST_MISSING_KEY",
         )
 
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Hello Omnitrix",
+                ),
+            )
+        )
+
         with patch.dict(
             os.environ,
             {},
             clear=True,
         ):
             with self.assertRaises(ModelAuthenticationError):
-                adapter.generate("Hello Omnitrix")
+                adapter.generate(request)
 
     def test_invalid_response_fails(self):
         fake_response = FakeHTTPResponse(
@@ -85,12 +104,21 @@ class GeminiAdapterTests(unittest.TestCase):
             }
         )
 
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Hello Omnitrix",
+                ),
+            )
+        )
+
         with patch(
             "core.models.providers.gemini.urlopen",
             return_value=fake_response,
         ):
             with self.assertRaises(ModelResponseError):
-                self.adapter.generate("Hello Omnitrix")
+                self.adapter.generate(request)
 
     def test_adapter_properties(self):
         self.assertEqual(self.adapter.name, "gemini-primary")

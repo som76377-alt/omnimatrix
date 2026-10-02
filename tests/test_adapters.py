@@ -2,6 +2,7 @@ import unittest
 
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
+from core.models.messages import ModelRequest
 
 
 class FakeAdapter(ModelAdapter):
@@ -13,9 +14,9 @@ class FakeAdapter(ModelAdapter):
     def provider(self):
         return "test"
 
-    def generate(self, prompt):
+    def generate(self, request: ModelRequest):
         return ModelResponse(
-            content=f"Received: {prompt}",
+            content=f"Received: {request.messages[0].content}",
             model=self.name,
             provider=self.provider,
         )

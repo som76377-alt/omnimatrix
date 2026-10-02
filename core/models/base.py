@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from core.models.messages import ModelRequest
+from core.models.types import ModelToolCall
+
 
 @dataclass(frozen=True)
 class ModelResponse:
@@ -11,6 +14,7 @@ class ModelResponse:
     model: str
     provider: str
     usage: dict[str, Any] | None = None
+    tool_calls: tuple[ModelToolCall, ...] = ()
 
 
 class ModelAdapterError(RuntimeError):
@@ -45,6 +49,6 @@ class ModelAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def generate(self, prompt: str) -> ModelResponse:
+    def generate(self, request: ModelRequest) -> ModelResponse:
         """Generate a normalized response from the model."""
         raise NotImplementedError

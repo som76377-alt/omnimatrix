@@ -2,6 +2,12 @@ from pathlib import Path
 
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
+from core.models.messages import (
+    MessageRole,
+    ModelMessage,
+    ModelRequest,
+    ModelToolResult,
+)
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
@@ -30,7 +36,16 @@ class Omnitrix:
         adapter_registry: AdapterRegistry | None = None,
         tool_registry: ToolRegistry | None = None,
         tool_permission: ToolPermission | None = None,
+        max_tool_iterations: int = 8,
     ) -> None:
+        if isinstance(max_tool_iterations, bool) or not isinstance(
+            max_tool_iterations, int
+        ):
+            raise TypeError("max_tool_iterations must be an integer.")
+
+        if max_tool_iterations <= 0:
+            raise ValueError("max_tool_iterations must be positive.")
+
         self.registry = registry
         self.analyzer = analyzer or BasicTaskAnalyzer()
         self.router = ModelRouter(registry)
@@ -40,6 +55,7 @@ class Omnitrix:
         self.tool_permission = tool_permission or ToolPermission.from_capabilities(
             set()
         )
+        self.max_tool_iterations = max_tool_iterations
         self.tool_executor = ToolExecutor(self.tool_registry)
 
     @classmethod
@@ -86,10 +102,68 @@ class Omnitrix:
                 f"No adapter registered for model: {selected_model.name}"
             ) from None
 
-        response = adapter.generate(task.objective)
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content=task.objective,
+                ),
+            )
+        )
 
-        task.complete()
-        return response.content
+        tool_iterations = 0
+
+        while True:
+            response = adapter.generate(request)
+
+            if not response.tool_calls:
+                task.complete()
+                return response.content
+
+            tool_iterations += 1
+
+            if tool_iterations > self.max_tool_iterations:
+                task.fail()
+                raise RuntimeError(
+                    "Maximum tool-call iterations exceeded."
+                )
+
+            assistant_message = ModelMessage(
+                role=MessageRole.ASSISTANT,
+                content=response.content,
+                tool_calls=response.tool_calls,
+            )
+
+            tool_messages = []
+
+            for tool_call in response.tool_calls:
+                tool_result = self.execute_tool(
+                    ToolRequest(
+                        tool_name=tool_call.tool_name,
+                        arguments=tool_call.arguments,
+                    )
+                )
+
+                tool_messages.append(
+                    ModelMessage(
+                        role=MessageRole.TOOL,
+                        tool_result=ModelToolResult(
+                            tool_call_id=tool_call.id,
+                            tool_name=tool_call.tool_name,
+                            success=tool_result.success,
+                            output=tool_result.output,
+                            error=tool_result.error,
+                        ),
+                    )
+                )
+
+            request = ModelRequest(
+                messages=(
+                    request.messages
+                    + (assistant_message,)
+                    + tuple(tool_messages)
+                )
+            )
 
     def execute_tool(self, request: ToolRequest) -> ToolResult:
         """Execute a tool request against the configured permissions."""
