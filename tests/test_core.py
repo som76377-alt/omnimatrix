@@ -18,7 +18,11 @@ from core.models.messages import (
     ModelRequest,
     ModelToolResult,
 )
-from core.models.types import ModelToolCall, ModelToolDefinition
+from core.models.types import (
+    ModelContinuation,
+    ModelToolCall,
+    ModelToolDefinition,
+)
 
 
 class FakeModel(ModelAdapter):
@@ -66,6 +70,10 @@ class ToolCallingTestAdapter(ModelAdapter):
                         tool_name="calculator",
                         arguments={"expression": "2 + 2"},
                     ),
+                ),
+                continuation=ModelContinuation(
+                    provider="test",
+                    state={"interaction_id": "interaction-1"},
                 ),
             )
 
@@ -414,6 +422,14 @@ class CoreTests(unittest.TestCase):
         )
 
         second_request = adapter.requests[1]
+
+        self.assertEqual(
+            second_request.continuation,
+            ModelContinuation(
+                provider="test",
+                state={"interaction_id": "interaction-1"},
+            ),
+        )
 
         self.assertEqual(
             len(second_request.messages),
