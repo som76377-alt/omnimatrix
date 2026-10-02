@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from core.models.types import ModelToolCall, ModelToolDefinition
+from core.models.types import ModelContinuation, ModelToolCall, ModelToolDefinition
 
 
 class MessageRole(str, Enum):
@@ -64,6 +64,7 @@ class ModelRequest:
 
     messages: tuple[ModelMessage, ...] = field(default_factory=tuple)
     tools: tuple[ModelToolDefinition, ...] = field(default_factory=tuple)
+    continuation: ModelContinuation | None = None
 
     def __post_init__(self) -> None:
         if not self.messages:

@@ -6,21 +6,24 @@ from urllib.request import Request, urlopen
 
 from core.models.base import (
     ModelAdapter,
-    ModelAdapterError,
     ModelAuthenticationError,
     ModelRequestError,
     ModelResponse,
     ModelResponseError,
 )
-from core.models.messages import ModelRequest
+from core.models.messages import MessageRole, ModelRequest
+from core.models.types import (
+    ModelContinuation,
+    ModelToolCall,
+)
 
 
 class GeminiAdapter(ModelAdapter):
     """
     Adapter for Google's Gemini Interactions API.
 
-    The adapter translates Omnitrix's provider-independent prompt contract
-    into Gemini's HTTP request format and normalizes Gemini's response.
+    The adapter translates Omnitrix's provider-independent model contract
+    into Gemini's native interaction and function-calling format.
     """
 
     endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -33,10 +36,10 @@ class GeminiAdapter(ModelAdapter):
         api_key_env: str = "GEMINI_API_KEY",
         timeout: float = 60.0,
     ) -> None:
-        if not name.strip():
+        if not isinstance(name, str) or not name.strip():
             raise ValueError("Adapter name cannot be empty.")
 
-        if not model_id.strip():
+        if not isinstance(model_id, str) or not model_id.strip():
             raise ValueError("Gemini model_id cannot be empty.")
 
         if timeout <= 0:
@@ -64,28 +67,20 @@ class GeminiAdapter(ModelAdapter):
                 f"Gemini API key not found. Set {self._api_key_env}."
             )
 
-        prompt = self._build_prompt(request)
+        payload = self._build_payload(request)
 
-        payload = json.dumps(
-            {
-                "model": self._model_id,
-                "input": prompt,
-            }
-        ).encode("utf-8")
-
-        request = Request(
+        http_request = Request(
             self.endpoint,
-            data=payload,
+            data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
                 "x-goog-api-key": api_key,
-                "Api-Revision": "2026-05-20",
             },
             method="POST",
         )
 
         try:
-            with urlopen(request, timeout=self._timeout) as response:
+            with urlopen(http_request, timeout=self._timeout) as response:
                 raw_body = response.read()
 
         except HTTPError as exc:
@@ -117,53 +112,157 @@ class GeminiAdapter(ModelAdapter):
                 "Gemini returned invalid JSON."
             ) from exc
 
+        if not isinstance(data, dict):
+            raise ModelResponseError(
+                "Gemini returned an invalid response object."
+            )
+
+        interaction_id = data.get("id")
+
+        if not isinstance(interaction_id, str) or not interaction_id.strip():
+            raise ModelResponseError(
+                "Gemini response did not contain a valid interaction ID."
+            )
+
         content = self._extract_text(data)
+        tool_calls = self._extract_tool_calls(data)
 
         usage = data.get("usage")
         if usage is not None and not isinstance(usage, dict):
             usage = None
+
+        continuation = ModelContinuation(
+            provider=self.provider,
+            state={
+                "interaction_id": interaction_id,
+            },
+        )
 
         return ModelResponse(
             content=content,
             model=data.get("model", self._model_id),
             provider=self.provider,
             usage=usage,
+            tool_calls=tuple(tool_calls),
+            continuation=continuation,
         )
 
-    def _build_prompt(self, request: ModelRequest) -> str:
-        """Convert a structured model request into a temporary text prompt."""
+    def _build_payload(self, request: ModelRequest) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self._model_id,
+            "tools": self._build_tools(request),
+        }
 
-        parts: list[str] = []
+        if request.continuation is None:
+            payload["input"] = self._build_initial_input(request)
+        else:
+            if request.continuation.provider != self.provider:
+                raise ModelRequestError(
+                    "Model continuation belongs to a different provider."
+                )
 
-        for message in request.messages:
-            parts.append(
-                f"{message.role.value}: {message.content}"
+            interaction_id = request.continuation.state.get("interaction_id")
+
+            if not isinstance(interaction_id, str) or not interaction_id.strip():
+                raise ModelRequestError(
+                    "Gemini continuation does not contain a valid interaction ID."
+                )
+
+            payload["previous_interaction_id"] = interaction_id
+            payload["input"] = self._build_tool_result_input(request)
+
+        return payload
+
+    def _build_tools(self, request: ModelRequest) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters_schema,
+            }
+            for tool in request.tools
+        ]
+
+    def _build_initial_input(self, request: ModelRequest) -> str:
+        user_messages = [
+            message.content
+            for message in request.messages
+            if message.role == MessageRole.USER
+        ]
+
+        if not user_messages:
+            raise ModelRequestError(
+                "Gemini request requires at least one user message."
             )
 
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    parts.append(
-                        f"tool_call: {tool_call.tool_name} "
-                        f"{tool_call.arguments}"
-                    )
+        return "\n".join(user_messages)
 
-            if message.tool_result is not None:
-                result = message.tool_result
+    def _build_tool_result_input(
+        self,
+        request: ModelRequest,
+    ) -> list[dict[str, Any]]:
+        messages = request.messages
 
-                if result.success:
-                    parts.append(
-                        f"tool_result ({result.tool_name}): "
-                        f"{result.output}"
-                    )
-                else:
-                    parts.append(
-                        f"tool_result ({result.tool_name}) error: "
-                        f"{result.error}"
-                    )
+        latest_tool_call_index = None
 
-        return "\n".join(parts)
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
 
-    def _extract_text(self, data: Any) -> str:
+            if message.role == MessageRole.ASSISTANT and message.tool_calls:
+                latest_tool_call_index = index
+                break
+
+        if latest_tool_call_index is None:
+            raise ModelRequestError(
+                "Gemini continuation requires a preceding assistant tool call."
+            )
+
+        results: list[dict[str, Any]] = []
+
+        for message in messages[latest_tool_call_index + 1:]:
+            if message.role != MessageRole.TOOL:
+                continue
+
+            if message.tool_result is None:
+                continue
+
+            result = message.tool_result
+
+            if result.success:
+                output = result.output
+            else:
+                output = {
+                    "error": result.error or "Tool execution failed."
+                }
+
+            if isinstance(output, str):
+                text = output
+            else:
+                text = json.dumps(output, default=str)
+
+            results.append(
+                {
+                    "type": "function_result",
+                    "name": result.tool_name,
+                    "call_id": result.tool_call_id,
+                    "result": [
+                        {
+                            "type": "text",
+                            "text": text,
+                        }
+                    ],
+                }
+            )
+
+        if not results:
+            raise ModelRequestError(
+                "Gemini continuation requires at least one tool result."
+            )
+
+        return results
+
+    def _extract_text(self, data: dict[str, Any]) -> str:
         steps = data.get("steps")
 
         if not isinstance(steps, list):
@@ -189,15 +288,67 @@ class GeminiAdapter(ModelAdapter):
                 if not isinstance(item, dict):
                     continue
 
-                if item.get("type") == "text":
-                    text = item.get("text")
+                if item.get("type") != "text":
+                    continue
 
-                    if isinstance(text, str):
-                        text_parts.append(text)
+                text = item.get("text")
 
-        if not text_parts:
-            raise ModelResponseError(
-                "Gemini response did not contain text output."
-            )
+                if isinstance(text, str):
+                    text_parts.append(text)
 
         return "".join(text_parts)
+
+    def _extract_tool_calls(
+        self,
+        data: dict[str, Any],
+    ) -> list[ModelToolCall]:
+        steps = data.get("steps")
+
+        if not isinstance(steps, list):
+            raise ModelResponseError(
+                "Gemini response does not contain valid steps."
+            )
+
+        tool_calls: list[ModelToolCall] = []
+
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+
+            if step.get("type") != "function_call":
+                continue
+
+            call_id = step.get("id")
+            name = step.get("name")
+            arguments = step.get("arguments")
+
+            if not isinstance(call_id, str) or not call_id.strip():
+                raise ModelResponseError(
+                    "Gemini function call is missing a valid ID."
+                )
+
+            if not isinstance(name, str) or not name.strip():
+                raise ModelResponseError(
+                    "Gemini function call is missing a valid name."
+                )
+
+            if not isinstance(arguments, dict):
+                raise ModelResponseError(
+                    f"Gemini function call '{name}' has invalid arguments."
+                )
+
+            tool_calls.append(
+                ModelToolCall(
+                    id=call_id,
+                    tool_name=name,
+                    arguments=arguments,
+                )
+            )
+
+        return tool_calls
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        "GeminiAdapter is a library component and is not a standalone command."
+    )

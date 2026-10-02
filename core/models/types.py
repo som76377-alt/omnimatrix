@@ -38,3 +38,18 @@ class ModelToolDefinition:
 
         if not isinstance(self.parameters_schema, dict):
             raise TypeError("Tool definition parameters_schema must be a dictionary.")
+
+
+@dataclass(frozen=True)
+class ModelContinuation:
+    """Opaque provider state required to continue a model interaction."""
+
+    provider: str
+    state: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.provider, str) or not self.provider.strip():
+            raise ValueError("Continuation provider cannot be empty.")
+
+        if not isinstance(self.state, dict):
+            raise TypeError("Continuation state must be a dictionary.")

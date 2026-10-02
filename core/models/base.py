@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.models.messages import ModelRequest
-from core.models.types import ModelToolCall
+from core.models.types import ModelContinuation, ModelToolCall
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,7 @@ class ModelResponse:
     provider: str
     usage: dict[str, Any] | None = None
     tool_calls: tuple[ModelToolCall, ...] = ()
+    continuation: ModelContinuation | None = None
 
 
 class ModelAdapterError(RuntimeError):

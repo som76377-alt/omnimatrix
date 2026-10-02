@@ -166,6 +166,7 @@ class Omnitrix:
                     + tuple(tool_messages)
                 ),
                 tools=request.tools,
+                continuation=response.continuation,
             )
 
     def _get_authorized_model_tools(self) -> tuple[ModelToolDefinition, ...]:
