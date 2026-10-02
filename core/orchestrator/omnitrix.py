@@ -8,6 +8,7 @@ from core.models.messages import (
     ModelRequest,
     ModelToolResult,
 )
+from core.models.types import ModelToolDefinition
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
@@ -108,7 +109,8 @@ class Omnitrix:
                     role=MessageRole.USER,
                     content=task.objective,
                 ),
-            )
+            ),
+            tools=self._get_authorized_model_tools(),
         )
 
         tool_iterations = 0
@@ -162,8 +164,28 @@ class Omnitrix:
                     request.messages
                     + (assistant_message,)
                     + tuple(tool_messages)
+                ),
+                tools=request.tools,
+            )
+
+    def _get_authorized_model_tools(self) -> tuple[ModelToolDefinition, ...]:
+        """Return model-visible tools permitted by the current execution context."""
+
+        tools: list[ModelToolDefinition] = []
+
+        for tool in self.tool_registry.list():
+            if not self.tool_permission.allows(tool.capabilities):
+                continue
+
+            tools.append(
+                ModelToolDefinition(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters_schema=tool.parameters_schema,
                 )
             )
+
+        return tuple(tools)
 
     def execute_tool(self, request: ToolRequest) -> ToolResult:
         """Execute a tool request against the configured permissions."""

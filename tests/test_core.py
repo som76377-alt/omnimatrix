@@ -266,6 +266,111 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(request.messages, (message,))
 
+    def test_omnitrix_advertises_only_authorized_tools(self) -> None:
+        class InspectingAdapter(FakeModel):
+            def __init__(self) -> None:
+                self.requests: list[ModelRequest] = []
+
+            def generate(self, request: ModelRequest) -> ModelResponse:
+                self.requests.append(request)
+
+                return ModelResponse(
+                    content="done",
+                    model=self.name,
+                    provider=self.provider,
+                )
+
+        registry = ModelRegistry()
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        adapter = InspectingAdapter()
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+
+        tools = build_tool_registry()
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+            tool_registry=tools,
+            tool_permission=ToolPermission.from_capabilities(
+                {"calculation"}
+            ),
+        )
+
+        result = omnitrix.run("Use the calculator.")
+
+        self.assertEqual(result, "done")
+        self.assertEqual(len(adapter.requests), 1)
+        self.assertEqual(
+            adapter.requests[0].tools,
+            (
+                ModelToolDefinition(
+                    name="calculator",
+                    description="Evaluate a basic arithmetic expression.",
+                    parameters_schema={
+                        "type": "object",
+                        "properties": {
+                            "expression": {
+                                "type": "string",
+                                "description": "Arithmetic expression to evaluate.",
+                            },
+                        },
+                        "required": ["expression"],
+                        "additionalProperties": False,
+                    },
+                ),
+            ),
+        )
+
+    def test_omnitrix_does_not_advertise_unauthorized_tools(self) -> None:
+        class InspectingAdapter(FakeModel):
+            def __init__(self) -> None:
+                self.requests: list[ModelRequest] = []
+
+            def generate(self, request: ModelRequest) -> ModelResponse:
+                self.requests.append(request)
+
+                return ModelResponse(
+                    content="done",
+                    model=self.name,
+                    provider=self.provider,
+                )
+
+        registry = ModelRegistry()
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        adapter = InspectingAdapter()
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+
+        tools = build_tool_registry()
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+            tool_registry=tools,
+            tool_permission=ToolPermission.from_capabilities(set()),
+        )
+
+        result = omnitrix.run("Use the calculator.")
+
+        self.assertEqual(result, "done")
+        self.assertEqual(len(adapter.requests), 1)
+        self.assertEqual(adapter.requests[0].tools, ())
+
     def test_omnitrix_executes_model_tool_call_loop(self) -> None:
         model = ModelDefinition(
             name="test-tool-model",
@@ -349,6 +454,44 @@ class CoreTests(unittest.TestCase):
                 success=True,
                 output=4,
             ),
+        )
+
+    def test_omnitrix_preserves_tool_definitions_across_tool_rounds(self) -> None:
+        model = ModelDefinition(
+            name="test-tool-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        )
+
+        registry = ModelRegistry()
+        registry.register(model)
+
+        adapter = ToolCallingTestAdapter()
+
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+
+        tools = build_tool_registry()
+
+        permissions = ToolPermission.from_capabilities({"calculation"})
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+            tool_registry=tools,
+            tool_permission=permissions,
+        )
+
+        omnitrix.run("Calculate 2 + 2.")
+
+        self.assertEqual(len(adapter.requests), 2)
+        self.assertEqual(
+            adapter.requests[0].tools,
+            adapter.requests[1].tools,
+        )
+        self.assertEqual(
+            adapter.requests[1].tools[0].name,
+            "calculator",
         )
 
     def test_omnitrix_executes_multiple_tool_calls_in_one_round(self):
