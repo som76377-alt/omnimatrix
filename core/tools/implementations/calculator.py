@@ -31,6 +31,20 @@ class CalculatorTool(Tool):
     def capabilities(self) -> frozenset[str]:
         return frozenset({"calculation"})
 
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "Arithmetic expression to evaluate.",
+                },
+            },
+            "required": ["expression"],
+            "additionalProperties": False,
+        }
+
     def execute(self, **kwargs: Any) -> ToolResult:
         expression = kwargs.get("expression")
 

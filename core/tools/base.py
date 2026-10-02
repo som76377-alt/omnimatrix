@@ -38,6 +38,12 @@ class Tool(ABC):
         """Return the capabilities required to use this tool."""
         raise NotImplementedError
 
+    @property
+    @abstractmethod
+    def parameters_schema(self) -> dict[str, Any]:
+        """Return the JSON-schema-like parameter definition for this tool."""
+        raise NotImplementedError
+
     @abstractmethod
     def execute(self, **kwargs: Any) -> ToolResult:
         """Execute the tool with the supplied arguments."""

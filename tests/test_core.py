@@ -18,7 +18,7 @@ from core.models.messages import (
     ModelRequest,
     ModelToolResult,
 )
-from core.models.types import ModelToolCall
+from core.models.types import ModelToolCall, ModelToolDefinition
 
 
 class FakeModel(ModelAdapter):
@@ -649,6 +649,57 @@ class CoreTests(unittest.TestCase):
 
         self.assertFalse(result.success)
         self.assertIn("Permission denied", result.error)
+
+
+    def test_model_request_stores_tool_definitions(self):
+        tool = ModelToolDefinition(
+            name="calculator",
+            description="Evaluate arithmetic expressions.",
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string"},
+                },
+                "required": ["expression"],
+            },
+        )
+
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Calculate 2 + 2",
+                ),
+            ),
+            tools=(tool,),
+        )
+
+        self.assertEqual(request.tools, (tool,))
+        self.assertEqual(request.tools[0].name, "calculator")
+
+    def test_model_request_rejects_duplicate_tool_names(self):
+        first = ModelToolDefinition(
+            name="calculator",
+            description="First calculator.",
+            parameters_schema={"type": "object"},
+        )
+
+        second = ModelToolDefinition(
+            name="calculator",
+            description="Second calculator.",
+            parameters_schema={"type": "object"},
+        )
+
+        with self.assertRaises(ValueError):
+            ModelRequest(
+                messages=(
+                    ModelMessage(
+                        role=MessageRole.USER,
+                        content="Calculate something",
+                    ),
+                ),
+                tools=(first, second),
+            )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from core.models.types import ModelToolCall
+from core.models.types import ModelToolCall, ModelToolDefinition
 
 
 class MessageRole(str, Enum):
@@ -63,7 +63,15 @@ class ModelRequest:
     """Structured input supplied to a model adapter."""
 
     messages: tuple[ModelMessage, ...] = field(default_factory=tuple)
+    tools: tuple[ModelToolDefinition, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not self.messages:
             raise ValueError("Model request requires at least one message.")
+
+        names = [tool.name for tool in self.tools]
+
+        if len(names) != len(set(names)):
+            raise ValueError(
+                "Model request cannot contain duplicate tool names."
+            )

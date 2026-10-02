@@ -24,6 +24,14 @@ class TestTool(Tool):
     def capabilities(self) -> frozenset[str]:
         return frozenset({"testing"})
 
+    @property
+    def parameters_schema(self) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(
             success=True,
@@ -45,6 +53,14 @@ class SecondTestTool(Tool):
     @property
     def capabilities(self) -> frozenset[str]:
         return frozenset({"testing"})
+
+    @property
+    def parameters_schema(self) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
 
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(
@@ -180,6 +196,14 @@ class ToolRegistryTests(unittest.TestCase):
             @property
             def capabilities(self) -> frozenset[str]:
                 return frozenset({"testing"})
+
+            @property
+            def parameters_schema(self) -> dict[str, object]:
+                return {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
 
             def execute(self, **kwargs) -> ToolResult:
                 return ToolResult(success=True)
