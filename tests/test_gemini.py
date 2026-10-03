@@ -1,10 +1,12 @@
 import json
 import os
 import unittest
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from core.models.base import (
     ModelAuthenticationError,
+    ModelRequestError,
     ModelResponseError,
 )
 from core.models.messages import MessageRole, ModelMessage, ModelRequest, ModelToolResult
@@ -80,6 +82,316 @@ class GeminiAdapterTests(unittest.TestCase):
             "interaction-123",
         )
         self.assertEqual(response.tool_calls, ())
+
+    def test_retries_temporary_http_failure_then_succeeds(self):
+        payload = {
+            "id": "interaction-retry",
+            "model": "gemini-3.8-flash",
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Recovered.",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Retry this.",
+                ),
+            )
+        )
+
+        attempts = []
+        delays = []
+
+        def fake_urlopen(http_request, timeout):
+            attempts.append(1)
+
+            if len(attempts) == 1:
+                raise HTTPError(
+                    http_request.full_url,
+                    503,
+                    "Service Unavailable",
+                    {},
+                    None,
+                )
+
+            return FakeHTTPResponse(payload)
+
+        adapter = GeminiAdapter(
+            name="gemini-primary",
+            model_id="gemini-3.8-flash",
+            api_key="test-key",
+            max_retries=2,
+            retry_backoff=0.5,
+            sleep=delays.append,
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            response = adapter.generate(request)
+
+        self.assertEqual(response.content, "Recovered.")
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(delays, [0.5])
+
+    def test_retries_are_exhausted_for_temporary_http_failure(self):
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Retry this.",
+                ),
+            )
+        )
+
+        attempts = []
+        delays = []
+
+        def fake_urlopen(http_request, timeout):
+            attempts.append(1)
+
+            raise HTTPError(
+                http_request.full_url,
+                503,
+                "Service Unavailable",
+                {},
+                None,
+            )
+
+        adapter = GeminiAdapter(
+            name="gemini-primary",
+            model_id="gemini-3.8-flash",
+            api_key="test-key",
+            max_retries=2,
+            retry_backoff=0.5,
+            sleep=delays.append,
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            with self.assertRaises(ModelRequestError) as context:
+                adapter.generate(request)
+
+        self.assertIn("after 3 attempts", str(context.exception))
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(delays, [0.5, 1.0])
+
+    def test_all_transient_http_statuses_are_retryable(self):
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Retry transient status.",
+                ),
+            )
+        )
+
+        for status in (429, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                attempts = []
+                delays = []
+
+                def fake_urlopen(http_request, timeout):
+                    attempts.append(1)
+
+                    if len(attempts) == 1:
+                        raise HTTPError(
+                            http_request.full_url,
+                            status,
+                            "Transient failure",
+                            {},
+                            None,
+                        )
+
+                    return FakeHTTPResponse(
+                        {
+                            "id": f"interaction-{status}",
+                            "model": "gemini-3.8-flash",
+                            "steps": [
+                                {
+                                    "type": "model_output",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "Recovered.",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    )
+
+                adapter = GeminiAdapter(
+                    name="gemini-primary",
+                    model_id="gemini-3.8-flash",
+                    api_key="test-key",
+                    max_retries=1,
+                    retry_backoff=0.5,
+                    sleep=delays.append,
+                )
+
+                with patch(
+                    "core.models.providers.gemini.urlopen",
+                    side_effect=fake_urlopen,
+                ):
+                    response = adapter.generate(request)
+
+                self.assertEqual(response.content, "Recovered.")
+                self.assertEqual(len(attempts), 2)
+                self.assertEqual(delays, [0.5])
+
+    def test_authentication_failure_is_not_retried(self):
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Do not retry this.",
+                ),
+            )
+        )
+
+        attempts = []
+        delays = []
+
+        def fake_urlopen(http_request, timeout):
+            attempts.append(1)
+
+            raise HTTPError(
+                http_request.full_url,
+                401,
+                "Unauthorized",
+                {},
+                None,
+            )
+
+        adapter = GeminiAdapter(
+            name="gemini-primary",
+            model_id="gemini-3.8-flash",
+            api_key="test-key",
+            max_retries=2,
+            sleep=delays.append,
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            with self.assertRaises(ModelAuthenticationError):
+                adapter.generate(request)
+
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(delays, [])
+
+    def test_retries_connection_failure(self):
+        payload = {
+            "id": "interaction-network-retry",
+            "model": "gemini-3.8-flash",
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Network recovered.",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Retry network.",
+                ),
+            )
+        )
+
+        attempts = []
+        delays = []
+
+        def fake_urlopen(http_request, timeout):
+            attempts.append(1)
+
+            if len(attempts) == 1:
+                raise URLError("temporary network failure")
+
+            return FakeHTTPResponse(payload)
+
+        adapter = GeminiAdapter(
+            name="gemini-primary",
+            model_id="gemini-3.8-flash",
+            api_key="test-key",
+            max_retries=1,
+            retry_backoff=0.25,
+            sleep=delays.append,
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            response = adapter.generate(request)
+
+        self.assertEqual(response.content, "Network recovered.")
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(delays, [0.25])
+
+    def test_non_retryable_http_failure_fails_immediately(self):
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Do not retry this.",
+                ),
+            )
+        )
+
+        attempts = []
+        delays = []
+
+        def fake_urlopen(http_request, timeout):
+            attempts.append(1)
+
+            raise HTTPError(
+                http_request.full_url,
+                400,
+                "Bad Request",
+                {},
+                None,
+            )
+
+        adapter = GeminiAdapter(
+            name="gemini-primary",
+            model_id="gemini-3.8-flash",
+            api_key="test-key",
+            max_retries=2,
+            sleep=delays.append,
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            with self.assertRaises(ModelRequestError):
+                adapter.generate(request)
+
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(delays, [])
 
     def test_missing_api_key_fails(self):
         adapter = GeminiAdapter(

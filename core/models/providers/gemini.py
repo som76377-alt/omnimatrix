@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Any
+import time
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -35,6 +36,9 @@ class GeminiAdapter(ModelAdapter):
         api_key: str | None = None,
         api_key_env: str = "GEMINI_API_KEY",
         timeout: float = 60.0,
+        max_retries: int = 2,
+        retry_backoff: float = 0.5,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("Adapter name cannot be empty.")
@@ -45,11 +49,26 @@ class GeminiAdapter(ModelAdapter):
         if timeout <= 0:
             raise ValueError("Timeout must be greater than zero.")
 
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int):
+            raise TypeError("max_retries must be an integer.")
+
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative.")
+
+        if retry_backoff < 0:
+            raise ValueError("retry_backoff cannot be negative.")
+
+        if not callable(sleep):
+            raise TypeError("sleep must be callable.")
+
         self._name = name
         self._model_id = model_id
         self._api_key = api_key
         self._api_key_env = api_key_env
         self._timeout = timeout
+        self._max_retries = max_retries
+        self._retry_backoff = retry_backoff
+        self._sleep = sleep
 
     @property
     def name(self) -> str:
@@ -79,31 +98,7 @@ class GeminiAdapter(ModelAdapter):
             method="POST",
         )
 
-        try:
-            with urlopen(http_request, timeout=self._timeout) as response:
-                raw_body = response.read()
-
-        except HTTPError as exc:
-            response_body = exc.read().decode("utf-8", errors="replace")
-
-            if exc.code in (401, 403):
-                raise ModelAuthenticationError(
-                    f"Gemini authentication failed ({exc.code})."
-                ) from exc
-
-            raise ModelRequestError(
-                f"Gemini request failed ({exc.code}): {response_body}"
-            ) from exc
-
-        except URLError as exc:
-            raise ModelRequestError(
-                f"Gemini connection failed: {exc.reason}"
-            ) from exc
-
-        except TimeoutError as exc:
-            raise ModelRequestError(
-                "Gemini request timed out."
-            ) from exc
+        raw_body = self._send_request(http_request)
 
         try:
             data: Any = json.loads(raw_body)
@@ -146,6 +141,57 @@ class GeminiAdapter(ModelAdapter):
             tool_calls=tuple(tool_calls),
             continuation=continuation,
         )
+
+    def _send_request(self, http_request: Request) -> bytes:
+        attempt = 0
+
+        while True:
+            try:
+                with urlopen(http_request, timeout=self._timeout) as response:
+                    return response.read()
+
+            except HTTPError as exc:
+                try:
+                    response_body = exc.read().decode("utf-8", errors="replace")
+                finally:
+                    exc.close()
+
+                if exc.code in (401, 403):
+                    raise ModelAuthenticationError(
+                        f"Gemini authentication failed ({exc.code})."
+                    ) from exc
+
+                if exc.code not in (429, 500, 502, 503, 504):
+                    raise ModelRequestError(
+                        f"Gemini request failed ({exc.code}): {response_body}"
+                    ) from exc
+
+                if attempt >= self._max_retries:
+                    raise ModelRequestError(
+                        f"Gemini request failed ({exc.code}) after "
+                        f"{attempt + 1} attempts: {response_body}"
+                    ) from exc
+
+                self._sleep(self._retry_backoff * (2 ** attempt))
+                attempt += 1
+
+            except (URLError, TimeoutError) as exc:
+                if attempt >= self._max_retries:
+                    if isinstance(exc, TimeoutError):
+                        message = (
+                            f"Gemini request timed out after "
+                            f"{attempt + 1} attempts."
+                        )
+                    else:
+                        message = (
+                            f"Gemini connection failed after "
+                            f"{attempt + 1} attempts: {exc.reason}"
+                        )
+
+                    raise ModelRequestError(message) from exc
+
+                self._sleep(self._retry_backoff * (2 ** attempt))
+                attempt += 1
 
     def _build_payload(self, request: ModelRequest) -> dict[str, Any]:
         payload: dict[str, Any] = {
