@@ -12,12 +12,17 @@ class RoutingRequirements:
 
 
 class ModelRouter:
-    """Selects an eligible model from the model registry."""
+    """Selects eligible models from the model registry."""
 
     def __init__(self, registry: ModelRegistry) -> None:
         self.registry = registry
 
-    def select(self, requirements: RoutingRequirements) -> ModelDefinition:
+    def select_candidates(
+        self,
+        requirements: RoutingRequirements,
+    ) -> list[ModelDefinition]:
+        """Return all enabled models that satisfy the requirements."""
+
         candidates = self.registry.list_enabled()
 
         candidates = [
@@ -42,4 +47,9 @@ class ModelRouter:
                 "No registered model satisfies the routing requirements."
             )
 
-        return candidates[0]
+        return candidates
+
+    def select(self, requirements: RoutingRequirements) -> ModelDefinition:
+        """Select the first eligible model."""
+
+        return self.select_candidates(requirements)[0]

@@ -58,6 +58,35 @@ class ModelRouterTests(unittest.TestCase):
 
         self.assertEqual(result.name, "coding-model")
 
+    def test_select_candidates_returns_all_matching_models_in_registry_order(self):
+        router = ModelRouter(self.registry)
+
+        results = router.select_candidates(
+            RoutingRequirements(
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        self.assertEqual(
+            [model.name for model in results],
+            ["small-general", "coding-model", "research-model"],
+        )
+
+    def test_select_candidates_applies_all_requirements(self):
+        router = ModelRouter(self.registry)
+
+        results = router.select_candidates(
+            RoutingRequirements(
+                capabilities=frozenset({"reasoning"}),
+                minimum_context_window=60_000,
+            )
+        )
+
+        self.assertEqual(
+            [model.name for model in results],
+            ["coding-model", "research-model"],
+        )
+
     def test_no_matching_model_fails(self):
         router = ModelRouter(self.registry)
 
