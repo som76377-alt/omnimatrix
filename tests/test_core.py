@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.registry import ModelDefinition, ModelRegistry
@@ -96,7 +97,179 @@ class ToolCallingTestAdapter(ModelAdapter):
         raise AssertionError("Unexpected model request.")
 
 
+class ConversationTestAdapter(ModelAdapter):
+    """Deterministic adapter used to verify multi-turn conversations."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    @property
+    def name(self) -> str:
+        return "conversation-model"
+
+    @property
+    def provider(self) -> str:
+        return "test"
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+
+        if len(self.requests) == 1:
+            return ModelResponse(
+                content="Hello from Omnitrix.",
+                model=self.name,
+                provider=self.provider,
+            )
+
+        if len(self.requests) == 2:
+            messages = request.messages
+
+            if [message.content for message in messages] != [
+                "Hello",
+                "Hello from Omnitrix.",
+                "What did I say?",
+            ]:
+                raise AssertionError(
+                    "Conversation history was not preserved correctly."
+                )
+
+            return ModelResponse(
+                content="You said hello.",
+                model=self.name,
+                provider=self.provider,
+            )
+
+        raise AssertionError("Unexpected additional model request.")
+
+
 class CoreTests(unittest.TestCase):
+    def test_omnitrix_chat_preserves_multi_turn_history(self):
+        model = ModelDefinition(
+            name="conversation-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        )
+
+        registry = ModelRegistry()
+        registry.register(model)
+
+        adapter = ConversationTestAdapter()
+
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+        )
+
+        conversation = Conversation()
+
+        first_result = omnitrix.chat(
+            conversation,
+            "Hello",
+        )
+
+        second_result = omnitrix.chat(
+            conversation,
+            "What did I say?",
+        )
+
+        self.assertEqual(first_result, "Hello from Omnitrix.")
+        self.assertEqual(second_result, "You said hello.")
+
+        self.assertEqual(
+            [message.content for message in conversation.messages],
+            [
+                "Hello",
+                "Hello from Omnitrix.",
+                "What did I say?",
+                "You said hello.",
+            ],
+        )
+
+        self.assertEqual(len(adapter.requests), 2)
+
+    def test_omnitrix_chat_does_not_persist_tool_messages(self):
+        model = ModelDefinition(
+            name="test-tool-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        )
+
+        registry = ModelRegistry()
+        registry.register(model)
+
+        adapter = ToolCallingTestAdapter()
+
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+
+        tools = build_tool_registry()
+
+        permissions = ToolPermission.from_capabilities({"calculation"})
+
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+            tool_registry=tools,
+            tool_permission=permissions,
+        )
+
+        conversation = Conversation()
+
+        result = omnitrix.chat(
+            conversation,
+            "Calculate 2 + 2.",
+        )
+
+        self.assertEqual(
+            result,
+            "The calculator returned 4.",
+        )
+
+        self.assertEqual(
+            len(conversation.messages),
+            2,
+        )
+
+        self.assertEqual(
+            [message.role for message in conversation.messages],
+            [
+                MessageRole.USER,
+                MessageRole.ASSISTANT,
+            ],
+        )
+
+        self.assertEqual(
+            conversation.messages[0].content,
+            "Calculate 2 + 2.",
+        )
+
+        self.assertEqual(
+            conversation.messages[1].content,
+            "The calculator returned 4.",
+        )
+
+        self.assertEqual(
+            conversation.messages[0].tool_calls,
+            (),
+        )
+
+        self.assertIsNone(
+            conversation.messages[0].tool_result,
+        )
+
+        self.assertEqual(
+            conversation.messages[1].tool_calls,
+            (),
+        )
+
+        self.assertIsNone(
+            conversation.messages[1].tool_result,
+        )
+
+
     def test_omnitrix_analyzes_routes_and_runs_model(self):
         registry = ModelRegistry()
 

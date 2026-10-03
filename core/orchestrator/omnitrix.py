@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
 from core.models.messages import (
@@ -93,6 +94,40 @@ class Omnitrix:
         )
         task.start()
 
+        return self._execute_task(
+            task=task,
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content=objective,
+                ),
+            ),
+        )
+
+    def chat(self, conversation: Conversation, user_message: str) -> str:
+        """Process one conversational turn and update the conversation."""
+        conversation.add_user_message(user_message)
+
+        task = Task(
+            objective=user_message,
+            requirements=self.analyzer.analyze(user_message),
+        )
+        task.start()
+
+        response = self._execute_task(
+            task=task,
+            messages=conversation.messages,
+        )
+
+        conversation.add_assistant_message(response)
+        return response
+
+    def _execute_task(
+        self,
+        task: Task,
+        messages: tuple[ModelMessage, ...],
+    ) -> str:
+        """Execute a task against the selected model and authorized tools."""
         selected_model = self.router.select(task.requirements)
 
         try:
@@ -104,12 +139,7 @@ class Omnitrix:
             ) from None
 
         request = ModelRequest(
-            messages=(
-                ModelMessage(
-                    role=MessageRole.USER,
-                    content=task.objective,
-                ),
-            ),
+            messages=messages,
             tools=self._get_authorized_model_tools(),
         )
 
