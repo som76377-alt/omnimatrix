@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from core.models.registry import ModelDefinition, ModelRegistry
+from core.routing_policy import FirstCandidatePolicy, RoutingPolicy
 
 
 @dataclass(frozen=True)
@@ -14,8 +15,13 @@ class RoutingRequirements:
 class ModelRouter:
     """Selects eligible models from the model registry."""
 
-    def __init__(self, registry: ModelRegistry) -> None:
+    def __init__(
+        self,
+        registry: ModelRegistry,
+        policy: RoutingPolicy | None = None,
+    ) -> None:
         self.registry = registry
+        self.policy = policy or FirstCandidatePolicy()
 
     def select_candidates(
         self,
@@ -50,6 +56,7 @@ class ModelRouter:
         return candidates
 
     def select(self, requirements: RoutingRequirements) -> ModelDefinition:
-        """Select the first eligible model."""
+        """Select one model from the eligible candidates."""
 
-        return self.select_candidates(requirements)[0]
+        candidates = self.select_candidates(requirements)
+        return self.policy.select(candidates)

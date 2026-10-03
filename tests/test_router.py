@@ -1,6 +1,7 @@
 import unittest
 
 from core.models.registry import ModelDefinition, ModelRegistry
+from core.routing_policy import RoutingPolicy
 from core.router import ModelRouter, RoutingRequirements
 
 
@@ -96,6 +97,25 @@ class ModelRouterTests(unittest.TestCase):
                     capabilities=frozenset({"vision"}),
                 )
             )
+
+
+    def test_select_delegates_to_injected_policy(self):
+        class SecondCandidatePolicy(RoutingPolicy):
+            def select(self, candidates):
+                return candidates[1]
+
+        router = ModelRouter(
+            self.registry,
+            policy=SecondCandidatePolicy(),
+        )
+
+        result = router.select(
+            RoutingRequirements(
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+
+        self.assertEqual(result.name, "coding-model")
 
 
 if __name__ == "__main__":
