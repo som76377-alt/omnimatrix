@@ -1,0 +1,18 @@
+{
+  "models": [
+    {
+      "name": "gemini-primary",
+      "provider": "google",
+      "model_id": "gemini-3.5-flash",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "browser",
+        "testing"
+      ],
+      "context_window": 32000,
+      "enabled": true
+    }
+  ]
+}
