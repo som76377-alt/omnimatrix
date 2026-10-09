@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
@@ -144,6 +145,165 @@ class ConversationTestAdapter(ModelAdapter):
 
 
 class CoreTests(unittest.TestCase):
+    def test_logging_failure_does_not_interrupt_task(self):
+        registry = ModelRegistry()
+        registry.register(
+            ModelDefinition(
+                name="fake-model",
+                provider="test",
+                capabilities=frozenset({"reasoning"}),
+            )
+        )
+        adapters = AdapterRegistry()
+        adapters.register(FakeModel())
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+        )
+
+        with patch(
+            "core.orchestrator.omnitrix.logger.log",
+            side_effect=RuntimeError("logger broken"),
+        ):
+            result = omnitrix.run("Hello")
+
+        self.assertEqual(result, "Received: Hello")
+
+    def test_successful_task_emits_safe_lifecycle_logs(self):
+        registry = ModelRegistry()
+        registry.register(ModelDefinition(
+            name="fake-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(FakeModel())
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+        )
+
+        objective = "SENSITIVE_SENTINEL_OBJECTIVE"
+
+        with self.assertLogs(
+            "core.orchestrator.omnitrix", level="INFO"
+        ) as captured:
+            result = omnitrix.run(objective)
+
+        self.assertEqual(result, f"Received: {objective}")
+        messages = [record.getMessage() for record in captured.records]
+        self.assertIn("task_started", messages)
+        self.assertIn("model_selected", messages)
+        self.assertIn("task_completed", messages)
+
+        log_text = "\\n".join(messages)
+        record_text = repr([record.__dict__ for record in captured.records])
+        self.assertNotIn(objective, log_text)
+        self.assertNotIn(objective, record_text)
+
+        model_record = next(
+            record for record in captured.records
+            if record.getMessage() == "model_selected"
+        )
+        self.assertEqual(model_record.model_name, "fake-model")
+        self.assertEqual(model_record.provider, "test")
+
+        completed_record = next(
+            record for record in captured.records
+            if record.getMessage() == "task_completed"
+        )
+        self.assertEqual(completed_record.task_status, "completed")
+        self.assertGreaterEqual(completed_record.duration_seconds, 0)
+
+    def test_tool_execution_emits_safe_lifecycle_logs(self):
+        registry = ModelRegistry()
+        registry.register(ModelDefinition(
+            name="test-tool-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(ToolCallingTestAdapter())
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+            tool_registry=build_tool_registry(),
+            tool_permission=ToolPermission.from_capabilities(
+                {"calculation"}
+            ),
+        )
+
+        objective = "SENSITIVE_SENTINEL_TOOL_OBJECTIVE"
+
+        with self.assertLogs(
+            "core.orchestrator.omnitrix", level="INFO"
+        ) as captured:
+            result = omnitrix.run(objective)
+
+        self.assertEqual(result, "The calculator returned 4.")
+        messages = [record.getMessage() for record in captured.records]
+        self.assertIn("tool_started", messages)
+        self.assertIn("tool_completed", messages)
+
+        log_text = "\\n".join(messages)
+        record_text = repr([record.__dict__ for record in captured.records])
+        self.assertNotIn(objective, log_text)
+        self.assertNotIn(objective, record_text)
+        self.assertNotIn("2 + 2", log_text)
+        self.assertNotIn("2 + 2", record_text)
+
+        tool_record = next(
+            record for record in captured.records
+            if record.getMessage() == "tool_completed"
+        )
+        self.assertEqual(tool_record.tool_name, "calculator")
+        self.assertTrue(tool_record.success)
+        self.assertGreaterEqual(tool_record.duration_seconds, 0)
+
+    def test_task_failure_logs_error_type_without_exception_message(self):
+        secret_message = "PRIVATE_EXCEPTION_TEXT_SHOULD_NOT_BE_LOGGED"
+
+        class RaisingAdapter(FakeModel):
+            def generate(self, request):
+                raise RuntimeError(secret_message)
+
+        registry = ModelRegistry()
+        registry.register(ModelDefinition(
+            name="fake-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(RaisingAdapter())
+        omnitrix = Omnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+        )
+
+        with self.assertLogs(
+            "core.orchestrator.omnitrix", level="WARNING"
+        ) as captured:
+            with self.assertRaisesRegex(RuntimeError, secret_message):
+                omnitrix.run("PRIVATE_FAILURE_OBJECTIVE")
+
+        messages = [record.getMessage() for record in captured.records]
+        self.assertIn("task_failed", messages)
+
+        log_text = "\\n".join(messages)
+        record_text = repr([record.__dict__ for record in captured.records])
+        self.assertNotIn(secret_message, log_text)
+        self.assertNotIn(secret_message, record_text)
+        self.assertNotIn("PRIVATE_FAILURE_OBJECTIVE", log_text)
+        self.assertNotIn("PRIVATE_FAILURE_OBJECTIVE", record_text)
+
+        failure_record = next(
+            record for record in captured.records
+            if record.getMessage() == "task_failed"
+        )
+        self.assertEqual(failure_record.task_status, "failed")
+        self.assertEqual(failure_record.error_type, "RuntimeError")
+        self.assertGreaterEqual(failure_record.duration_seconds, 0)
+
     def test_adapter_exception_marks_task_failed_and_propagates(self):
         expected_error = RuntimeError("adapter exploded")
 

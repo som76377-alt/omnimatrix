@@ -1,4 +1,6 @@
+import logging
 from pathlib import Path
+import time
 
 from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
@@ -21,6 +23,18 @@ from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
 from core.tools.base import ToolResult
 from core.tools.request import ToolRequest
+
+
+logger = logging.getLogger(__name__)
+
+
+def _log_safely(level: int, event: str, **metadata: object) -> None:
+    """Emit diagnostics without changing application behavior."""
+    try:
+        logger.log(level, event, extra=metadata)
+    except Exception:
+        # Diagnostics must never interrupt task execution.
+        pass
 
 
 class Omnitrix:
@@ -139,13 +153,31 @@ class Omnitrix:
         task: Task,
         messages: tuple[ModelMessage, ...],
     ) -> str:
-        """Execute a task and record unexpected failures."""
+        """Execute a task and record its lifecycle."""
+        started_at = time.perf_counter()
+        _log_safely(logging.INFO, "task_started")
+
         try:
-            return self._execute_task_inner(task=task, messages=messages)
-        except Exception:
+            result = self._execute_task_inner(task=task, messages=messages)
+        except Exception as exc:
             if task.status == TaskStatus.RUNNING:
                 task.fail()
+            _log_safely(
+                logging.WARNING,
+                "task_failed",
+                task_status=task.status.value,
+                error_type=type(exc).__name__,
+                duration_seconds=round(time.perf_counter() - started_at, 6),
+            )
             raise
+
+        _log_safely(
+            logging.INFO,
+            "task_completed",
+            task_status=task.status.value,
+            duration_seconds=round(time.perf_counter() - started_at, 6),
+        )
+        return result
 
     def _execute_task_inner(
         self,
@@ -154,6 +186,12 @@ class Omnitrix:
     ) -> str:
         """Execute a task against the selected model and authorized tools."""
         selected_model = self.router.select(task.requirements)
+        _log_safely(
+            logging.INFO,
+            "model_selected",
+            model_name=selected_model.name,
+            provider=selected_model.provider,
+        )
 
         try:
             adapter = self.adapter_registry.get(selected_model.name)
@@ -195,11 +233,39 @@ class Omnitrix:
             tool_messages = []
 
             for tool_call in response.tool_calls:
-                tool_result = self.execute_tool(
-                    ToolRequest(
-                        tool_name=tool_call.tool_name,
-                        arguments=tool_call.arguments,
+                tool_started_at = time.perf_counter()
+                _log_safely(
+                    logging.INFO,
+                    "tool_started",
+                    tool_name=tool_call.tool_name,
+                )
+                try:
+                    tool_result = self.execute_tool(
+                        ToolRequest(
+                            tool_name=tool_call.tool_name,
+                            arguments=tool_call.arguments,
+                        )
                     )
+                except Exception as exc:
+                    _log_safely(
+                        logging.WARNING,
+                        "tool_failed",
+                        tool_name=tool_call.tool_name,
+                        error_type=type(exc).__name__,
+                        duration_seconds=round(
+                            time.perf_counter() - tool_started_at, 6
+                        ),
+                    )
+                    raise
+
+                _log_safely(
+                    logging.INFO if tool_result.success else logging.WARNING,
+                    "tool_completed" if tool_result.success else "tool_failed",
+                    tool_name=tool_call.tool_name,
+                    success=tool_result.success,
+                    duration_seconds=round(
+                        time.perf_counter() - tool_started_at, 6
+                    ),
                 )
 
                 tool_messages.append(
