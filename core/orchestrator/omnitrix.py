@@ -13,7 +13,7 @@ from core.models.types import ModelToolDefinition
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
-from core.orchestrator.task import Task
+from core.orchestrator.task import Task, TaskStatus
 from core.router import ModelRouter
 from core.tools.bootstrap import build_tool_registry
 from core.tools.executor import ToolExecutor
@@ -135,6 +135,19 @@ class Omnitrix:
         return response
 
     def _execute_task(
+        self,
+        task: Task,
+        messages: tuple[ModelMessage, ...],
+    ) -> str:
+        """Execute a task and record unexpected failures."""
+        try:
+            return self._execute_task_inner(task=task, messages=messages)
+        except Exception:
+            if task.status == TaskStatus.RUNNING:
+                task.fail()
+            raise
+
+    def _execute_task_inner(
         self,
         task: Task,
         messages: tuple[ModelMessage, ...],

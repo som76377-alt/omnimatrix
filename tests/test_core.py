@@ -8,6 +8,7 @@ from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.registry import ModelDefinition, ModelRegistry
 from core.orchestrator.omnitrix import Omnitrix
+from core.orchestrator.task import Task, TaskStatus
 from core.tools.bootstrap import build_tool_registry
 from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
@@ -143,6 +144,73 @@ class ConversationTestAdapter(ModelAdapter):
 
 
 class CoreTests(unittest.TestCase):
+    def test_adapter_exception_marks_task_failed_and_propagates(self):
+        expected_error = RuntimeError("adapter exploded")
+
+        class RaisingAdapter(FakeModel):
+            def generate(self, request):
+                raise expected_error
+
+        registry = ModelRegistry()
+        registry.register(ModelDefinition(
+            name="fake-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(RaisingAdapter())
+        omnitrix = Omnitrix(registry=registry, adapter_registry=adapters)
+
+        task = Task(
+            objective="Hello",
+            requirements=omnitrix.analyzer.analyze("Hello"),
+        )
+        task.start()
+
+        with self.assertRaises(RuntimeError) as caught:
+            omnitrix._execute_task(
+                task,
+                (ModelMessage(role=MessageRole.USER, content="Hello"),),
+            )
+
+        self.assertIs(caught.exception, expected_error)
+        self.assertEqual(task.status, TaskStatus.FAILED)
+
+    def test_tool_exception_marks_task_failed_and_propagates(self):
+        expected_error = RuntimeError("tool execution exploded")
+
+        class RaisingToolOmnitrix(Omnitrix):
+            def execute_tool(self, request):
+                raise expected_error
+
+        registry = ModelRegistry()
+        registry.register(ModelDefinition(
+            name="test-tool-model",
+            provider="test",
+            capabilities=frozenset({"reasoning"}),
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(ToolCallingTestAdapter())
+        omnitrix = RaisingToolOmnitrix(
+            registry=registry,
+            adapter_registry=adapters,
+        )
+
+        task = Task(
+            objective="Hello",
+            requirements=omnitrix.analyzer.analyze("Hello"),
+        )
+        task.start()
+
+        with self.assertRaises(RuntimeError) as caught:
+            omnitrix._execute_task(
+                task,
+                (ModelMessage(role=MessageRole.USER, content="Hello"),),
+            )
+
+        self.assertIs(caught.exception, expected_error)
+        self.assertEqual(task.status, TaskStatus.FAILED)
+
     def test_omnitrix_chat_preserves_multi_turn_history(self):
         model = ModelDefinition(
             name="conversation-model",
