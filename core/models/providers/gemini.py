@@ -230,19 +230,47 @@ class GeminiAdapter(ModelAdapter):
             for tool in request.tools
         ]
 
-    def _build_initial_input(self, request: ModelRequest) -> str:
-        user_messages = [
-            message.content
-            for message in request.messages
-            if message.role == MessageRole.USER
-        ]
+    def _build_initial_input(
+        self,
+        request: ModelRequest,
+    ) -> list[dict[str, Any]]:
+        inputs: list[dict[str, Any]] = []
 
-        if not user_messages:
+        for message in request.messages:
+            if message.role == MessageRole.USER:
+                inputs.append(
+                    {
+                        "type": "user_input",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": message.content,
+                            }
+                        ],
+                    }
+                )
+            elif message.role == MessageRole.ASSISTANT:
+                if message.tool_calls:
+                    continue
+
+                inputs.append(
+                    {
+                        "type": "model_output",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": message.content,
+                            }
+                        ],
+                    }
+                )
+
+        if not inputs:
             raise ModelRequestError(
                 "Gemini request requires at least one user message."
             )
 
-        return "\n".join(user_messages)
+        return inputs
 
     def _build_tool_result_input(
         self,

@@ -558,7 +558,20 @@ class GeminiAdapterTests(unittest.TestCase):
         body = json.loads(captured["request"].data.decode("utf-8"))
 
         self.assertEqual(body["model"], "gemini-3.8-flash")
-        self.assertEqual(body["input"], "Calculate something.")
+        self.assertEqual(
+            body["input"],
+            [
+                {
+                    "type": "user_input",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Calculate something.",
+                        }
+                    ],
+                }
+            ],
+        )
         self.assertEqual(
             body["tools"],
             [
@@ -577,6 +590,87 @@ class GeminiAdapterTests(unittest.TestCase):
                         "additionalProperties": False,
                     },
                 }
+            ],
+        )
+    def test_builds_structured_multi_turn_conversation_history(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["request"] = request
+
+            return FakeHTTPResponse(
+                {
+                    "id": "interaction-multi-turn",
+                    "model": "gemini-3.8-flash",
+                    "steps": [
+                        {
+                            "type": "model_output",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "You said hello.",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="Hello Omnitrix.",
+                ),
+                ModelMessage(
+                    role=MessageRole.ASSISTANT,
+                    content="Hello! How can I help?",
+                ),
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content="What did I just say?",
+                ),
+            ),
+        )
+
+        with patch(
+            "core.models.providers.gemini.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            self.adapter.generate(request)
+
+        body = json.loads(captured["request"].data.decode("utf-8"))
+
+        self.assertEqual(
+            body["input"],
+            [
+                {
+                    "type": "user_input",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Hello Omnitrix.",
+                        }
+                    ],
+                },
+                {
+                    "type": "model_output",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Hello! How can I help?",
+                        }
+                    ],
+                },
+                {
+                    "type": "user_input",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "What did I just say?",
+                        }
+                    ],
+                },
             ],
         )
 
