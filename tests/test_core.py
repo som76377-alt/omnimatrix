@@ -447,6 +447,36 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(request.messages, (message,))
 
+    def test_model_request_stores_instructions(self) -> None:
+        message = ModelMessage(
+            role=MessageRole.USER,
+            content="Hello.",
+        )
+        request = ModelRequest(
+            messages=(message,),
+            instructions="You are Omnitrix.",
+        )
+        self.assertEqual(request.instructions, "You are Omnitrix.")
+
+    def test_model_request_rejects_blank_instructions(self) -> None:
+        message = ModelMessage(
+            role=MessageRole.USER,
+            content="Hello.",
+        )
+        with self.assertRaises(ValueError):
+            ModelRequest(messages=(message,), instructions="   ")
+
+    def test_model_request_rejects_non_string_instructions(self) -> None:
+        message = ModelMessage(
+            role=MessageRole.USER,
+            content="Hello.",
+        )
+        with self.assertRaises(TypeError):
+            ModelRequest(
+                messages=(message,),
+                instructions=123,  # type: ignore[arg-type]
+            )
+
     def test_omnitrix_advertises_only_authorized_tools(self) -> None:
         class InspectingAdapter(FakeModel):
             def __init__(self) -> None:
@@ -681,6 +711,15 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(
             adapter.requests[1].tools[0].name,
             "calculator",
+        )
+
+        self.assertEqual(
+            adapter.requests[0].instructions,
+            Omnitrix.DEFAULT_INSTRUCTIONS,
+        )
+        self.assertEqual(
+            adapter.requests[1].instructions,
+            Omnitrix.DEFAULT_INSTRUCTIONS,
         )
 
     def test_omnitrix_executes_multiple_tool_calls_in_one_round(self):

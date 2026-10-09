@@ -65,8 +65,15 @@ class ModelRequest:
     messages: tuple[ModelMessage, ...] = field(default_factory=tuple)
     tools: tuple[ModelToolDefinition, ...] = field(default_factory=tuple)
     continuation: ModelContinuation | None = None
+    instructions: str | None = None
 
     def __post_init__(self) -> None:
+        if self.instructions is not None:
+            if not isinstance(self.instructions, str):
+                raise TypeError("Model instructions must be a string or None.")
+            if not self.instructions.strip():
+                raise ValueError("Model instructions cannot be blank.")
+
         if not self.messages:
             raise ValueError("Model request requires at least one message.")
 

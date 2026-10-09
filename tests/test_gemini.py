@@ -36,6 +36,60 @@ class GeminiAdapterTests(unittest.TestCase):
             api_key="test-key",
         )
 
+    def test_system_instruction_is_included_in_initial_and_continuation_payloads(self):
+        instructions = "You are Omnitrix."
+        user_message = ModelMessage(
+            role=MessageRole.USER,
+            content="Calculate 2 + 2.",
+        )
+
+        initial_request = ModelRequest(
+            messages=(user_message,),
+            instructions=instructions,
+        )
+        initial_payload = self.adapter._build_payload(initial_request)
+        self.assertEqual(
+            initial_payload["system_instruction"],
+            instructions,
+        )
+
+        continuation_request = ModelRequest(
+            messages=(
+                user_message,
+                ModelMessage(
+                    role=MessageRole.ASSISTANT,
+                    tool_calls=(
+                        ModelToolCall(
+                            id="call-1",
+                            tool_name="calculator",
+                            arguments={"expression": "2 + 2"},
+                        ),
+                    ),
+                ),
+                ModelMessage(
+                    role=MessageRole.TOOL,
+                    tool_result=ModelToolResult(
+                        tool_call_id="call-1",
+                        tool_name="calculator",
+                        success=True,
+                        output=4,
+                    ),
+                ),
+            ),
+            continuation=ModelContinuation(
+                provider="google",
+                state={"interaction_id": "interaction-1"},
+            ),
+            instructions=instructions,
+        )
+        continuation_payload = self.adapter._build_payload(
+            continuation_request
+        )
+        self.assertEqual(
+            continuation_payload["system_instruction"],
+            instructions,
+        )
+
     def test_successfully_normalizes_response(self):
         payload = {
             "id": "interaction-123",

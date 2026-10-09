@@ -199,6 +199,9 @@ class GeminiAdapter(ModelAdapter):
             "tools": self._build_tools(request),
         }
 
+        if request.instructions is not None:
+            payload["system_instruction"] = request.instructions
+
         if request.continuation is None:
             payload["input"] = self._build_initial_input(request)
         else:
