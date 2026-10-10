@@ -12,7 +12,7 @@ class PlanExecutionTests(unittest.TestCase):
         self.run_patcher = patch.object(
             self.omnitrix,
             "run",
-            side_effect=lambda objective: f"Completed: {objective}",
+            side_effect=lambda objective, **kwargs: f"Completed: {objective}",
         )
         self.mock_run = self.run_patcher.start()
         self.addCleanup(self.run_patcher.stop)
@@ -36,8 +36,14 @@ class PlanExecutionTests(unittest.TestCase):
             self.mock_run.call_args_list,
             [
                 call("Research topic"),
-                call("Write report"),
-                call("Review report"),
+                call(
+                    "Write report",
+                    dependency_results={"research": "Completed: Research topic"},
+                ),
+                call(
+                    "Review report",
+                    dependency_results={"report": "Completed: Write report"},
+                ),
             ],
         )
 
@@ -85,6 +91,76 @@ class PlanExecutionTests(unittest.TestCase):
             self.mock_run.call_args_list,
             [call("First task"), call("Second task")],
         )
+
+    def test_dependent_task_receives_only_direct_dependency_results(self):
+        plan = TaskPlan.from_tasks(
+            [
+                PlannedTask("research", "Research topic"),
+                PlannedTask("unrelated", "Do unrelated work"),
+                PlannedTask("design", "Design solution", {"research"}),
+                PlannedTask("review", "Review solution", {"design"}),
+            ]
+        )
+
+        def run_with_results(objective, **kwargs):
+            if objective == "Research topic":
+                return "Research evidence"
+            if objective == "Do unrelated work":
+                return "Unrelated evidence"
+            if objective == "Design solution":
+                self.assertEqual(
+                    kwargs["dependency_results"],
+                    {"research": "Research evidence"},
+                )
+                return "Design result"
+            if objective == "Review solution":
+                self.assertEqual(
+                    kwargs["dependency_results"],
+                    {"design": "Design result"},
+                )
+                return "Review result"
+            self.fail(f"Unexpected objective: {objective}")
+
+        self.mock_run.side_effect = run_with_results
+
+        results = self.omnitrix.execute_plan(plan)
+
+        self.assertEqual(results["review"], "Review result")
+
+    def test_task_receives_all_direct_dependency_results(self):
+        plan = TaskPlan.from_tasks(
+            [
+                PlannedTask("research", "Research topic"),
+                PlannedTask("calculate", "Calculate figures"),
+                PlannedTask(
+                    "report",
+                    "Write report",
+                    {"research", "calculate"},
+                ),
+            ]
+        )
+
+        def run_with_results(objective, **kwargs):
+            if objective == "Research topic":
+                return "Research evidence"
+            if objective == "Calculate figures":
+                return "Calculated figures"
+            if objective == "Write report":
+                self.assertEqual(
+                    kwargs["dependency_results"],
+                    {
+                        "calculate": "Calculated figures",
+                        "research": "Research evidence",
+                    },
+                )
+                return "Final report"
+            self.fail(f"Unexpected objective: {objective}")
+
+        self.mock_run.side_effect = run_with_results
+
+        results = self.omnitrix.execute_plan(plan)
+
+        self.assertEqual(results["report"], "Final report")
 
     def test_rejects_non_task_plan_input(self):
         with self.assertRaisesRegex(TypeError, "plan must be a TaskPlan"):
