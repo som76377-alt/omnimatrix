@@ -15,7 +15,12 @@ from core.models.messages import (
 from core.models.types import ModelToolDefinition
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
-from core.orchestrator.planning import PlannedTask, TaskPlan
+from core.orchestrator.planning import (
+    PlanApproval,
+    PlannedTask,
+    TaskPlan,
+    fingerprint_plan,
+)
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
 from core.orchestrator.task import Task, TaskStatus
 from core.router import ModelRouter, RoutingRequirements
@@ -214,6 +219,61 @@ class Omnitrix:
             )
 
         return TaskPlan.from_tasks(planned_tasks)
+
+    def preview_plan(self, plan: TaskPlan) -> str:
+        """Format a plan in the same dependency order used by execution."""
+        if not isinstance(plan, TaskPlan):
+            raise TypeError("plan must be a TaskPlan.")
+
+        lines = ["Omnitrix execution plan:"]
+        completed: set[str] = set()
+        step = 1
+
+        while len(completed) < len(plan.tasks):
+            ready_tasks = plan.ready_tasks(completed)
+            if not ready_tasks:
+                raise RuntimeError("Task plan could not make progress.")
+
+            task = ready_tasks[0]
+            lines.append(f"{step}. [{task.task_id}] {task.description}")
+            if task.dependencies:
+                dependencies = ", ".join(sorted(task.dependencies))
+                lines.append(f"   Depends on: {dependencies}")
+
+            completed.add(task.task_id)
+            step += 1
+
+        if not plan.tasks:
+            lines.append("(No tasks; nothing will execute.)")
+
+        return "\n".join(lines)
+
+    def approve_plan(self, plan: TaskPlan) -> PlanApproval:
+        """Create an approval record for the exact plan supplied by the caller.
+
+        The caller must invoke this method only after the plan has been
+        reviewed and explicitly approved by the user.
+        """
+        if not isinstance(plan, TaskPlan):
+            raise TypeError("plan must be a TaskPlan.")
+
+        return PlanApproval(
+            plan=plan,
+            fingerprint=fingerprint_plan(plan),
+        )
+
+    def execute_approved_plan(self, approval: PlanApproval) -> dict[str, str]:
+        """Execute only a plan whose approval fingerprint still matches."""
+        if not isinstance(approval, PlanApproval):
+            raise TypeError("approval must be a PlanApproval.")
+
+        current_fingerprint = fingerprint_plan(approval.plan)
+        if current_fingerprint != approval.fingerprint:
+            raise ValueError(
+                "Approved plan fingerprint mismatch; execution was rejected."
+            )
+
+        return self.execute_plan(approval.plan)
 
     def execute_plan(self, plan: TaskPlan) -> dict[str, str]:
         """Execute planned tasks in dependency order, stopping on failure."""

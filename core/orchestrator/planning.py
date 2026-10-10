@@ -1,6 +1,8 @@
 """Validated task plans and dependency readiness checks."""
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 from typing import Iterable
 
 
@@ -134,3 +136,39 @@ class TaskPlan:
             if task.task_id not in completed
             and task.dependencies.issubset(completed)
         )
+
+
+def fingerprint_plan(plan: TaskPlan) -> str:
+    """Return a deterministic fingerprint of the exact plan contents."""
+    if not isinstance(plan, TaskPlan):
+        raise TypeError("plan must be a TaskPlan.")
+
+    canonical_plan = [
+        {
+            "task_id": task.task_id,
+            "description": task.description,
+            "dependencies": sorted(task.dependencies),
+        }
+        for task in plan.tasks
+    ]
+    encoded = json.dumps(
+        canonical_plan,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True)
+class PlanApproval:
+    """Approval record bound to a specific plan fingerprint."""
+
+    plan: TaskPlan
+    fingerprint: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.plan, TaskPlan):
+            raise TypeError("plan must be a TaskPlan.")
+        if not isinstance(self.fingerprint, str) or not self.fingerprint:
+            raise ValueError("fingerprint must be a non-empty string.")
