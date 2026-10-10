@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 import time
@@ -14,10 +15,10 @@ from core.models.messages import (
 from core.models.types import ModelToolDefinition
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
-from core.orchestrator.planning import TaskPlan
+from core.orchestrator.planning import PlannedTask, TaskPlan
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
 from core.orchestrator.task import Task, TaskStatus
-from core.router import ModelRouter
+from core.router import ModelRouter, RoutingRequirements
 from core.tools.bootstrap import build_tool_registry
 from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
@@ -113,6 +114,106 @@ class Omnitrix:
             tool_registry=tool_registry,
             tool_permission=tool_permission,
         )
+
+    def propose_plan(self, objective: str) -> TaskPlan:
+        """Generate and validate a task plan without executing it."""
+        if not isinstance(objective, str) or not objective.strip():
+            raise ValueError("Planning objective must be a non-empty string.")
+
+        requirements = RoutingRequirements(
+            capabilities=frozenset({"reasoning"})
+        )
+        selected_model = self.router.select(requirements)
+
+        _log_safely(
+            logging.INFO,
+            "model_selected",
+            model_name=selected_model.name,
+            provider=selected_model.provider,
+            operation="plan_generation",
+        )
+
+        try:
+            adapter = self.adapter_registry.get(selected_model.name)
+        except KeyError:
+            raise LookupError(
+                f"No adapter registered for model: {selected_model.name}"
+            ) from None
+
+        request = ModelRequest(
+            messages=(
+                ModelMessage(
+                    role=MessageRole.USER,
+                    content=objective,
+                ),
+            ),
+            tools=(),
+            instructions=(
+                "You are the Omnitrix task planner. Propose a clear, "
+                "achievable sequence of tasks for the user's objective. "
+                "Return only a valid JSON object with exactly one key, "
+                '"tasks". Its value must be a non-empty array of objects. '
+                "Every task object must have exactly these keys: "
+                '"task_id" (a unique non-empty string), '
+                '"description" (a non-empty string), and '
+                '"dependencies" (an array of task ID strings). '
+                "Dependencies must refer to other tasks in this same plan. "
+                "Do not create duplicate IDs, self-dependencies, unknown "
+                "dependencies, or dependency cycles. Use an empty array "
+                "when a task has no dependencies. Do not include Markdown, "
+                "commentary, or tool calls. The plan is a proposal only; "
+                "no tasks are to be executed."
+            ),
+        )
+
+        response = adapter.generate(request)
+
+        if response.tool_calls:
+            raise ValueError("Planner response must not request tool calls.")
+
+        try:
+            payload = json.loads(response.content)
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError("Planner returned invalid JSON.") from None
+
+        if not isinstance(payload, dict) or set(payload) != {"tasks"}:
+            raise ValueError(
+                "Planner response must be an object containing only 'tasks'."
+            )
+
+        raw_tasks = payload["tasks"]
+        if not isinstance(raw_tasks, list) or not raw_tasks:
+            raise ValueError("Planner must return a non-empty tasks array.")
+
+        planned_tasks = []
+        for index, item in enumerate(raw_tasks):
+            if not isinstance(item, dict) or set(item) != {
+                "task_id",
+                "description",
+                "dependencies",
+            }:
+                raise ValueError(
+                    f"Planner task at index {index} has an invalid structure."
+                )
+
+            dependencies = item["dependencies"]
+            if not isinstance(dependencies, list) or not all(
+                isinstance(dependency, str) and dependency.strip()
+                for dependency in dependencies
+            ):
+                raise ValueError(
+                    f"Planner task at index {index} has invalid dependencies."
+                )
+
+            planned_tasks.append(
+                PlannedTask(
+                    task_id=item["task_id"],
+                    description=item["description"],
+                    dependencies=frozenset(dependencies),
+                )
+            )
+
+        return TaskPlan.from_tasks(planned_tasks)
 
     def execute_plan(self, plan: TaskPlan) -> dict[str, str]:
         """Execute planned tasks in dependency order, stopping on failure."""
