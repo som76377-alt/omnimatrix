@@ -14,6 +14,7 @@ from core.models.messages import (
 from core.models.types import ModelToolDefinition
 from core.models.registry import ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
+from core.orchestrator.planning import TaskPlan
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
 from core.orchestrator.task import Task, TaskStatus
 from core.router import ModelRouter
@@ -112,6 +113,28 @@ class Omnitrix:
             tool_registry=tool_registry,
             tool_permission=tool_permission,
         )
+
+    def execute_plan(self, plan: TaskPlan) -> dict[str, str]:
+        """Execute planned tasks in dependency order, stopping on failure."""
+        if not isinstance(plan, TaskPlan):
+            raise TypeError("plan must be a TaskPlan.")
+
+        results: dict[str, str] = {}
+        completed: set[str] = set()
+
+        while len(completed) < len(plan.tasks):
+            ready_tasks = plan.ready_tasks(completed)
+
+            if not ready_tasks:
+                raise RuntimeError("Task plan could not make progress.")
+
+            planned_task = ready_tasks[0]
+            result = self.run(planned_task.description)
+
+            results[planned_task.task_id] = result
+            completed.add(planned_task.task_id)
+
+        return results
 
     def run(self, objective: str) -> str:
         task = Task(
