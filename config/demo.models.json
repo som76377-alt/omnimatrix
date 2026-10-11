@@ -1,0 +1,15 @@
+{
+  "models": [
+    {
+      "name": "offline-demo",
+      "provider": "demo",
+      "model_id": "offline-demo-v1",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 32000,
+      "enabled": true
+    }
+  ]
+}

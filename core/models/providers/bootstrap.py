@@ -1,6 +1,7 @@
 from core.models.adapters import AdapterRegistry
 from core.models.factory import ModelAdapterFactory
 from core.models.providers.builders import build_gemini_adapter
+from core.models.providers.demo import DemoAdapter
 from core.models.registry import ModelRegistry
 
 
@@ -13,6 +14,13 @@ def build_adapter_registry(
 
     factory = ModelAdapterFactory()
     factory.register("google", build_gemini_adapter)
+    factory.register(
+        "demo",
+        lambda model: DemoAdapter(
+            name=model.name,
+            model_id=model.model_id,
+        ),
+    )
 
     for model in registry.list_enabled():
         adapter = factory.create(model)
