@@ -19,8 +19,8 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Bind plan fingerprints to declared tool scopes, targets, resources, verification criteria, policy version, spend mode, risk tier, and external-egress intent.
 - [x] Show approval-sensitive context in the human-readable plan preview.
 - [x] Validate tool arguments against a documented JSON Schema subset before tool execution; malformed/unsupported schemas fail closed.
-- [ ] Wire the budget guard into every model/provider call boundary with explicit cost classification and test that paid/unknown-cost providers cannot run in zero-cost mode.
-- [ ] Enforce the declared approval scopes/targets/resources at execution time, not only in the fingerprint.
+- [x] Wire the budget guard into planner and task-loop model-call boundaries; unknown-cost providers are rejected in zero-cost mode unless explicitly classified.
+- [x] Enforce exact tool-name scopes from approved plans and reject declared targets/resources/external egress that the current runtime cannot yet enforce (fail closed).
 - [ ] Complete stable IDs, explicit state-transition tests, and retry/idempotency metadata at tool boundaries.
 - **Gate:** invalid plans/arguments, stale approvals, paid or unknown-cost providers in zero-cost mode, and untrusted outputs cannot trigger unauthorized side effects. This increment does not yet pass the entire Phase 1 gate.
 
