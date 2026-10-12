@@ -29,10 +29,11 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add a versioned SQLite schema and journal primitives for runs, tasks, attempts, events, approvals, and artifact metadata.
 - [x] Add atomic writes, foreign-key constraints, unique event sequence enforcement, event cursor reads, and file-backed reopen tests.
 - [x] Add opt-in journal integration for `run()` and `chat()` with run/task IDs and created, started, completed, and failed events persisted around execution.
+- [x] Persist a stable ID and terminal status for the initial task attempt, including failed attempts; reject attempts being finished twice.
 - [ ] Define pause, cancel, retry, resume, and idempotency semantics before automatic recovery.
 - [ ] Preserve completed work and failed-task evidence across real process restarts.
 - [ ] Add fault-injection tests around crashes between side effects and checkpoint writes.
-- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. It does not yet provide automatic replay/recovery or authorize execution.
+- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Attempt records are evidence only: a process crash may leave an attempt marked running, and automatic replay/recovery, tool-level idempotency, and side-effect reconciliation are not implemented.
 
 ## Phase 3 — Tool catalog and procurement
 
