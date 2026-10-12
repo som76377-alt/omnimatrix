@@ -1,13 +1,13 @@
 import unittest
 
-from core.tools.base import Tool, ToolResult
+from core.tools.base import ToolResult
 from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
 from core.tools.request import ToolRequest
 
 
-class SideEffectTool(Tool):
+class SideEffectTool:
     name = "side-effect"
     description = "Test tool that records whether execution occurred."
     capabilities = frozenset({"testing"})
