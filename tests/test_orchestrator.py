@@ -159,10 +159,13 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
 
             with sqlite3.connect(database_path) as database:
                 run_rows = database.execute(
-                    "SELECT run_id, status FROM runs"
+                    "SELECT run_id, status, payload_json FROM runs"
                 ).fetchall()
                 task_rows = database.execute(
-                    "SELECT run_id, status FROM tasks"
+                    "SELECT run_id, status, payload_json FROM tasks"
+                ).fetchall()
+                attempt_rows = database.execute(
+                    "SELECT run_id, task_id, attempt_number, status, finished_at FROM attempts"
                 ).fetchall()
                 event_rows = database.execute(
                     "SELECT event_type, sequence FROM events ORDER BY sequence"
@@ -172,9 +175,73 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertEqual(run_rows[0][1], "completed")
             self.assertEqual(len(task_rows), 1)
             self.assertEqual(task_rows[0][1], "completed")
+            self.assertIn("Calculate 847 * 23", run_rows[0][2])
+            self.assertIn("Calculate 847 * 23", task_rows[0][2])
             self.assertEqual(
                 event_rows,
-                [("run_created", 0), ("task_started", 1), ("task_completed", 2)],
+                [
+                    ("run_created", 0),
+                    ("task_started", 1),
+                    ("attempt_started", 2),
+                    ("attempt_completed", 3),
+                    ("task_completed", 4),
+                ],
+            )
+            self.assertEqual(len(attempt_rows), 1)
+            self.assertEqual(attempt_rows[0][2], 1)
+            self.assertEqual(attempt_rows[0][3], "completed")
+            self.assertIsNotNone(attempt_rows[0][4])
+
+    def test_failed_run_persists_failed_attempt(self):
+        class FailingAdapter(ModelAdapter):
+            @property
+            def name(self):
+                return "failing-model"
+
+            @property
+            def provider(self):
+                return "test"
+
+            def generate(self, request: ModelRequest):
+                raise RuntimeError("synthetic provider failure")
+
+        model = ModelDefinition(
+            name="failing-model",
+            provider="test",
+            model_id="failing-model-v1",
+            capabilities=frozenset({"reasoning", "testing"}),
+            context_window=32000,
+            enabled=True,
+            metadata={"cost_class": "demo", "estimated_cost_usd": 0},
+        )
+        model_registry = ModelRegistry()
+        model_registry.register(model)
+        adapter_registry = AdapterRegistry()
+        adapter_registry.register(FailingAdapter())
+
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "failed.sqlite3"
+            with SQLiteJournal(database_path) as journal:
+                omnitrix = Omnitrix(
+                    registry=model_registry,
+                    adapter_registry=adapter_registry,
+                    journal=journal,
+                )
+                with self.assertRaisesRegex(RuntimeError, "synthetic provider failure"):
+                    omnitrix.run("A deliberately failing test task")
+            with sqlite3.connect(database_path) as database:
+                attempt = database.execute(
+                    "SELECT status, finished_at, payload_json FROM attempts"
+                ).fetchone()
+                events = database.execute(
+                    "SELECT event_type FROM events ORDER BY sequence"
+                ).fetchall()
+            self.assertEqual(attempt[0], "failed")
+            self.assertIsNotNone(attempt[1])
+            self.assertIn("RuntimeError", attempt[2])
+            self.assertEqual(
+                [event[0] for event in events],
+                ["run_created", "task_started", "attempt_started", "attempt_failed", "task_failed"],
             )
 
 

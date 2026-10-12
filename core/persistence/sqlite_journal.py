@@ -175,12 +175,17 @@ class SQLiteJournal:
         run_id = _required_text(run_id, "run_id")
         status = _required_text(status, "status")
         with self._transaction() as db:
-            cursor = db.execute(
-                "UPDATE runs SET status = ?, updated_at = ?, payload_json = ? WHERE run_id = ?",
-                (status, _now(), _json(dict(payload or {})), run_id),
-            )
-            if cursor.rowcount != 1:
+            row = db.execute(
+                "SELECT payload_json FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
                 raise KeyError(f"Unknown run_id: {run_id}")
+            merged_payload = json.loads(row["payload_json"])
+            merged_payload.update(dict(payload or {}))
+            db.execute(
+                "UPDATE runs SET status = ?, updated_at = ?, payload_json = ? WHERE run_id = ?",
+                (status, _now(), _json(merged_payload), run_id),
+            )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         run_id = _required_text(run_id, "run_id")
@@ -202,13 +207,19 @@ class SQLiteJournal:
         task_id = _required_text(task_id, "task_id")
         status = _required_text(status, "status")
         with self._transaction() as db:
+            row = db.execute(
+                "SELECT payload_json FROM tasks WHERE run_id = ? AND task_id = ?",
+                (run_id, task_id),
+            ).fetchone()
+            merged_payload = json.loads(row["payload_json"]) if row else {}
+            merged_payload.update(dict(payload or {}))
             db.execute(
                 """INSERT INTO tasks(run_id, task_id, status, updated_at, payload_json)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, task_id) DO UPDATE SET
                     status=excluded.status, updated_at=excluded.updated_at,
                     payload_json=excluded.payload_json""",
-                (run_id, task_id, status, _now(), _json(dict(payload or {}))),
+                (run_id, task_id, status, _now(), _json(merged_payload)),
             )
 
     def record_attempt(
@@ -230,6 +241,27 @@ class SQLiteJournal:
                 (attempt_id, run_id, task_id, attempt_number, status, _now(),
                  finished_at, _json(dict(payload or {}))),
             )
+
+    def finish_attempt(
+        self, attempt_id: str, status: str, payload: Mapping[str, Any] | None = None
+    ) -> None:
+        """Finish an open attempt once; unknown or already-finished IDs fail closed."""
+        attempt_id = _required_text(attempt_id, "attempt_id")
+        status = _required_text(status, "status")
+        with self._transaction() as db:
+            cursor = db.execute(
+                "UPDATE attempts SET status = ?, finished_at = ?, payload_json = ? "
+                "WHERE attempt_id = ? AND finished_at IS NULL",
+                (status, _now(), _json(dict(payload or {})), attempt_id),
+            )
+            if cursor.rowcount == 1:
+                return
+            row = db.execute(
+                "SELECT finished_at FROM attempts WHERE attempt_id = ?", (attempt_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown attempt_id: {attempt_id}")
+            raise RuntimeError(f"Attempt is already finished: {attempt_id}")
 
     def append_event(self, event: Any) -> None:
         """Persist a validated RunEvent without silently replacing duplicates."""
