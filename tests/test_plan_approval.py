@@ -5,6 +5,7 @@ from core.models.registry import ModelRegistry
 from core.orchestrator.omnitrix import Omnitrix
 from core.orchestrator.planning import (
     PlanApproval,
+    PlanExecutionContext,
     PlannedTask,
     TaskPlan,
     fingerprint_plan,
@@ -48,6 +49,38 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIsInstance(approval, PlanApproval)
         self.assertIs(approval.plan, self.plan)
         self.assertEqual(approval.fingerprint, fingerprint_plan(self.plan))
+
+    def test_fingerprint_binds_scope_targets_resources_verification_and_policy(self):
+        baseline = fingerprint_plan(self.plan)
+        contexts = [
+            PlanExecutionContext(tool_scopes=frozenset({"calculator"})),
+            PlanExecutionContext(targets=("workspace/project",)),
+            PlanExecutionContext(resources=("cpu:1",)),
+            PlanExecutionContext(verification=("run unit tests",)),
+            PlanExecutionContext(policy_version="2"),
+            PlanExecutionContext(spend_mode="paid_allowed"),
+            PlanExecutionContext(risk_tier="mutating"),
+            PlanExecutionContext(external_data_egress=True),
+        ]
+        for context in contexts:
+            with self.subTest(context=context):
+                changed = TaskPlan.from_tasks(self.plan.tasks, context=context)
+                self.assertNotEqual(fingerprint_plan(changed), baseline)
+
+    def test_preview_exposes_approval_sensitive_context(self):
+        plan = TaskPlan.from_tasks(
+            self.plan.tasks,
+            context=PlanExecutionContext(
+                tool_scopes=frozenset({"calculator"}),
+                targets=("workspace/project",),
+                verification=("run tests",),
+            ),
+        )
+        preview = self.omnitrix.preview_plan(plan)
+        self.assertIn("Spend mode: zero_cost_only", preview)
+        self.assertIn("Tool scopes: calculator", preview)
+        self.assertIn("Targets: workspace/project", preview)
+        self.assertIn("Verification: run tests", preview)
 
     def test_approved_execution_runs_the_approved_plan(self):
         approval = self.omnitrix.approve_plan(self.plan)
