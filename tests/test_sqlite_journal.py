@@ -59,6 +59,26 @@ class SQLiteJournalTests(unittest.TestCase):
             self.assertEqual(len(events), 1)
             self.assertEqual(events[0]["event_id"], "event-1")
 
+    def test_attempt_can_be_finished_once_and_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "attempts.sqlite3"
+            with SQLiteJournal(path) as journal:
+                journal.create_run("run-1")
+                journal.upsert_task("run-1", "task-1", "running")
+                journal.record_attempt("attempt-1", "run-1", "task-1", 1, "running")
+                journal.finish_attempt("attempt-1", "failed", {"error_type": "RuntimeError"})
+                with self.assertRaises(RuntimeError):
+                    journal.finish_attempt("attempt-1", "completed")
+            with SQLiteJournal(path) as journal:
+                with sqlite3.connect(path) as database:
+                    row = database.execute(
+                        "SELECT status, finished_at, payload_json FROM attempts WHERE attempt_id = ?",
+                        ("attempt-1",),
+                    ).fetchone()
+                self.assertEqual(row[0], "failed")
+                self.assertIsNotNone(row[1])
+                self.assertIn("RuntimeError", row[2])
+
     def test_unknown_run_cannot_be_updated(self):
         with SQLiteJournal(":memory:") as journal:
             with self.assertRaises(KeyError):
