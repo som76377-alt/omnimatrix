@@ -1,5 +1,9 @@
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
+from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.messages import MessageRole, ModelRequest
@@ -123,6 +127,55 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             tool_messages[0].tool_result.output,
             19481,
         )
+
+
+    def test_run_persists_task_lifecycle_to_sqlite(self):
+        model = ModelDefinition(
+            name="fake-tool-model",
+            provider="test",
+            model_id="fake-tool-model-v1",
+            capabilities=frozenset({"reasoning", "calculation"}),
+            context_window=32000,
+            enabled=True,
+            metadata={"cost_class": "demo", "estimated_cost_usd": 0},
+        )
+        model_registry = ModelRegistry()
+        model_registry.register(model)
+        adapter_registry = AdapterRegistry()
+        adapter_registry.register(FakeToolCallingAdapter())
+
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "journal.sqlite3"
+            with SQLiteJournal(database_path) as journal:
+                omnitrix = Omnitrix(
+                    registry=model_registry,
+                    adapter_registry=adapter_registry,
+                    tool_registry=build_tool_registry(),
+                    tool_permission=ToolPermission.from_capabilities({"calculation"}),
+                    journal=journal,
+                )
+                result = omnitrix.run("Calculate 847 * 23 using the calculator tool.")
+                self.assertEqual(result, "The result is 19,481.")
+
+            with sqlite3.connect(database_path) as database:
+                run_rows = database.execute(
+                    "SELECT run_id, status FROM runs"
+                ).fetchall()
+                task_rows = database.execute(
+                    "SELECT run_id, status FROM tasks"
+                ).fetchall()
+                event_rows = database.execute(
+                    "SELECT event_type, sequence FROM events ORDER BY sequence"
+                ).fetchall()
+
+            self.assertEqual(len(run_rows), 1)
+            self.assertEqual(run_rows[0][1], "completed")
+            self.assertEqual(len(task_rows), 1)
+            self.assertEqual(task_rows[0][1], "completed")
+            self.assertEqual(
+                event_rows,
+                [("run_created", 0), ("task_started", 1), ("task_completed", 2)],
+            )
 
 
 if __name__ == "__main__":
