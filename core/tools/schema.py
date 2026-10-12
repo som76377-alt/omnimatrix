@@ -104,10 +104,16 @@ def _nonnegative_number(value: Any, name: str) -> int | float:
     return value
 
 
+def _number(value: Any, name: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Schema {name!r} must be a number.")
+    return value
+
+
 def _check_numeric_bounds(value: int | float, schema: Mapping[str, Any], path: str) -> list[str]:
     errors = []
-    if "minimum" in schema and value < _nonnegative_number(schema["minimum"], "minimum"):
+    if "minimum" in schema and value < _number(schema["minimum"], "minimum"):
         errors.append(f"{path}: value is below minimum.")
-    if "maximum" in schema and value > _nonnegative_number(schema["maximum"], "maximum"):
+    if "maximum" in schema and value > _number(schema["maximum"], "maximum"):
         errors.append(f"{path}: value is above maximum.")
     return errors
