@@ -178,12 +178,30 @@ class Omnitrix:
         self.journal.update_run(run_id, "running")
         self.journal.upsert_task(run_id, task_id, "running")
         self._journal_event(run_id, 1, "task_started", task_id=task_id)
-        return run_id, 2
+        attempt_id = uuid.uuid4().hex
+        task.metadata["attempt_id"] = attempt_id
+        self.journal.record_attempt(
+            attempt_id,
+            run_id,
+            task_id,
+            1,
+            "running",
+            {"execution_kind": "task"},
+        )
+        self._journal_event(
+            run_id,
+            2,
+            "attempt_started",
+            task_id=task_id,
+            payload={"attempt_id": attempt_id, "attempt_number": 1},
+        )
+        return run_id, 3
 
     def _journal_finish_task(
         self,
         run_id: str | None,
         task_id: str | None,
+        attempt_id: str | None,
         sequence: int,
         status: str,
         error_type: str | None = None,
@@ -193,10 +211,19 @@ class Omnitrix:
         payload: dict[str, object] = {}
         if error_type is not None:
             payload["error_type"] = error_type
+        if attempt_id is not None:
+            self.journal.finish_attempt(attempt_id, status, payload)
+            self._journal_event(
+                run_id,
+                sequence,
+                "attempt_" + status,
+                task_id=task_id,
+                payload={"attempt_id": attempt_id, **payload},
+            )
         self.journal.upsert_task(run_id, task_id, status, payload)
         self.journal.update_run(run_id, status, payload)
         self._journal_event(
-            run_id, sequence, "task_" + status, task_id=task_id, payload=payload
+            run_id, sequence + 1, "task_" + status, task_id=task_id, payload=payload
         )
 
     def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
@@ -479,6 +506,7 @@ class Omnitrix:
         )
         run_id, next_sequence = self._journal_start_task(task)
         task_id = task.metadata.get("task_id")
+        attempt_id = task.metadata.get("attempt_id")
         try:
             result = self._execute_task(
                 task=task,
@@ -493,10 +521,12 @@ class Omnitrix:
             )
         except Exception as exc:
             self._journal_finish_task(
-                run_id, task_id, next_sequence, "failed", type(exc).__name__
+                run_id, task_id, attempt_id, next_sequence, "failed", type(exc).__name__
             )
             raise
-        self._journal_finish_task(run_id, task_id, next_sequence, "completed")
+        self._journal_finish_task(
+            run_id, task_id, attempt_id, next_sequence, "completed"
+        )
         return result
 
     def chat(self, conversation: Conversation, user_message: str) -> str:
@@ -509,6 +539,7 @@ class Omnitrix:
         )
         run_id, next_sequence = self._journal_start_task(task)
         task_id = task.metadata.get("task_id")
+        attempt_id = task.metadata.get("attempt_id")
         try:
             response = self._execute_task(
                 task=task,
@@ -516,10 +547,12 @@ class Omnitrix:
             )
         except Exception as exc:
             self._journal_finish_task(
-                run_id, task_id, next_sequence, "failed", type(exc).__name__
+                run_id, task_id, attempt_id, next_sequence, "failed", type(exc).__name__
             )
             raise
-        self._journal_finish_task(run_id, task_id, next_sequence, "completed")
+        self._journal_finish_task(
+            run_id, task_id, attempt_id, next_sequence, "completed"
+        )
         conversation.add_assistant_message(response)
         return response
 
