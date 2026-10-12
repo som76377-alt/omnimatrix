@@ -36,6 +36,7 @@ class PlanGenerationTests(unittest.TestCase):
                 name="fake-planner",
                 provider="test",
                 capabilities=frozenset({"reasoning"}),
+                metadata={"cost_class": "demo", "estimated_cost_usd": 0},
             )
         )
 

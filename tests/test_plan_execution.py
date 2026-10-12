@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 
 from core.orchestrator.omnitrix import Omnitrix
 from core.orchestrator.planning import PlannedTask, TaskPlan
@@ -26,7 +26,7 @@ class PlanExecutionTests(unittest.TestCase):
             ]
         )
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(
             list(results),
@@ -35,14 +35,18 @@ class PlanExecutionTests(unittest.TestCase):
         self.assertEqual(
             self.mock_run.call_args_list,
             [
-                call("Research topic"),
+                call("Research topic", _budget_guard=ANY, _allowed_tool_scopes=frozenset()),
                 call(
                     "Write report",
                     dependency_results={"research": "Completed: Research topic"},
+                    _budget_guard=ANY,
+                    _allowed_tool_scopes=frozenset(),
                 ),
                 call(
                     "Review report",
                     dependency_results={"report": "Completed: Write report"},
+                    _budget_guard=ANY,
+                    _allowed_tool_scopes=frozenset(),
                 ),
             ],
         )
@@ -57,7 +61,7 @@ class PlanExecutionTests(unittest.TestCase):
         )
         failure = RuntimeError("model unavailable")
 
-        def run_with_failure(objective):
+        def run_with_failure(objective, **kwargs):
             if objective == "Calculate results":
                 raise failure
             return f"Completed: {objective}"
@@ -65,14 +69,14 @@ class PlanExecutionTests(unittest.TestCase):
         self.mock_run.side_effect = run_with_failure
 
         with self.assertRaises(RuntimeError) as caught:
-            self.omnitrix.execute_plan(plan)
+            self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertIs(caught.exception, failure)
         self.assertEqual(
             self.mock_run.call_args_list,
             [
-                call("Research topic"),
-                call("Calculate results"),
+                call("Research topic", _budget_guard=ANY, _allowed_tool_scopes=frozenset()),
+                call("Calculate results", _budget_guard=ANY, _allowed_tool_scopes=frozenset()),
             ],
         )
 
@@ -84,12 +88,12 @@ class PlanExecutionTests(unittest.TestCase):
             ]
         )
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(list(results), ["first", "second"])
         self.assertEqual(
             self.mock_run.call_args_list,
-            [call("First task"), call("Second task")],
+            [call("First task", _budget_guard=ANY, _allowed_tool_scopes=frozenset()), call("Second task", _budget_guard=ANY, _allowed_tool_scopes=frozenset())],
         )
 
     def test_dependent_task_receives_only_direct_dependency_results(self):
@@ -123,7 +127,7 @@ class PlanExecutionTests(unittest.TestCase):
 
         self.mock_run.side_effect = run_with_results
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(results["review"], "Review result")
 
@@ -158,20 +162,20 @@ class PlanExecutionTests(unittest.TestCase):
 
         self.mock_run.side_effect = run_with_results
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(results["report"], "Final report")
 
     def test_rejects_non_task_plan_input(self):
-        with self.assertRaisesRegex(TypeError, "plan must be a TaskPlan"):
-            self.omnitrix.execute_plan("not a plan")
+        with self.assertRaises(TypeError):
+            self.omnitrix.execute_plan("not an approval")
 
         self.mock_run.assert_not_called()
 
     def test_empty_plan_returns_empty_results(self):
         plan = TaskPlan.from_tasks([])
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(results, {})
         self.mock_run.assert_not_called()

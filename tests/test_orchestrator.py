@@ -74,6 +74,7 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             capabilities=frozenset({"reasoning", "calculation"}),
             context_window=32000,
             enabled=True,
+            metadata={"cost_class": "demo", "estimated_cost_usd": 0},
         )
 
         model_registry = ModelRegistry()

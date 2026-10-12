@@ -29,3 +29,11 @@ Omnitrix has a working planning/task foundation, but worker handoffs, event enve
 ## Verification
 
 The acceptance checks for this increment are the repository CI workflow: Python compilation, demo config JSON validation, full unittest discovery, and an offline CLI smoke test. Do not mark the full Phase 1 gate complete solely because these structural contracts exist.
+
+
+## Runtime enforcement follow-up
+
+- Model calls reserve budget immediately before each provider invocation. The default spend mode is zero-cost-only; only explicit cost classes accepted by `BudgetGuard` pass. Missing classification is treated as unknown, not assumed free. The offline demo profile explicitly declares `cost_class: demo` and zero estimated cost. Production provider configuration remains unknown-cost until an operator explicitly classifies it and chooses a compatible spend policy.
+- Approved plan execution requires a fingerprint-bound `PlanApproval`. The public `execute_plan` entry point accepts an approval record, not a bare plan. The fingerprint verifies plan identity, not human consent; the calling interface must only create an approval after explicit user confirmation.
+- Plan tool scopes are exact tool names and are intersected with configured user capabilities. An empty scope authorizes no tools. Because the current tool contract has no generic target/resource enforcement model, plans that declare targets, resources, or external data egress are rejected before task execution rather than treated as enforced.
+- Budget enforcement is per run/approved plan, not a durable account-wide spending ledger. Provider-side price/quota changes and post-call billing variance are not yet reconciled; paid mode requires an explicit estimate and a configured cap.

@@ -340,7 +340,7 @@ class CoreTests(unittest.TestCase):
         expected_error = RuntimeError("tool execution exploded")
 
         class RaisingToolOmnitrix(Omnitrix):
-            def execute_tool(self, request):
+            def execute_tool(self, request, **kwargs):
                 raise expected_error
 
         registry = ModelRegistry()
