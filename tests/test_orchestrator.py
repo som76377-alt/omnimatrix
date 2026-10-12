@@ -177,8 +177,18 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertEqual(task_rows[0][1], "completed")
             self.assertEqual(
                 event_rows,
-                [("run_created", 0), ("task_started", 1), ("task_completed", 2)],
+                [
+                    ("run_created", 0),
+                    ("task_started", 1),
+                    ("attempt_started", 2),
+                    ("attempt_completed", 3),
+                    ("task_completed", 4),
+                ],
             )
+            self.assertEqual(len(attempt_rows), 1)
+            self.assertEqual(attempt_rows[0][2], 1)
+            self.assertEqual(attempt_rows[0][3], "completed")
+            self.assertIsNotNone(attempt_rows[0][4])
 
     def test_failed_run_persists_failed_attempt(self):
         class FailingAdapter(ModelAdapter):
