@@ -47,7 +47,7 @@ class RuntimePolicyTests(unittest.TestCase):
         registry = ModelRegistry()
         registry.register(ModelDefinition(
             name="counting-model",
-            provider="test",
+            provider="google",
             capabilities=frozenset({"reasoning"}),
             metadata=metadata or {},
         ))
