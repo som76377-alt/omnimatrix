@@ -159,10 +159,10 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
 
             with sqlite3.connect(database_path) as database:
                 run_rows = database.execute(
-                    "SELECT run_id, status FROM runs"
+                    "SELECT run_id, status, payload_json FROM runs"
                 ).fetchall()
                 task_rows = database.execute(
-                    "SELECT run_id, status FROM tasks"
+                    "SELECT run_id, status, payload_json FROM tasks"
                 ).fetchall()
                 attempt_rows = database.execute(
                     "SELECT run_id, task_id, attempt_number, status, finished_at FROM attempts"
@@ -175,6 +175,8 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertEqual(run_rows[0][1], "completed")
             self.assertEqual(len(task_rows), 1)
             self.assertEqual(task_rows[0][1], "completed")
+            self.assertIn("Calculate 847 * 23", run_rows[0][2])
+            self.assertIn("Calculate 847 * 23", task_rows[0][2])
             self.assertEqual(
                 event_rows,
                 [
