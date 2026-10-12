@@ -45,9 +45,9 @@ class SQLiteJournal:
     def __init__(self, path: str | Path) -> None:
         if not isinstance(path, (str, Path)):
             raise TypeError("path must be a string or pathlib.Path.")
-        self.path = str(path)
+        self.path = ":memory:" if str(path) == ":memory:" else str(Path(path).expanduser())
         if self.path != ":memory:":
-            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+            Path(self.path).resolve().parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(
             self.path, timeout=5.0, check_same_thread=False, isolation_level=None
