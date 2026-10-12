@@ -209,7 +209,7 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             name="failing-model",
             provider="test",
             model_id="failing-model-v1",
-            capabilities=frozenset({"reasoning"}),
+            capabilities=frozenset({"reasoning", "testing"}),
             context_window=32000,
             enabled=True,
             metadata={"cost_class": "demo", "estimated_cost_usd": 0},
