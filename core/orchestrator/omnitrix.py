@@ -128,9 +128,14 @@ class Omnitrix:
     def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
         """Reserve budget before contacting a provider; unknown is never free."""
         model = self.registry.get(model_name)
-        cost_class = model.metadata.get("cost_class", "demo" if model.provider == "demo" else "unknown")
+        cost_class = model.metadata.get(
+            "cost_class", "demo" if model.provider == "demo" else "unknown"
+        )
         estimated_cost = model.metadata.get("estimated_cost_usd")
-        guard.reserve_model_call(cost_class=cost_class, estimated_cost_usd=estimated_cost)
+        guard.reserve_model_call(
+            cost_class=cost_class,
+            estimated_cost_usd=estimated_cost,
+        )
 
     def propose_plan(self, objective: str) -> TaskPlan:
         """Generate and validate a task plan without executing it."""
@@ -304,7 +309,9 @@ class Omnitrix:
 
         context = approval.plan.context
         if context.spend_mode != self.budget_limits.spend_mode:
-            raise ValueError("Plan spend mode does not match the configured runtime budget policy.")
+            raise ValueError(
+                "Plan spend mode does not match the configured runtime budget policy."
+            )
         if context.targets or context.resources or context.external_data_egress:
             raise OmnitrixError(
                 ErrorCode.PERMISSION_DENIED,
@@ -326,7 +333,7 @@ class Omnitrix:
         allowed_tool_scopes: frozenset[str],
     ) -> dict[str, str]:
         """Internal dependency-aware execution after approval and policy checks."""
-        results: dict[str, str] = {};
+        results: dict[str, str] = {}
         completed: set[str] = set()
 
         while len(completed) < len(plan.tasks):
@@ -593,7 +600,10 @@ class Omnitrix:
         for tool in self.tool_registry.list():
             if not self.tool_permission.allows(tool.capabilities):
                 continue
-            if allowed_tool_scopes is not None and tool.name not in allowed_tool_scopes:
+            if (
+            allowed_tool_scopes is not None
+            and tool.name not in allowed_tool_scopes
+        ):
                 continue
 
             tools.append(
@@ -614,7 +624,10 @@ class Omnitrix:
         allowed_tool_scopes: frozenset[str] | None = None,
     ) -> ToolResult:
         """Check plan scope and budget before any tool can cause side effects."""
-        if allowed_tool_scopes is not None and request.tool_name not in allowed_tool_scopes:
+        if (
+            allowed_tool_scopes is not None
+            and request.tool_name not in allowed_tool_scopes
+        ):
             return ToolResult(
                 success=False,
                 error=f"Plan scope denied tool: {request.tool_name}",
