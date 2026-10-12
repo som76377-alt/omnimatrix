@@ -2,9 +2,12 @@ import json
 import logging
 from pathlib import Path
 import time
+from datetime import datetime, timezone
+import uuid
 
 from core.conversation import Conversation
-from core.contracts import BudgetGuard, BudgetLimits, ErrorCode, OmnitrixError
+from core.contracts import BudgetGuard, BudgetLimits, ErrorCode, OmnitrixError, RunEvent
+from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
 from core.models.messages import (
@@ -74,6 +77,7 @@ class Omnitrix:
         tool_permission: ToolPermission | None = None,
         max_tool_iterations: int = 8,
         budget_limits: BudgetLimits | None = None,
+        journal: SQLiteJournal | None = None,
     ) -> None:
         if isinstance(max_tool_iterations, bool) or not isinstance(
             max_tool_iterations, int
@@ -94,6 +98,9 @@ class Omnitrix:
         )
         self.max_tool_iterations = max_tool_iterations
         self.budget_limits = budget_limits or BudgetLimits()
+        if journal is not None and not isinstance(journal, SQLiteJournal):
+            raise TypeError("journal must be a SQLiteJournal or None.")
+        self.journal = journal
         self.tool_executor = ToolExecutor(self.tool_registry)
 
     @classmethod
@@ -105,6 +112,7 @@ class Omnitrix:
         tool_registry: ToolRegistry | None = None,
         tool_permission: ToolPermission | None = None,
         budget_limits: BudgetLimits | None = None,
+        journal: SQLiteJournal | None = None,
     ) -> "Omnitrix":
         """Create an Omnitrix instance from a model configuration file."""
 
@@ -123,6 +131,72 @@ class Omnitrix:
             tool_registry=tool_registry,
             tool_permission=tool_permission,
             budget_limits=budget_limits,
+            journal=journal,
+        )
+
+    def _journal_event(
+        self,
+        run_id: str,
+        sequence: int,
+        event_type: str,
+        *,
+        task_id: str | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        if self.journal is None:
+            return
+        self.journal.append_event(
+            RunEvent(
+                event_id=uuid.uuid4().hex,
+                run_id=run_id,
+                sequence=sequence,
+                event_type=event_type,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                task_id=task_id,
+                payload=payload or {},
+            )
+        )
+
+    def _journal_start_task(self, task: Task) -> tuple[str | None, int]:
+        """Persist the initial task states before any model or tool side effect."""
+        if self.journal is None:
+            task.start()
+            return None, 0
+
+        run_id = uuid.uuid4().hex
+        task_id = uuid.uuid4().hex
+        task.metadata["run_id"] = run_id
+        task.metadata["task_id"] = task_id
+        self.journal.create_run(
+            run_id, status="created", payload={"objective": task.objective}
+        )
+        self.journal.upsert_task(
+            run_id, task_id, "pending", {"objective": task.objective}
+        )
+        self._journal_event(run_id, 0, "run_created", task_id=task_id)
+        task.start()
+        self.journal.update_run(run_id, "running")
+        self.journal.upsert_task(run_id, task_id, "running")
+        self._journal_event(run_id, 1, "task_started", task_id=task_id)
+        return run_id, 2
+
+    def _journal_finish_task(
+        self,
+        run_id: str | None,
+        task_id: str | None,
+        sequence: int,
+        status: str,
+        error_type: str | None = None,
+    ) -> None:
+        if self.journal is None or run_id is None or task_id is None:
+            return
+        payload: dict[str, object] = {}
+        if error_type is not None:
+            payload["error_type"] = error_type
+        self.journal.upsert_task(run_id, task_id, status, payload)
+        self.journal.update_run(run_id, status, payload)
+        self._journal_event(
+            run_id, sequence, "task_" + status, task_id=task_id, payload=payload
         )
 
     def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
@@ -403,19 +477,27 @@ class Omnitrix:
             objective=objective,
             requirements=self.analyzer.analyze(objective),
         )
-        task.start()
-
-        return self._execute_task(
-            task=task,
-            messages=(
-                ModelMessage(
-                    role=MessageRole.USER,
-                    content=user_message,
+        run_id, next_sequence = self._journal_start_task(task)
+        task_id = task.metadata.get("task_id")
+        try:
+            result = self._execute_task(
+                task=task,
+                messages=(
+                    ModelMessage(
+                        role=MessageRole.USER,
+                        content=user_message,
+                    ),
                 ),
-            ),
-            budget_guard=_budget_guard or BudgetGuard(self.budget_limits),
-            allowed_tool_scopes=_allowed_tool_scopes,
-        )
+                budget_guard=_budget_guard or BudgetGuard(self.budget_limits),
+                allowed_tool_scopes=_allowed_tool_scopes,
+            )
+        except Exception as exc:
+            self._journal_finish_task(
+                run_id, task_id, next_sequence, "failed", type(exc).__name__
+            )
+            raise
+        self._journal_finish_task(run_id, task_id, next_sequence, "completed")
+        return result
 
     def chat(self, conversation: Conversation, user_message: str) -> str:
         """Process one conversational turn and update the conversation."""
@@ -425,13 +507,19 @@ class Omnitrix:
             objective=user_message,
             requirements=self.analyzer.analyze(user_message),
         )
-        task.start()
-
-        response = self._execute_task(
-            task=task,
-            messages=conversation.messages,
-        )
-
+        run_id, next_sequence = self._journal_start_task(task)
+        task_id = task.metadata.get("task_id")
+        try:
+            response = self._execute_task(
+                task=task,
+                messages=conversation.messages,
+            )
+        except Exception as exc:
+            self._journal_finish_task(
+                run_id, task_id, next_sequence, "failed", type(exc).__name__
+            )
+            raise
+        self._journal_finish_task(run_id, task_id, next_sequence, "completed")
         conversation.add_assistant_message(response)
         return response
 
