@@ -24,13 +24,15 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [ ] Complete stable IDs, explicit state-transition tests, and retry/idempotency metadata at tool boundaries.
 - **Gate:** invalid plans/arguments, stale approvals, paid or unknown-cost providers in zero-cost mode, and untrusted outputs cannot trigger unauthorized side effects. This increment does not yet pass the entire Phase 1 gate.
 
-## Phase 2 — Durable execution and recovery
+## Phase 2 — Durable execution and recovery (in progress)
 
-- Persist task records, state transitions, events, approvals, and artifact references in SQLite.
-- Define pause, cancel, retry, resume, and idempotency semantics.
-- Preserve completed work and failed-task evidence across restarts.
-- Add fault-injection tests around crashes between side effects and checkpoint writes.
-- **Gate:** restart/resume results match the declared state machine and never fabricate completion.
+- [x] Add a versioned SQLite schema and journal primitives for runs, tasks, attempts, events, approvals, and artifact metadata.
+- [x] Add atomic writes, foreign-key constraints, unique event sequence enforcement, event cursor reads, and file-backed reopen tests.
+- [ ] Connect the journal to the orchestrator lifecycle so state is written at the correct checkpoints.
+- [ ] Define pause, cancel, retry, resume, and idempotency semantics before automatic recovery.
+- [ ] Preserve completed work and failed-task evidence across real process restarts.
+- [ ] Add fault-injection tests around crashes between side effects and checkpoint writes.
+- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The current journal is a persistence foundation only; it does not yet provide automatic replay/recovery or authorize execution.
 
 ## Phase 3 — Tool catalog and procurement
 
