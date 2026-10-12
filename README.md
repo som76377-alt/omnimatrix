@@ -42,7 +42,7 @@ Type a message, then enter `/exit` to quit. The demo provider deliberately label
 
 Model profiles live under `config/`. The offline profile is `config/demo.models.json`; provider credentials must not be committed to the repository. The Gemini adapter reads `GEMINI_API_KEY` from the process environment. Set it in your shell only when intentionally testing live provider access, and verify the configured model identifier against the provider's current documentation before relying on it.
 
-No dependency lockfile or package manifest is currently present. Do not assume a third-party dependency installation command is required; first inspect imports and the CI results when changing the runtime environment.
+The current application and test suite use Python's standard library; there is no third-party runtime dependency manifest or lockfile at this stage, and CI intentionally installs no packages. Re-check imports and update the packaging/lock strategy and CI deliberately if a third-party dependency is introduced.
 
 ## Repository map
 
