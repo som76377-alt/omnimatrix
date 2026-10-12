@@ -1,1 +1,81 @@
-# omnimatrix
+# Omnitrix
+
+Omnitrix is an evolving, safety-minded AI orchestration project. It is intended to grow from a local chat-and-planning core into a system that can coordinate tools and specialized capabilities through explicit policies, verification, and durable execution state.
+
+> **Project status:** early Python CLI prototype. It is not yet a fully autonomous desktop agent, phone app, or general-purpose system that can safely execute arbitrary real-world tasks.
+
+## What exists today
+
+The current codebase includes:
+
+- An interactive command-line chat entry point.
+- A model/provider abstraction and configuration-driven provider loading.
+- An explicitly named offline demo provider that simulates responses without performing real model inference or external work.
+- Structured task planning, plan validation, dependency-aware ordering, and passing completed dependency results to downstream tasks as untrusted context.
+- A plan-approval fingerprint workflow and task lifecycle/execution observability.
+- A Python `unittest` suite covering the core, planning, providers, CLI, and tool behavior.
+
+Treat these as implemented foundations, not proof that every future capability is complete. Approval fingerprints currently cover the plan fields that exist today; an application must still obtain genuine user consent before executing an approved plan. The demo provider is simulated and must never be mistaken for live inference.
+
+## Quick start
+
+Use a Python interpreter compatible with the current codebase. The most recently validated development environment was Python 3.14.2.
+
+From the repository root:
+
+```bash
+python --version
+python -m unittest discover -s tests -v
+python -m compileall -q core interfaces tests
+python -m json.tool config/demo.models.json
+```
+
+Start an offline interactive session:
+
+```bash
+python -m interfaces.cli.main --config config/demo.models.json
+```
+
+Type a message, then enter `/exit` to quit. The demo provider deliberately labels its output as simulated. It does not call an external model.
+
+## Model configuration and secrets
+
+Model profiles live under `config/`. The offline profile is `config/demo.models.json`; provider credentials must not be committed to the repository. The Gemini adapter reads `GEMINI_API_KEY` from the process environment. Set it in your shell only when intentionally testing live provider access, and verify the configured model identifier against the provider's current documentation before relying on it.
+
+No dependency lockfile or package manifest is currently present. Do not assume a third-party dependency installation command is required; first inspect imports and the CI results when changing the runtime environment.
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| `core/orchestrator/` | Planning, validation, task lifecycle, and orchestration |
+| `core/models/` | Model types, registry, configuration loader, and provider adapters |
+| `core/tools/` | Tool contracts, permissions, registry, and execution |
+| `core/application/` | Chat application layer |
+| `core/conversation/` | Conversation state |
+| `interfaces/cli/` | Command-line entry point |
+| `config/` | Model profiles, including the offline demo profile |
+| `tests/` | Automated regression tests |
+| `docs/ARCHITECTURE.md` | Current design boundaries and safety assumptions |
+| `docs/ROADMAP.md` | Staged development plan |
+
+## Engineering rules
+
+- Prefer deterministic checks and explicit verification over trusting a model's claims of success.
+- Keep external side effects behind registered tools and permission checks.
+- Treat model-generated plans, tool output, and dependency results as untrusted input.
+- Make failures visible; do not report success unless the relevant verifier passed.
+- Preserve a zero-spend path through the offline demo provider. No silent fallback from a requested live provider to the demo provider.
+- Keep changes small enough to test, but never lower correctness or quality requirements for a less frequently used feature.
+
+## Development checks
+
+Run the unit test suite and bytecode compilation before submitting changes:
+
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q core interfaces tests
+python -m json.tool config/demo.models.json
+```
+
+The project is still establishing a reproducible baseline. See [Architecture](docs/ARCHITECTURE.md) for current boundaries and [Roadmap](docs/ROADMAP.md) for the intended staged sequence.
