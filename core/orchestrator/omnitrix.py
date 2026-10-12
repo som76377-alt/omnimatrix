@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 
 from core.conversation import Conversation
+from core.contracts import BudgetGuard, BudgetLimits, ErrorCode, OmnitrixError
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
 from core.models.messages import (
@@ -72,6 +73,7 @@ class Omnitrix:
         tool_registry: ToolRegistry | None = None,
         tool_permission: ToolPermission | None = None,
         max_tool_iterations: int = 8,
+        budget_limits: BudgetLimits | None = None,
     ) -> None:
         if isinstance(max_tool_iterations, bool) or not isinstance(
             max_tool_iterations, int
@@ -91,6 +93,7 @@ class Omnitrix:
             set()
         )
         self.max_tool_iterations = max_tool_iterations
+        self.budget_limits = budget_limits or BudgetLimits()
         self.tool_executor = ToolExecutor(self.tool_registry)
 
     @classmethod
@@ -101,6 +104,7 @@ class Omnitrix:
         adapter_registry: AdapterRegistry | None = None,
         tool_registry: ToolRegistry | None = None,
         tool_permission: ToolPermission | None = None,
+        budget_limits: BudgetLimits | None = None,
     ) -> "Omnitrix":
         """Create an Omnitrix instance from a model configuration file."""
 
@@ -118,7 +122,15 @@ class Omnitrix:
             adapter_registry=adapter_registry,
             tool_registry=tool_registry,
             tool_permission=tool_permission,
+            budget_limits=budget_limits,
         )
+
+    def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
+        """Reserve budget before contacting a provider; unknown is never free."""
+        model = self.registry.get(model_name)
+        cost_class = model.metadata.get("cost_class", "demo" if model.provider == "demo" else "unknown")
+        estimated_cost = model.metadata.get("estimated_cost_usd")
+        guard.reserve_model_call(cost_class=cost_class, estimated_cost_usd=estimated_cost)
 
     def propose_plan(self, objective: str) -> TaskPlan:
         """Generate and validate a task plan without executing it."""
@@ -171,6 +183,8 @@ class Omnitrix:
             ),
         )
 
+        guard = BudgetGuard(self.budget_limits)
+        self._reserve_model_call(guard, selected_model.name)
         response = adapter.generate(request)
 
         if response.tool_calls:
@@ -288,14 +302,31 @@ class Omnitrix:
                 "Approved plan fingerprint mismatch; execution was rejected."
             )
 
-        return self.execute_plan(approval.plan)
+        context = approval.plan.context
+        if context.spend_mode != self.budget_limits.spend_mode:
+            raise ValueError("Plan spend mode does not match the configured runtime budget policy.")
+        if context.targets or context.resources or context.external_data_egress:
+            raise OmnitrixError(
+                ErrorCode.PERMISSION_DENIED,
+                "Plan declares targets, resources, or external data egress that this runtime cannot yet enforce; execution was rejected.",
+            )
+        guard = BudgetGuard(self.budget_limits)
+        return self._execute_plan(approval.plan, guard, context.tool_scopes)
 
-    def execute_plan(self, plan: TaskPlan) -> dict[str, str]:
-        """Execute planned tasks in dependency order, stopping on failure."""
-        if not isinstance(plan, TaskPlan):
-            raise TypeError("plan must be a TaskPlan.")
+    def execute_plan(self, approval: PlanApproval) -> dict[str, str]:
+        """Execute a plan only through a fingerprint-bound approval record."""
+        if not isinstance(approval, PlanApproval):
+            raise TypeError("execute_plan requires a PlanApproval; use approve_plan after explicit review.")
+        return self.execute_approved_plan(approval)
 
-        results: dict[str, str] = {}
+    def _execute_plan(
+        self,
+        plan: TaskPlan,
+        guard: BudgetGuard,
+        allowed_tool_scopes: frozenset[str],
+    ) -> dict[str, str]:
+        """Internal dependency-aware execution after approval and policy checks."""
+        results: dict[str, str] = {};
         completed: set[str] = set()
 
         while len(completed) < len(plan.tasks):
@@ -313,9 +344,15 @@ class Omnitrix:
                 result = self.run(
                     planned_task.description,
                     dependency_results=dependency_results,
+                    _budget_guard=guard,
+                    _allowed_tool_scopes=allowed_tool_scopes,
                 )
             else:
-                result = self.run(planned_task.description)
+                result = self.run(
+                    planned_task.description,
+                    _budget_guard=guard,
+                    _allowed_tool_scopes=allowed_tool_scopes,
+                )
 
             results[planned_task.task_id] = result
             completed.add(planned_task.task_id)
@@ -326,6 +363,9 @@ class Omnitrix:
         self,
         objective: str,
         dependency_results: dict[str, str] | None = None,
+        *,
+        _budget_guard: BudgetGuard | None = None,
+        _allowed_tool_scopes: frozenset[str] | None = None,
     ) -> str:
         if dependency_results is not None:
             if not isinstance(dependency_results, dict):
@@ -365,6 +405,8 @@ class Omnitrix:
                     content=user_message,
                 ),
             ),
+            budget_guard=_budget_guard or BudgetGuard(self.budget_limits),
+            allowed_tool_scopes=_allowed_tool_scopes,
         )
 
     def chat(self, conversation: Conversation, user_message: str) -> str:
@@ -389,13 +431,20 @@ class Omnitrix:
         self,
         task: Task,
         messages: tuple[ModelMessage, ...],
+        budget_guard: BudgetGuard | None = None,
+        allowed_tool_scopes: frozenset[str] | None = None,
     ) -> str:
         """Execute a task and record its lifecycle."""
         started_at = time.perf_counter()
         _log_safely(logging.INFO, "task_started")
 
         try:
-            result = self._execute_task_inner(task=task, messages=messages)
+            result = self._execute_task_inner(
+                task=task,
+                messages=messages,
+                budget_guard=budget_guard or BudgetGuard(self.budget_limits),
+                allowed_tool_scopes=allowed_tool_scopes,
+            )
         except Exception as exc:
             if task.status == TaskStatus.RUNNING:
                 task.fail()
@@ -420,6 +469,8 @@ class Omnitrix:
         self,
         task: Task,
         messages: tuple[ModelMessage, ...],
+        budget_guard: BudgetGuard,
+        allowed_tool_scopes: frozenset[str] | None = None,
     ) -> str:
         """Execute a task against the selected model and authorized tools."""
         selected_model = self.router.select(task.requirements)
@@ -440,13 +491,14 @@ class Omnitrix:
 
         request = ModelRequest(
             messages=messages,
-            tools=self._get_authorized_model_tools(),
+            tools=self._get_authorized_model_tools(allowed_tool_scopes),
             instructions=self.DEFAULT_INSTRUCTIONS,
         )
 
         tool_iterations = 0
 
         while True:
+            self._reserve_model_call(budget_guard, selected_model.name)
             response = adapter.generate(request)
 
             if not response.tool_calls:
@@ -481,7 +533,9 @@ class Omnitrix:
                         ToolRequest(
                             tool_name=tool_call.tool_name,
                             arguments=tool_call.arguments,
-                        )
+                        ),
+                        budget_guard=budget_guard,
+                        allowed_tool_scopes=allowed_tool_scopes,
                     )
                 except Exception as exc:
                     _log_safely(
@@ -524,18 +578,22 @@ class Omnitrix:
                     + (assistant_message,)
                     + tuple(tool_messages)
                 ),
-                tools=request.tools,
+                tools=self._get_authorized_model_tools(allowed_tool_scopes),
                 continuation=response.continuation,
                 instructions=request.instructions,
             )
 
-    def _get_authorized_model_tools(self) -> tuple[ModelToolDefinition, ...]:
-        """Return model-visible tools permitted by the current execution context."""
+    def _get_authorized_model_tools(
+        self, allowed_tool_scopes: frozenset[str] | None = None
+    ) -> tuple[ModelToolDefinition, ...]:
+        """Return tools allowed by both user permissions and any plan scope."""
 
         tools: list[ModelToolDefinition] = []
 
         for tool in self.tool_registry.list():
             if not self.tool_permission.allows(tool.capabilities):
+                continue
+            if allowed_tool_scopes is not None and tool.name not in allowed_tool_scopes:
                 continue
 
             tools.append(
@@ -548,7 +606,22 @@ class Omnitrix:
 
         return tuple(tools)
 
-    def execute_tool(self, request: ToolRequest) -> ToolResult:
-        """Execute a tool request against the configured permissions."""
-
+    def execute_tool(
+        self,
+        request: ToolRequest,
+        *,
+        budget_guard: BudgetGuard | None = None,
+        allowed_tool_scopes: frozenset[str] | None = None,
+    ) -> ToolResult:
+        """Check plan scope and budget before any tool can cause side effects."""
+        if allowed_tool_scopes is not None and request.tool_name not in allowed_tool_scopes:
+            return ToolResult(
+                success=False,
+                error=f"Plan scope denied tool: {request.tool_name}",
+            )
+        guard = budget_guard or BudgetGuard(self.budget_limits)
+        try:
+            guard.reserve_tool_call()
+        except OmnitrixError as exc:
+            return ToolResult(success=False, error=str(exc))
         return self.tool_executor.execute(request, self.tool_permission)
