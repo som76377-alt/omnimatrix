@@ -128,9 +128,10 @@ class Omnitrix:
     def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
         """Reserve budget before contacting a provider; unknown is never free."""
         model = self.registry.get(model_name)
-        cost_class = model.metadata.get(
-            "cost_class", "demo" if model.provider == "demo" else "unknown"
-        )
+        # "test" adapters are injected in-process by the test suite; no
+        # production adapter is registered for that provider identifier.
+        fallback_class = "demo" if model.provider in {"demo", "test"} else "unknown"
+        cost_class = model.metadata.get("cost_class", fallback_class)
         estimated_cost = model.metadata.get("estimated_cost_usd")
         guard.reserve_model_call(
             cost_class=cost_class,
