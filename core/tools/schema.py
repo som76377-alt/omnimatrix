@@ -13,7 +13,7 @@ _SUPPORTED_TYPES = {"object", "array", "string", "number", "integer", "boolean",
 _SUPPORTED_KEYWORDS = {
     "type", "properties", "required", "additionalProperties", "enum",
     "items", "minLength", "maxLength", "minimum", "maximum",
-    "minItems", "maxItems",
+    "minItems", "maxItems", "title", "description", "default", "examples",
 }
 
 
