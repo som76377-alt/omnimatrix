@@ -12,14 +12,17 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Preserve an explicit zero-spend demo profile with clearly simulated output.
 - **Gate:** verified on a clean GitHub Actions checkout: the documented checks and offline CLI run passed without API credentials or paid model calls. Future dependency changes must update the packaging/lock strategy and CI deliberately.
 
-## Phase 1 — Domain and policy foundations
+## Phase 1 — Stabilize core contracts (in progress)
 
-- Make plan, task, tool request, and worker result structures explicit and versionable.
-- Validate unknown tools, malformed arguments, invalid dependencies/cycles, missing dependencies, and invalid state transitions at trust boundaries.
-- Extend approval fingerprints to cover every execution-relevant field, including requested capability/scopes, targets, resources, cost policy, and verification requirements.
-- Separate user approval from plan construction and from execution; reject stale approvals.
-- Define typed worker outcomes and safe error categories.
-- **Gate:** tests demonstrate that malformed plans, invalid arguments, stale approvals, and paid-provider use in zero-cost mode cannot cause side effects.
+- [x] Add versioned worker request/result, trust-labelled context, structured run-event, and normalized error contracts.
+- [x] Add deterministic model/tool budget primitives with a strict zero-cost default and unit tests.
+- [x] Bind plan fingerprints to declared tool scopes, targets, resources, verification criteria, policy version, spend mode, risk tier, and external-egress intent.
+- [x] Show approval-sensitive context in the human-readable plan preview.
+- [x] Validate tool arguments against a documented JSON Schema subset before tool execution; malformed/unsupported schemas fail closed.
+- [ ] Wire the budget guard into every model/provider call boundary with explicit cost classification and test that paid/unknown-cost providers cannot run in zero-cost mode.
+- [ ] Enforce the declared approval scopes/targets/resources at execution time, not only in the fingerprint.
+- [ ] Complete stable IDs, explicit state-transition tests, and retry/idempotency metadata at tool boundaries.
+- **Gate:** invalid plans/arguments, stale approvals, paid or unknown-cost providers in zero-cost mode, and untrusted outputs cannot trigger unauthorized side effects. This increment does not yet pass the entire Phase 1 gate.
 
 ## Phase 2 — Durable execution and recovery
 
