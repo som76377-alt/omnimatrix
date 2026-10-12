@@ -13,7 +13,7 @@ class PlanContextTests(unittest.TestCase):
     def test_run_includes_dependency_results_in_user_message(self):
         captured = {}
 
-        def capture_task(task, messages):
+        def capture_task(task, messages, **kwargs):
             captured["messages"] = messages
             return "captured"
 
