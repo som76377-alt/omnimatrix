@@ -225,7 +225,22 @@ class Omnitrix:
         if not isinstance(plan, TaskPlan):
             raise TypeError("plan must be a TaskPlan.")
 
-        lines = ["Omnitrix execution plan:"]
+        context = plan.context
+        lines = [
+            "Omnitrix execution plan:",
+            f"Spend mode: {context.spend_mode}",
+            f"Risk tier: {context.risk_tier}",
+            f"Policy version: {context.policy_version}",
+            f"External data egress requested: {context.external_data_egress}",
+        ]
+        if context.tool_scopes:
+            lines.append("Tool scopes: " + ", ".join(sorted(context.tool_scopes)))
+        if context.targets:
+            lines.append("Targets: " + ", ".join(context.targets))
+        if context.resources:
+            lines.append("Resources: " + ", ".join(context.resources))
+        if context.verification:
+            lines.append("Verification: " + "; ".join(context.verification))
         completed: set[str] = set()
         step = 1
 
