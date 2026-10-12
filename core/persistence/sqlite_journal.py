@@ -231,6 +231,27 @@ class SQLiteJournal:
                  finished_at, _json(dict(payload or {}))),
             )
 
+    def finish_attempt(
+        self, attempt_id: str, status: str, payload: Mapping[str, Any] | None = None
+    ) -> None:
+        """Finish an open attempt once; unknown or already-finished IDs fail closed."""
+        attempt_id = _required_text(attempt_id, "attempt_id")
+        status = _required_text(status, "status")
+        with self._transaction() as db:
+            cursor = db.execute(
+                "UPDATE attempts SET status = ?, finished_at = ?, payload_json = ? "
+                "WHERE attempt_id = ? AND finished_at IS NULL",
+                (status, _now(), _json(dict(payload or {})), attempt_id),
+            )
+            if cursor.rowcount == 1:
+                return
+            row = db.execute(
+                "SELECT finished_at FROM attempts WHERE attempt_id = ?", (attempt_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown attempt_id: {attempt_id}")
+            raise RuntimeError(f"Attempt is already finished: {attempt_id}")
+
     def append_event(self, event: Any) -> None:
         """Persist a validated RunEvent without silently replacing duplicates."""
         required = ("event_id", "run_id", "sequence", "event_type", "timestamp",
