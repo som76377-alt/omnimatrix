@@ -2,15 +2,15 @@
 
 This roadmap distinguishes shipped foundations from target capabilities. A phase is complete only when its acceptance tests and verification evidence exist; a document or UI label alone does not make a capability complete.
 
-## Phase 0 — Reproducible baseline (in progress)
+## Phase 0 — Reproducible baseline (complete)
 
-- [x] Describe how to run the CLI and current implementation boundaries.
+- [x] Document CLI startup, current capabilities, and implementation boundaries.
 - [x] Document architecture and staged roadmap.
-- [ ] Standardize the environment/dependency story from observed imports and CI, not guesswork.
-- [ ] Establish automated CI for unit tests, compilation, JSON config validation, and offline CLI smoke test.
-- [ ] Ignore generated caches and remove tracked bytecode artifacts.
-- [ ] Keep an explicit zero-spend demo configuration.
-- **Gate:** a fresh checkout can run the documented checks and the offline demo without credentials or paid API calls.
+- [x] Record the environment/dependency baseline: CI uses Python 3.14, and the current repository has no third-party dependency manifest or lockfile.
+- [x] Add CI for compilation, demo JSON validation, unit tests, and offline CLI smoke test.
+- [x] Ignore local environments, secrets, and generated development artifacts; remove tracked Python bytecode.
+- [x] Preserve an explicit zero-spend demo profile with clearly simulated output.
+- **Gate:** verified on a clean GitHub Actions checkout: the documented checks and offline CLI run passed without API credentials or paid model calls. Future dependency changes must update the manifest/lock strategy and CI deliberately.
 
 ## Phase 1 — Domain and policy foundations
 
