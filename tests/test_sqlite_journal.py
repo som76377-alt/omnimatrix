@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -52,7 +53,7 @@ class SQLiteJournalTests(unittest.TestCase):
             first = RunEvent("event-1", "run-1", 0, "started", now, {"n": 1})
             second = RunEvent("event-2", "run-1", 0, "finished", now, {"n": 2})
             journal.append_event(first)
-            with self.assertRaises(Exception):
+            with self.assertRaises(sqlite3.IntegrityError):
                 journal.append_event(second)
             events = journal.list_events("run-1")
             self.assertEqual(len(events), 1)
@@ -65,7 +66,7 @@ class SQLiteJournalTests(unittest.TestCase):
 
     def test_foreign_key_rejects_task_without_run(self):
         with SQLiteJournal(":memory:") as journal:
-            with self.assertRaises(Exception):
+            with self.assertRaises(sqlite3.IntegrityError):
                 journal.upsert_task("missing-run", "task-1", "pending")
 
     def test_json_payload_must_be_serializable(self):
