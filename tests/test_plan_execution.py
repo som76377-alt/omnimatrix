@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 
 from core.orchestrator.omnitrix import Omnitrix
 from core.orchestrator.planning import PlannedTask, TaskPlan
@@ -26,7 +26,7 @@ class PlanExecutionTests(unittest.TestCase):
             ]
         )
 
-        results = self.omnitrix.execute_plan(plan)
+        results = self.omnitrix.execute_approved_plan(self.omnitrix.approve_plan(plan))
 
         self.assertEqual(
             list(results),
@@ -35,14 +35,18 @@ class PlanExecutionTests(unittest.TestCase):
         self.assertEqual(
             self.mock_run.call_args_list,
             [
-                call("Research topic"),
+                call("Research topic", _budget_guard=ANY, _allowed_tool_scopes=frozenset()),
                 call(
                     "Write report",
                     dependency_results={"research": "Completed: Research topic"},
+                    _budget_guard=ANY,
+                    _allowed_tool_scopes=frozenset(),
                 ),
                 call(
                     "Review report",
                     dependency_results={"report": "Completed: Write report"},
+                    _budget_guard=ANY,
+                    _allowed_tool_scopes=frozenset(),
                 ),
             ],
         )
@@ -72,7 +76,7 @@ class PlanExecutionTests(unittest.TestCase):
             self.mock_run.call_args_list,
             [
                 call("Research topic"),
-                call("Calculate results"),
+                call("Calculate results", _budget_guard=ANY, _allowed_tool_scopes=frozenset()),
             ],
         )
 
@@ -89,7 +93,7 @@ class PlanExecutionTests(unittest.TestCase):
         self.assertEqual(list(results), ["first", "second"])
         self.assertEqual(
             self.mock_run.call_args_list,
-            [call("First task"), call("Second task")],
+            [call("First task", _budget_guard=ANY, _allowed_tool_scopes=frozenset()), call("Second task", _budget_guard=ANY, _allowed_tool_scopes=frozenset())],
         )
 
     def test_dependent_task_receives_only_direct_dependency_results(self):
