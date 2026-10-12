@@ -23,4 +23,4 @@ Omnitrix is an evolving AI orchestration prototype. The intended request lifecyc
 
 ## Current limitations
 
-The project is still a prototype. Persistent fault recovery, complete enforcement of approval at every execution boundary, broader external tool adapters, procurement, advanced model routing, Android control, live remote workspace, and voice/multimodal features must not be described as complete until implemented and tested. See `docs/ROADMAP.md` for staged goals and acceptance gates.
+The project is still a prototype. Automatic restart/resume recovery, lifecycle-integrated persistence, complete enforcement of approval at every execution boundary, broader external tool adapters, procurement, advanced model routing, Android control, live remote workspace, and voice/multimodal features must not be described as complete until implemented and tested. See `docs/ROADMAP.md` for staged goals and acceptance gates.
