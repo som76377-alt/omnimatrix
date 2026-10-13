@@ -53,6 +53,8 @@ class RecoveryServiceTests(unittest.TestCase):
     def test_attempt_referring_to_missing_task_blocks_recovery(self):
         with SQLiteJournal(":memory:") as journal:
             journal.create_run("run-1", status="running")
+            # Simulate a malformed legacy/manual database edit that bypassed FK checks.
+            journal._connection.execute("PRAGMA foreign_keys = OFF")
             with journal._transaction() as db:
                 db.execute(
                     """INSERT INTO tasks(run_id, task_id, status, updated_at, payload_json)
