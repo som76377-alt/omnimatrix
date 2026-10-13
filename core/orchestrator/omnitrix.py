@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -157,6 +158,31 @@ class Omnitrix:
             )
         )
 
+    def _journal_checkpoint(
+        self,
+        task: Task,
+        checkpoint_type: str,
+        payload: dict[str, object],
+    ) -> None:
+        """Persist a minimal execution-boundary record without prompt/output contents."""
+        if self.journal is None:
+            return
+        run_id = task.metadata.get("run_id")
+        if not isinstance(run_id, str):
+            return
+        sequence = task.metadata.get("checkpoint_sequence", 0)
+        if isinstance(sequence, bool) or not isinstance(sequence, int):
+            raise RuntimeError("Invalid in-memory checkpoint sequence.")
+        checkpoint_id = f"{run_id}:checkpoint:{sequence}"
+        self.journal.save_checkpoint(
+            run_id,
+            checkpoint_id,
+            sequence,
+            checkpoint_type,
+            payload,
+        )
+        task.metadata["checkpoint_sequence"] = sequence + 1
+
     def _journal_start_task(self, task: Task) -> tuple[str | None, int]:
         """Persist the initial task states before any model or tool side effect."""
         if self.journal is None:
@@ -194,6 +220,16 @@ class Omnitrix:
             "attempt_started",
             task_id=task_id,
             payload={"attempt_id": attempt_id, "attempt_number": 1},
+        )
+        task.metadata["checkpoint_sequence"] = 0
+        self._journal_checkpoint(
+            task,
+            "task_started",
+            {
+                "task_id": task_id,
+                "attempt_id": attempt_id,
+                "objective_sha256": hashlib.sha256(task.objective.encode("utf-8")).hexdigest(),
+            },
         )
         return run_id, 3
 
@@ -627,8 +663,31 @@ class Omnitrix:
         tool_iterations = 0
 
         while True:
+            self._journal_checkpoint(
+                task,
+                "model_request_started",
+                {
+                    "model_name": selected_model.name,
+                    "tool_iterations": tool_iterations,
+                    "message_count": len(request.messages),
+                    "available_tool_names": [tool.name for tool in request.tools],
+                },
+            )
             self._reserve_model_call(budget_guard, selected_model.name)
             response = adapter.generate(request)
+            self._journal_checkpoint(
+                task,
+                "model_response_received",
+                {
+                    "model_name": selected_model.name,
+                    "tool_iterations": tool_iterations,
+                    "tool_call_count": len(response.tool_calls),
+                    "tool_names": [call.tool_name for call in response.tool_calls],
+                    "response_sha256": hashlib.sha256(
+                        response.content.encode("utf-8")
+                    ).hexdigest(),
+                },
+            )
 
             if not response.tool_calls:
                 task.complete()
@@ -680,6 +739,22 @@ class Omnitrix:
                 else:
                     idempotency_key = None
 
+                self._journal_checkpoint(
+                    task,
+                    "tool_call_prepared",
+                    {
+                        "logical_action_id": logical_action_id,
+                        "tool_name": tool_call.tool_name,
+                        "tool_arguments_sha256": hashlib.sha256(
+                            json.dumps(
+                                tool_call.arguments,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode("utf-8")
+                        ).hexdigest(),
+                    },
+                )
                 try:
                     tool_result = self.execute_tool(
                         ToolRequest(
@@ -706,6 +781,23 @@ class Omnitrix:
                     )
                     raise
 
+                self._journal_checkpoint(
+                    task,
+                    "tool_call_result_received",
+                    {
+                        "logical_action_id": logical_action_id,
+                        "tool_name": tool_call.tool_name,
+                        "success": tool_result.success,
+                        "output_sha256": hashlib.sha256(
+                            str(tool_result.output).encode("utf-8")
+                        ).hexdigest(),
+                        "error_type": (
+                            type(tool_result.error).__name__
+                            if tool_result.error is not None
+                            else None
+                        ),
+                    },
+                )
                 _log_safely(
                     logging.INFO if tool_result.success else logging.WARNING,
                     "tool_completed" if tool_result.success else "tool_failed",
