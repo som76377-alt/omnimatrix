@@ -4,7 +4,7 @@
 
 **Version:** 1.3 — Research-audited architecture and implementation specification with synchronized implementation status  
 **Research / snapshot date:** 11 October 2026  
-**Implementation status snapshot:** 13 October 2026, checked against `som76377-alt/omnimatrix` branch `main` at the time of this revision  
+**Implementation status snapshot:** 13 October 2026, checked against `som76377-alt/omnimatrix` branch `phase2/durable-checkpoints-and-recovery-inspection` in PR #18; CI passed before merge  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
