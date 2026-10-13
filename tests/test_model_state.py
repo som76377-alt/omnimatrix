@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import json
 import unittest
 
 from core.models.base import ModelResponse
@@ -90,9 +92,11 @@ class ModelStateCodecTests(unittest.TestCase):
     def test_unknown_payload_fields_are_rejected(self):
         envelope = encode_model_state(self.response)
         envelope["payload"]["unexpected"] = True
-        # Re-signing is intentionally not an exposed operation; an invalid digest
-        # must fail before any unknown-field interpretation.
-        with self.assertRaises(ModelStateCodecError):
+        canonical = json.dumps(
+            envelope["payload"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        envelope["payload_sha256"] = hashlib.sha256(canonical).hexdigest()
+        with self.assertRaisesRegex(ModelStateCodecError, "invalid shape"):
             decode_model_state(envelope)
 
     def test_non_json_continuation_state_is_rejected(self):
