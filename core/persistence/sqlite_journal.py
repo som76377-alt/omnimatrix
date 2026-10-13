@@ -498,6 +498,25 @@ class SQLiteJournal:
                 results.append(record)
         return results
 
+    def list_tool_executions(self, run_id: str) -> list[dict[str, Any]]:
+        """List every tool execution for a run without exposing raw arguments."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT execution_id, idempotency_key, logical_action_id, tool_name,
+                          request_sha256, run_id, task_id, attempt_id, status,
+                          started_at, finished_at, outcome_json
+                   FROM tool_executions WHERE run_id = ?
+                   ORDER BY started_at, execution_id""",
+                (run_id,),
+            ).fetchall()
+        records = []
+        for row in rows:
+            item = dict(row)
+            item["outcome"] = json.loads(item.pop("outcome_json"))
+            records.append(item)
+        return records
+
     def save_checkpoint(
         self,
         run_id: str,
