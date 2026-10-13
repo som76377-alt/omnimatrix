@@ -9,7 +9,7 @@ from core.tools.base import ToolResult
 from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
-from core.tools.request import ToolRequest
+from core.tools.request import ToolRequest, stable_tool_idempotency_key
 
 
 class SideEffectTool:
@@ -81,6 +81,63 @@ class ToolSchemaValidationTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("Invalid tool schema", result.error)
         self.assertEqual(self.tool.calls, 0)
+
+    def test_stable_logical_action_key_blocks_duplicate_across_attempt_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "cross-attempt.sqlite3"
+            key1 = stable_tool_idempotency_key("run-1", "task-1", "iteration:1:call:0")
+            key2 = stable_tool_idempotency_key("run-1", "task-1", "iteration:1:call:0")
+            self.assertEqual(key1, key2)
+            self.assertNotEqual(
+                key1,
+                stable_tool_idempotency_key("run-1", "task-1", "iteration:1:call:1"),
+            )
+            with SQLiteJournal(database_path) as journal:
+                first = ToolExecutor(self.registry, journal=journal).execute(
+                    ToolRequest(
+                        tool_name="side-effect",
+                        arguments={"path": "artifact.txt"},
+                        run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+                        logical_action_id="iteration:1:call:0", idempotency_key=key1,
+                    ),
+                    self.permission,
+                )
+                self.assertTrue(first.success)
+                second = ToolExecutor(self.registry, journal=journal).execute(
+                    ToolRequest(
+                        tool_name="side-effect",
+                        arguments={"path": "artifact.txt"},
+                        run_id="run-1", task_id="task-1", attempt_id="attempt-2",
+                        logical_action_id="iteration:1:call:0", idempotency_key=key2,
+                    ),
+                    self.permission,
+                )
+                self.assertFalse(second.success)
+                self.assertEqual(second.metadata["prior_status"], "succeeded")
+                self.assertEqual(self.tool.calls, 1)
+
+    def test_reusing_logical_action_key_with_changed_arguments_fails_closed(self):
+        with SQLiteJournal(":memory:") as journal:
+            key = stable_tool_idempotency_key("run-1", "task-1", "iteration:1:call:0")
+            executor = ToolExecutor(self.registry, journal=journal)
+            first = executor.execute(
+                ToolRequest(
+                    tool_name="side-effect", arguments={"path": "one.txt"},
+                    run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+                    logical_action_id="iteration:1:call:0", idempotency_key=key,
+                ), self.permission,
+            )
+            self.assertTrue(first.success)
+            second = executor.execute(
+                ToolRequest(
+                    tool_name="side-effect", arguments={"path": "two.txt"},
+                    run_id="run-1", task_id="task-1", attempt_id="attempt-2",
+                    logical_action_id="iteration:1:call:0", idempotency_key=key,
+                ), self.permission,
+            )
+            self.assertFalse(second.success)
+            self.assertIn("different request", second.error)
+            self.assertEqual(self.tool.calls, 1)
 
     def test_duplicate_idempotency_key_is_not_executed_again_after_reopen(self):
         with tempfile.TemporaryDirectory() as directory:
