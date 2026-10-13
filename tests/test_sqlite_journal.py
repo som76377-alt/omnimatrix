@@ -216,10 +216,76 @@ class SQLiteJournalTests(unittest.TestCase):
                     "execution-1", "confirmed_applied", {"source": "check"}, "operator"
                 )
 
+    def test_replayable_result_is_committed_and_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "replay.sqlite3"
+            with SQLiteJournal(path) as journal:
+                journal.begin_tool_execution(
+                    "execution-replay", "key-replay", "calculator", "request-hash"
+                )
+                journal.finish_tool_execution(
+                    "execution-replay", "succeeded", {"success": True},
+                    replay_result={
+                        "policy": "deterministic_json_v1",
+                        "output": {"answer": 42, "units": "none"},
+                    },
+                )
+            with SQLiteJournal(path) as journal:
+                snapshot = journal.get_replayable_tool_result("execution-replay")
+                self.assertEqual(snapshot["replay_policy"], "deterministic_json_v1")
+                self.assertEqual(snapshot["output"], {"answer": 42, "units": "none"})
+                self.assertEqual(len(snapshot["result_sha256"]), 64)
+
+    def test_replay_result_digest_tampering_fails_closed(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.begin_tool_execution(
+                "execution-replay", "key-replay", "calculator", "request-hash"
+            )
+            journal.finish_tool_execution(
+                "execution-replay", "succeeded", {"success": True},
+                replay_result={"policy": "deterministic_json_v1", "output": 42},
+            )
+            journal._connection.execute(
+                "UPDATE tool_result_snapshots SET result_json = '99' "
+                "WHERE execution_id = 'execution-replay'"
+            )
+            with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
+                journal.get_replayable_tool_result("execution-replay")
+
+    def test_invalid_replay_snapshot_does_not_commit_terminal_status(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.begin_tool_execution(
+                "execution-replay", "key-replay", "calculator", "request-hash"
+            )
+            with self.assertRaises(ValueError):
+                journal.finish_tool_execution(
+                    "execution-replay", "succeeded", {"success": True},
+                    replay_result={"policy": "unapproved_policy", "output": 42},
+                )
+            record = journal.list_tool_executions("run-unused") if False else None
+            with journal._lock:
+                status = journal._connection.execute(
+                    "SELECT status FROM tool_executions WHERE execution_id = ?",
+                    ("execution-replay",),
+                ).fetchone()["status"]
+            self.assertEqual(status, "running")
+            self.assertIsNone(journal.get_replayable_tool_result("execution-replay"))
+
+    def test_tool_without_replay_snapshot_is_not_replayable(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.begin_tool_execution(
+                "execution-no-snapshot", "key-no-snapshot", "custom-tool", "request-hash"
+            )
+            journal.finish_tool_execution(
+                "execution-no-snapshot", "succeeded", {"success": True}
+            )
+            self.assertIsNone(journal.get_replayable_tool_result("execution-no-snapshot"))
+
     def test_schema_v1_database_is_migrated_to_tool_execution_table(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "migration.sqlite3"
             with SQLiteJournal(path) as journal:
+                journal._connection.execute("DROP TABLE tool_result_snapshots")
                 journal._connection.execute("DROP TABLE checkpoints")
                 journal._connection.execute("DROP TABLE tool_reconciliations")
                 journal._connection.execute("DROP TABLE tool_executions")
@@ -234,10 +300,11 @@ class SQLiteJournalTests(unittest.TestCase):
                             "SELECT name FROM sqlite_master WHERE type = 'table'"
                         )
                     }
-                self.assertEqual(version, 4)
+                self.assertEqual(version, 5)
                 self.assertIn("tool_executions", tables)
                 self.assertIn("tool_reconciliations", tables)
                 self.assertIn("checkpoints", tables)
+                self.assertIn("tool_result_snapshots", tables)
                 columns = {
                     row[1] for row in database.execute("PRAGMA table_info(tool_executions)")
                 }
