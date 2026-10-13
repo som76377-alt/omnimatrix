@@ -45,10 +45,34 @@ class RecoveryServiceTests(unittest.TestCase):
         with SQLiteJournal(":memory:") as journal:
             journal.create_run("run-1", status="running")
             journal.save_checkpoint("run-1", "checkpoint-0", 0, "task_boundary", {"step": 0})
-            journal.save_checkpoint("run-1", "checkpoint-2", 2, "task_boundary", {"step": 2})
+            with journal._transaction() as db:
+                db.execute(
+                    "UPDATE checkpoints SET sequence = 2 WHERE checkpoint_id = ?",
+                    ("checkpoint-0",),
+                )
             inspection = RecoveryService(journal).inspect("run-1")
             self.assertEqual(inspection.decision.disposition, "blocked_unknown_state")
             self.assertTrue(any("sequence gap" in error for error in inspection.integrity_errors))
+
+    def test_checkpoint_append_rejects_sequence_gaps(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-1", status="running")
+            with self.assertRaisesRegex(ValueError, "next contiguous value"):
+                journal.save_checkpoint("run-1", "checkpoint-1", 1, "task_boundary", {"step": 1})
+
+    def test_malformed_checkpoint_json_blocks_inspection_instead_of_raising(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-1", status="running")
+            journal.save_checkpoint("run-1", "checkpoint-0", 0, "task_boundary", {"step": 0})
+            with journal._transaction() as db:
+                db.execute(
+                    "UPDATE checkpoints SET payload_json = ? WHERE checkpoint_id = ?",
+                    ("{malformed", "checkpoint-0"),
+                )
+            inspection = RecoveryService(journal).inspect("run-1")
+            self.assertEqual(inspection.decision.disposition, "blocked_unknown_state")
+            self.assertTrue(inspection.integrity_errors)
+            self.assertFalse(inspection.can_auto_resume)
 
     def test_attempt_referring_to_missing_task_blocks_recovery(self):
         with SQLiteJournal(":memory:") as journal:
