@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 
 TERMINAL_RUN_STATUSES = frozenset(
-    {"succeeded", "failed", "cancelled", "partial", "expired"}
+    {"completed", "succeeded", "failed", "cancelled", "partial", "expired"}
 )
 UNCERTAIN_TOOL_STATUSES = frozenset({"running", "unknown"})
 
