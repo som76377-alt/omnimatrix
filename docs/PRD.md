@@ -4,7 +4,7 @@
 
 **Version:** 1.14 — Recovery-position validation  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/recovery-position-validator`; recovery inspection correlates schema-v6 model transcript metadata with ordered model checkpoints; crash-gap tests added, CI pending  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/recovery-position-validator`, PR #29; recovery inspection correlates schema-v6 model transcript metadata with ordered model checkpoints; CI run #297 passed 303 tests, compile/config validation and offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
