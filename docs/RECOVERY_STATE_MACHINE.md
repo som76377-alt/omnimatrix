@@ -15,7 +15,7 @@ The implementation is `core/persistence/recovery.py`; persisted snapshots are pr
 | Disposition | Condition | Allowed next step |
 |---|---|---|
 | `not_found` | No run record exists | Stop; do not infer a run from task/tool records |
-| `terminal` | Run status is succeeded, failed, cancelled, partial, or expired | Show recorded outcome; do not resume |
+| `terminal` | Run status is completed, succeeded, failed, cancelled, partial, or expired | Show recorded outcome; do not resume |
 | `reconciliation_required` | One or more tool actions are running/unknown without a decisive reconciliation record | Inspect the target system or request human review; no retry |
 | `retry_review_required` | Reconciliation evidence says the action was not applied | Recheck approval, policy, target and current state; a new attempt is not started automatically |
 | `revalidation_required` | An action was confirmed applied, or a run was interrupted while running/recovering/verifying | Verify downstream state and re-evaluate policy before continuation |
