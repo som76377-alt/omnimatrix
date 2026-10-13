@@ -103,8 +103,9 @@ class ModelStateSnapshotStore:
             raise ModelStateSnapshotError("Model-state snapshot persistence is disabled.")
         if not isinstance(request, ModelRequest) or not isinstance(response, ModelResponse):
             raise TypeError("save_pair requires a ModelRequest and ModelResponse.")
-        if not response.provider.strip() or not response.model.strip():
-            raise ModelStateSnapshotError("Response provider and model must be non-empty.")
+        if (not isinstance(response.provider, str) or not response.provider.strip()
+                or not isinstance(response.model, str) or not response.model.strip()):
+            raise ModelStateSnapshotError("Response provider and model must be non-empty text.")
         identity = _identity(
             run_id, task_id, attempt_id, interaction_sequence,
             response.provider, response.model, self._key_id,
