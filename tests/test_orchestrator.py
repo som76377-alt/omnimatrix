@@ -1,4 +1,6 @@
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -284,6 +286,71 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
                 [event[0] for event in events],
                 ["run_created", "task_started", "attempt_started", "attempt_failed", "task_failed"],
             )
+
+
+    def test_subprocess_crash_leaves_last_model_boundary_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "crashed.sqlite3"
+            script = r"""
+import os
+import sys
+from core.models.adapters import AdapterRegistry
+from core.models.base import ModelAdapter
+from core.models.messages import ModelRequest
+from core.models.registry import ModelDefinition, ModelRegistry
+from core.orchestrator.omnitrix import Omnitrix
+from core.persistence.sqlite_journal import SQLiteJournal
+
+class CrashAdapter(ModelAdapter):
+    @property
+    def name(self):
+        return "crash-model"
+    @property
+    def provider(self):
+        return "test"
+    def generate(self, request: ModelRequest):
+        os._exit(73)
+
+model = ModelDefinition(
+    name="crash-model", provider="test", model_id="crash-model-v1",
+    capabilities=frozenset({"reasoning"}), context_window=32000, enabled=True,
+    metadata={"cost_class": "demo", "estimated_cost_usd": 0},
+)
+registry = ModelRegistry()
+registry.register(model)
+adapters = AdapterRegistry()
+adapters.register(CrashAdapter())
+with SQLiteJournal(sys.argv[1]) as journal:
+    Omnitrix(registry=registry, adapter_registry=adapters, journal=journal).run(
+        "Crash at the model-call boundary."
+    )
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", script, str(database_path)],
+                cwd=str(Path(__file__).resolve().parents[1]),
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(completed.returncode, 73, completed.stderr)
+
+            with SQLiteJournal(database_path) as journal:
+                with journal._lock:
+                    run_row = journal._connection.execute(
+                        "SELECT run_id, status FROM runs"
+                    ).fetchone()
+                self.assertIsNotNone(run_row)
+                self.assertEqual(run_row["status"], "running")
+                checkpoints = journal.list_checkpoints(run_row["run_id"])
+                self.assertEqual(
+                    [item["checkpoint_type"] for item in checkpoints],
+                    ["task_started", "model_request_started"],
+                )
+                inspection = RecoveryService(journal).inspect(run_row["run_id"])
+                self.assertEqual(
+                    inspection.decision.disposition, "revalidation_required"
+                )
+                self.assertFalse(inspection.can_auto_resume)
 
 
 if __name__ == "__main__":
