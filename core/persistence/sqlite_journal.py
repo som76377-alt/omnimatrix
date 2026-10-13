@@ -14,7 +14,7 @@ import threading
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 def _now() -> str:
@@ -162,6 +162,30 @@ class SQLiteJournal:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (2, _now()),
                     )
+                if version < 3:
+                    self._connection.execute(
+                        "ALTER TABLE tool_executions ADD COLUMN logical_action_id TEXT"
+                    )
+                    self._connection.execute(
+                        """CREATE TABLE tool_reconciliations (
+                            reconciliation_id TEXT PRIMARY KEY,
+                            execution_id TEXT NOT NULL REFERENCES tool_executions(execution_id),
+                            decision TEXT NOT NULL CHECK (
+                                decision IN ('confirmed_applied', 'confirmed_not_applied', 'unresolved')
+                            ),
+                            recorded_by TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            evidence_json TEXT NOT NULL
+                        )"""
+                    )
+                    self._connection.execute(
+                        "CREATE INDEX idx_tool_reconciliations_execution "
+                        "ON tool_reconciliations(execution_id, created_at)"
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (3, _now()),
+                    )
                 self._connection.execute("COMMIT")
             except Exception:
                 self._connection.execute("ROLLBACK")
@@ -296,6 +320,7 @@ class SQLiteJournal:
         run_id: str | None = None,
         task_id: str | None = None,
         attempt_id: str | None = None,
+        logical_action_id: str | None = None,
     ) -> dict[str, Any]:
         """Atomically claim a tool idempotency key before any external effect.
 
@@ -306,7 +331,10 @@ class SQLiteJournal:
         idempotency_key = _required_text(idempotency_key, "idempotency_key")
         tool_name = _required_text(tool_name, "tool_name")
         request_sha256 = _required_text(request_sha256, "request_sha256")
-        for name, value in (("run_id", run_id), ("task_id", task_id), ("attempt_id", attempt_id)):
+        for name, value in (
+            ("run_id", run_id), ("task_id", task_id), ("attempt_id", attempt_id),
+            ("logical_action_id", logical_action_id),
+        ):
             if value is not None:
                 _required_text(value, name)
         with self._transaction() as db:
@@ -322,11 +350,12 @@ class SQLiteJournal:
             db.execute(
                 """INSERT INTO tool_executions
                 (execution_id, idempotency_key, tool_name, request_sha256,
-                 run_id, task_id, attempt_id, status, started_at, finished_at, outcome_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL, '{}')""",
+                 run_id, task_id, attempt_id, status, started_at, finished_at,
+                 outcome_json, logical_action_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL, '{}', ?)""",
                 (
                     execution_id, idempotency_key, tool_name, request_sha256,
-                    run_id, task_id, attempt_id, _now(),
+                    run_id, task_id, attempt_id, _now(), logical_action_id,
                 ),
             )
             return {
@@ -337,6 +366,7 @@ class SQLiteJournal:
                 "run_id": run_id,
                 "task_id": task_id,
                 "attempt_id": attempt_id,
+                "logical_action_id": logical_action_id,
                 "status": "running",
                 "finished_at": None,
                 "outcome": {},
@@ -371,23 +401,115 @@ class SQLiteJournal:
                 raise KeyError(f"Unknown tool execution: {execution_id}")
             raise RuntimeError(f"Tool execution is already terminal: {execution_id}")
 
-    def list_uncertain_tool_executions(self) -> list[dict[str, Any]]:
-        """List executions that need reconciliation after interruption.
+    def record_tool_reconciliation(
+        self,
+        execution_id: str,
+        decision: str,
+        evidence: Mapping[str, Any],
+        recorded_by: str,
+    ) -> str:
+        """Append evidence about an ambiguous action without rewriting its history.
 
-        This is a read-only inspection primitive. It does not retry, replay, or
-        change status: a running record may mean a crash before or after an
-        external side effect, while unknown means the caller observed an
-        exception or could not establish a reliable outcome.
+        A reconciliation record is an auditable assertion, not cryptographic proof.
+        It never starts a retry or marks the original tool execution successful.
         """
+        execution_id = _required_text(execution_id, "execution_id")
+        recorded_by = _required_text(recorded_by, "recorded_by")
+        if decision not in {"confirmed_applied", "confirmed_not_applied", "unresolved"}:
+            raise ValueError("Unsupported reconciliation decision.")
+        if not isinstance(evidence, Mapping) or not evidence:
+            raise ValueError("Reconciliation evidence must be a non-empty mapping.")
+        reconciliation_id = __import__("uuid").uuid4().hex
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT status FROM tool_executions WHERE execution_id = ?",
+                (execution_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown tool execution: {execution_id}")
+            if row["status"] not in {"running", "unknown"}:
+                raise RuntimeError("Only uncertain tool executions can be reconciled.")
+            db.execute(
+                """INSERT INTO tool_reconciliations
+                   (reconciliation_id, execution_id, decision, recorded_by, created_at, evidence_json)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (reconciliation_id, execution_id, decision, recorded_by, _now(), _json(dict(evidence))),
+            )
+        return reconciliation_id
+
+    def list_uncertain_tool_executions(
+        self, run_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List ambiguous tool records, including the latest reconciliation assertion.
+
+        This query is read-only. A reconciliation assertion is review evidence,
+        not proof of an external outcome and not permission to retry.
+        """
+        if run_id is not None:
+            run_id = _required_text(run_id, "run_id")
+        query = """SELECT execution_id, idempotency_key, logical_action_id, tool_name,
+                          request_sha256, run_id, task_id, attempt_id, status,
+                          started_at, finished_at
+                   FROM tool_executions WHERE status IN ('running', 'unknown')"""
+        params: tuple[Any, ...] = ()
+        if run_id is not None:
+            query += " AND run_id = ?"
+            params = (run_id,)
+        query += " ORDER BY started_at, execution_id"
         with self._lock:
-            rows = self._connection.execute(
-                """SELECT execution_id, idempotency_key, tool_name, request_sha256,
-                          run_id, task_id, attempt_id, status, started_at, finished_at
-                   FROM tool_executions
-                   WHERE status IN ('running', 'unknown')
-                   ORDER BY started_at, execution_id"""
+            rows = self._connection.execute(query, params).fetchall()
+            results = []
+            for row in rows:
+                record = dict(row)
+                latest = self._connection.execute(
+                    """SELECT reconciliation_id, decision, recorded_by, created_at, evidence_json
+                       FROM tool_reconciliations WHERE execution_id = ?
+                       ORDER BY created_at DESC, reconciliation_id DESC LIMIT 1""",
+                    (record["execution_id"],),
+                ).fetchone()
+                if latest is None:
+                    record["latest_reconciliation"] = None
+                else:
+                    reconciliation = dict(latest)
+                    reconciliation["evidence"] = json.loads(reconciliation.pop("evidence_json"))
+                    record["latest_reconciliation"] = reconciliation
+                results.append(record)
+        return results
+
+    def get_recovery_snapshot(self, run_id: str) -> dict[str, Any] | None:
+        """Return a read-only run/task/attempt/tool snapshot for recovery review."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            run_row = self._connection.execute(
+                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if run_row is None:
+                return None
+            task_rows = self._connection.execute(
+                "SELECT * FROM tasks WHERE run_id = ? ORDER BY task_id", (run_id,)
             ).fetchall()
-        return [dict(row) for row in rows]
+            attempt_rows = self._connection.execute(
+                "SELECT * FROM attempts WHERE run_id = ? ORDER BY started_at, attempt_id",
+                (run_id,),
+            ).fetchall()
+        run = dict(run_row)
+        run["payload"] = json.loads(run.pop("payload_json"))
+        tasks = []
+        for row in task_rows:
+            item = dict(row)
+            item["payload"] = json.loads(item.pop("payload_json"))
+            tasks.append(item)
+        attempts = []
+        for row in attempt_rows:
+            item = dict(row)
+            item["payload"] = json.loads(item.pop("payload_json"))
+            attempts.append(item)
+        return {
+            "run": run,
+            "tasks": tasks,
+            "attempts": attempts,
+            "uncertain_tool_executions": self.list_uncertain_tool_executions(run_id),
+        }
 
     def append_event(self, event: Any) -> None:
         """Persist a validated RunEvent without silently replacing duplicates."""
