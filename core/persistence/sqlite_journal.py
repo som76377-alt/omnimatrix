@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 MAX_REPLAY_RESULT_BYTES = 16_384
 
 
@@ -222,6 +222,44 @@ class SQLiteJournal:
                     self._connection.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (5, _now()),
+                    )
+
+                if version < 6:
+                    self._connection.execute(
+                        """CREATE TABLE model_transcript (
+                            interaction_id TEXT PRIMARY KEY,
+                            run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+                            sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                            task_id TEXT,
+                            attempt_id TEXT,
+                            interaction_type TEXT NOT NULL CHECK (
+                                interaction_type IN ('model_request', 'model_response')
+                            ),
+                            provider TEXT,
+                            model TEXT,
+                            request_sha256 TEXT,
+                            response_sha256 TEXT,
+                            tool_call_count INTEGER NOT NULL DEFAULT 0 CHECK (tool_call_count >= 0),
+                            created_at TEXT NOT NULL,
+                            UNIQUE (run_id, sequence)
+                        )"""
+                    )
+                    self._connection.execute(
+                        "CREATE INDEX idx_model_transcript_run ON model_transcript(run_id, sequence)"
+                    )
+                    self._connection.execute(
+                        """CREATE TRIGGER model_transcript_no_update
+                           BEFORE UPDATE ON model_transcript
+                           BEGIN SELECT RAISE(ABORT, 'model transcript is append-only'); END"""
+                    )
+                    self._connection.execute(
+                        """CREATE TRIGGER model_transcript_no_delete
+                           BEFORE DELETE ON model_transcript
+                           BEGIN SELECT RAISE(ABORT, 'model transcript is append-only'); END"""
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (6, _now()),
                     )
                 self._connection.execute("COMMIT")
             except Exception:
@@ -866,6 +904,78 @@ class SQLiteJournal:
                 (artifact_id, run_id, task_id, uri, sha256, media_type, created_at, metadata_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", values,
             )
+
+
+    @staticmethod
+    def _validate_optional_sha256(value: str | None, name: str) -> str | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value.lower())
+        ):
+            raise ValueError(f"{name} must be a 64-character SHA-256 hex digest or None.")
+        return value.lower()
+
+    def append_model_transcript_record(
+        self, run_id: str, sequence: int, interaction_type: str, *,
+        task_id: str | None = None, attempt_id: str | None = None,
+        provider: str | None = None, model: str | None = None,
+        request_sha256: str | None = None, response_sha256: str | None = None,
+        tool_call_count: int = 0, interaction_id: str | None = None,
+    ) -> str:
+        """Append model-call metadata only; prompt and response bodies are never accepted."""
+        run_id = _required_text(run_id, "run_id")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
+            raise ValueError("sequence must be a non-negative integer.")
+        if interaction_type not in {"model_request", "model_response"}:
+            raise ValueError("interaction_type must be model_request or model_response.")
+        if isinstance(tool_call_count, bool) or not isinstance(tool_call_count, int) or tool_call_count < 0:
+            raise ValueError("tool_call_count must be a non-negative integer.")
+        for name, value in (("task_id", task_id), ("attempt_id", attempt_id),
+                            ("provider", provider), ("model", model)):
+            if value is not None:
+                _required_text(value, name)
+                if len(value) > 200:
+                    raise ValueError(f"{name} must be at most 200 characters.")
+        request_sha256 = self._validate_optional_sha256(request_sha256, "request_sha256")
+        response_sha256 = self._validate_optional_sha256(response_sha256, "response_sha256")
+        if request_sha256 is None and response_sha256 is None:
+            raise ValueError("At least one request or response digest is required.")
+        interaction_id = _required_text(interaction_id or uuid.uuid4().hex, "interaction_id")
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone() is None:
+                raise KeyError(f"Unknown run_id: {run_id}")
+            row = db.execute(
+                "SELECT COALESCE(MAX(sequence), -1) + 1 AS next_sequence "
+                "FROM model_transcript WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if sequence != row["next_sequence"]:
+                raise ValueError(
+                    f"Transcript sequence must be the next contiguous value ({row['next_sequence']})."
+                )
+            db.execute(
+                """INSERT INTO model_transcript
+                   (interaction_id, run_id, sequence, task_id, attempt_id,
+                    interaction_type, provider, model, request_sha256,
+                    response_sha256, tool_call_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (interaction_id, run_id, sequence, task_id, attempt_id,
+                 interaction_type, provider, model, request_sha256,
+                 response_sha256, tool_call_count, _now()),
+            )
+        return interaction_id
+
+    def list_model_transcript(self, run_id: str) -> list[dict[str, Any]]:
+        """Return ordered metadata and digests without model content."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM model_transcript WHERE run_id = ? ORDER BY sequence",
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self) -> None:
         with self._lock:
