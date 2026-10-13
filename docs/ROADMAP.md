@@ -130,4 +130,5 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 - [x] Encrypt only complete request/response pairs with AES-GCM; bind run/task/attempt/sequence/provider/model/key ID as authenticated data.
 - [x] Validate codec envelopes on write and read; test database reopen, ciphertext confidentiality, wrong-key/corruption rejection, identity constraints and explicit deletion.
 - [x] Verify CI and review dependency, privacy and migration behavior; CI run #331 passed 321 tests, compilation, configuration validation and offline CLI smoke test.
-- [ ] Restore provider-neutral request/response objects only after recovery-position validation and provider continuation compatibility are integrated; keep automatic resume disabled until full end-to-end crash recovery is tested.
+- [x] Add a read-only, fail-closed snapshot recovery preflight that requires an integrity-clean inspection, a consistent model request/response boundary, and exact run/task/attempt/snapshot identity; it reports `can_auto_resume: false` and does not decrypt, call a provider, or replay tools.
+- [ ] Restore provider-neutral request/response objects only after exact transcript-to-snapshot sequence/hash correlation and provider continuation compatibility are integrated; keep automatic resume disabled until full end-to-end crash recovery is tested.
