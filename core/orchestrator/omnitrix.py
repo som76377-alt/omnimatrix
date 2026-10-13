@@ -727,6 +727,7 @@ class Omnitrix:
         )
 
         task = Task(objective=objective, requirements=self.analyzer.analyze(objective))
+        task.start()
         task.metadata.update(
             {
                 "run_id": run_id,
