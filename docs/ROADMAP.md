@@ -45,7 +45,10 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add an explicitly confirmed restart-from-objective path for interrupted single-task `run()` executions only when integrity inspection passes and no tool execution or tool-call boundary exists; the previous attempt is marked interrupted and a new attempt is journaled before fresh model work.
 - [x] Expose privacy-conscious recent-run listing, read-only recovery inspection, optional journal-backed chat, and explicitly confirmed guarded restart through the CLI; run listings omit objective payloads.
 - [x] Add a one-shot `--run-objective` CLI command that requires a journal, persists a single-task `run()` execution, and reports the new run ID alongside the result so eligible interrupted runs can be found for inspection.
-- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v4 migration, and cross-attempt duplicate blocking.
+- [x] Add schema-v5 durable tool-result snapshots with strict opt-in replay policy (default `never`), bounded JSON payloads, SHA-256 integrity verification, and an atomic commit with the terminal tool outcome.
+- [x] Enable result snapshot persistence only for the deterministic calculator; verify custom tools remain non-replayable unless they explicitly opt in.
+- [ ] Restore a live model/tool conversation from verified snapshots and checkpointed provider state; snapshot storage alone does not resume a task or authorize re-execution.
+- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v5 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
 - [ ] Implement full conversation/provider-state restoration, pause/cancel/resume, and event replay into live execution. The current explicit restart path only reruns the original objective when no tool has ever been dispatched; it deliberately blocks chat turns, legacy runs without execution-kind metadata, and any run with a tool execution or tool-call boundary.
 - [ ] Add tool/provider-specific reconciliation adapters that validate external evidence and define safe retry policies.
