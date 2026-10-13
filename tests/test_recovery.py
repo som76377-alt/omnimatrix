@@ -15,6 +15,13 @@ class RecoveryClassificationTests(unittest.TestCase):
         self.assertEqual(decision.disposition, "terminal")
         self.assertFalse(decision.can_auto_resume)
 
+    def test_completed_run_is_terminal(self):
+        decision = classify_recovery({
+            "run": {"status": "completed"},
+            "uncertain_tool_executions": [],
+        })
+        self.assertEqual(decision.disposition, "terminal")
+
     def test_unresolved_tool_execution_requires_reconciliation(self):
         decision = classify_recovery({
             "run": {"status": "running"},
