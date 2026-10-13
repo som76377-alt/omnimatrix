@@ -384,17 +384,73 @@ class SQLiteJournalTests(unittest.TestCase):
                             "SELECT name FROM sqlite_master WHERE type = 'table'"
                         )
                     }
-                self.assertEqual(version, 5)
+                self.assertEqual(version, 6)
                 self.assertIn("tool_executions", tables)
                 self.assertIn("tool_reconciliations", tables)
                 self.assertIn("checkpoints", tables)
                 self.assertIn("tool_result_snapshots", tables)
+                self.assertIn("model_transcript", tables)
                 columns = {
                     row[1] for row in database.execute("PRAGMA table_info(tool_executions)")
                 }
                 self.assertIn("logical_action_id", columns)
 
 
+
+
+    def test_model_transcript_is_metadata_only_ordered_and_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "transcript.sqlite3"
+            request_hash = "a" * 64
+            response_hash = "b" * 64
+            with SQLiteJournal(path) as journal:
+                journal.create_run("run-transcript")
+                journal.append_model_transcript_record(
+                    "run-transcript", 0, "model_request", task_id="task-1",
+                    attempt_id="attempt-1", provider="offline", model="demo",
+                    request_sha256=request_hash,
+                )
+                journal.append_model_transcript_record(
+                    "run-transcript", 1, "model_response", task_id="task-1",
+                    attempt_id="attempt-1", provider="offline", model="demo",
+                    request_sha256=request_hash, response_sha256=response_hash,
+                    tool_call_count=2,
+                )
+                with self.assertRaises(ValueError):
+                    journal.append_model_transcript_record(
+                        "run-transcript", 3, "model_response", response_sha256=response_hash
+                    )
+            with SQLiteJournal(path) as journal:
+                records = journal.list_model_transcript("run-transcript")
+                self.assertEqual([item["sequence"] for item in records], [0, 1])
+                self.assertEqual(records[1]["tool_call_count"], 2)
+                self.assertEqual(records[1]["response_sha256"], response_hash)
+                self.assertNotIn("prompt", records[0])
+                self.assertNotIn("response", records[1])
+
+    def test_model_transcript_rejects_invalid_hash_and_database_mutation(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-transcript")
+            with self.assertRaises(ValueError):
+                journal.append_model_transcript_record(
+                    "run-transcript", 0, "model_request", request_sha256="raw prompt text"
+                )
+            with self.assertRaises(ValueError):
+                journal.append_model_transcript_record(
+                    "run-transcript", 0, "model_request", request_sha256="a" * 64,
+                    tool_call_count=True,
+                )
+            journal.append_model_transcript_record(
+                "run-transcript", 0, "model_request", request_sha256="a" * 64
+            )
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
+                journal._connection.execute(
+                    "UPDATE model_transcript SET model = 'tampered' WHERE run_id = 'run-transcript'"
+                )
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
+                journal._connection.execute(
+                    "DELETE FROM model_transcript WHERE run_id = 'run-transcript'"
+                )
 
 if __name__ == "__main__":
     unittest.main()
