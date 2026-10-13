@@ -524,6 +524,14 @@ class SQLiteJournal:
         with self._transaction() as db:
             if db.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone() is None:
                 raise KeyError(f"Unknown run_id: {run_id}")
+            row = db.execute(
+                "SELECT COALESCE(MAX(sequence), -1) + 1 AS next_sequence FROM checkpoints WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if sequence != row["next_sequence"]:
+                raise ValueError(
+                    f"Checkpoint sequence must be the next contiguous value ({row['next_sequence']})."
+                )
             db.execute(
                 """INSERT INTO checkpoints
                    (checkpoint_id, run_id, sequence, checkpoint_type, payload_json,
