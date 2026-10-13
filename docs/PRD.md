@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.11 — Identity-verified replay-candidate resolution  
+**Version:** 1.12 — Privacy-minimal model transcript ledger groundwork  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/verified-replay-candidates`, PR #26; GitHub Actions run #255 passed compilation, configuration validation, 293 unit tests, and the offline CLI smoke test  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/safe-model-transcript`; schema-v6 transcript metadata implementation pending CI verification  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1784,3 +1784,7 @@ This is a checklist for reviewing the document itself, not proof that the implem
 | 1.9 | 13 October 2026 | Added a one-shot journaled `--run-objective` CLI mode that executes `run()` and reports its new run ID with the result, closing the CLI path for discovering eligible interrupted single-task runs. |
 | 1.10 | 13 October 2026 | Added schema-v5 opt-in tool-result snapshots with a default-deny replay policy, a 16 KiB finite-JSON limit, SHA-256 verification, atomic terminal-outcome/snapshot commits, and tests/docs clarifying that result storage does not yet restore a live conversation or resume execution. |
 | 1.11 | 13 October 2026 | Added a read-only replay-candidate resolver that requires exact run/task/action/tool/request identity, a unique successful execution, and a verified opted-in snapshot; all missing, mismatched, uncertain, or ambiguous candidates fail closed without returning result content. |
+
+## Version 1.12 change log — schema-v6 transcript metadata groundwork
+
+Schema v6 introduces an append-only model request/response metadata ledger with contiguous per-run sequence numbers, run/task/attempt linkage, provider/model labels, bounded tool-call counts, and optional SHA-256 digests. It stores no prompt or response bodies and uses database triggers to reject ordinary updates/deletes. This is intentionally not a complete transcript and cannot restore provider state. Live orchestrator instrumentation and process-crash verification remain open; automatic resume remains disabled.
