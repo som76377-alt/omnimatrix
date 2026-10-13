@@ -109,6 +109,11 @@ Only successful outputs that serialize as finite JSON and fit within 16 KiB are 
 
 **This is storage groundwork, not resume.** Omnitrix does not yet reconstruct the provider conversation, prove that the saved result belongs at the current model position, or feed the snapshot back into a live run. No automatic retry or resume is enabled by schema v5. Snapshot integrity detects accidental payload modification when the stored digest remains intact; it is not a signature against an actor who can rewrite both fields. The SQLite journal can contain tool outputs, so protect the local database and avoid opting sensitive-output tools in without an explicit privacy review.
 
+
+## Verified replay-candidate resolution
+
+`SQLiteJournal.resolve_replay_candidate()` is a read-only eligibility check, not a resume API. It requires the exact run ID, task ID, logical action ID, tool name, and canonical request SHA-256. It returns a result only when exactly one durable execution matches that action identity, the tool name and request digest match, the execution has a terminal `succeeded` status, and the associated opt-in snapshot passes its policy-and-payload digest check. Missing records, request mismatches, non-successful executions, missing snapshots, and duplicate logical-action identities return explicit blocked dispositions without exposing result content. Snapshot integrity errors raise and fail closed. This lookup does not prove the model is at the correct conversation position, reconstruct provider continuation state, or authorize any tool call; live restoration remains unimplemented.
+
 ## Acceptance tests
 
 - Terminal and unknown run states do not auto-resume.
@@ -122,6 +127,8 @@ Only successful outputs that serialize as finite JSON and fit within 16 KiB are 
 - Schema-v5 replay snapshots are created only for explicitly opted-in successful tools, stay within the payload size bound, survive reopen, and fail closed on digest corruption.
 - Terminal outcome and replay snapshot commit atomically; invalid snapshot data leaves the tool record non-terminal.
 - Missing replay snapshots never authorize rerunning a tool or automatically resuming a task.
+- Replay-candidate resolution returns output only for a unique successful execution with exact run/task/action/tool/request identity and a valid opted-in snapshot.
+- Missing, mismatched, uncertain, non-successful, or duplicate action records return blocked dispositions without output; corrupted snapshots fail closed.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
 - A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
 - A real subprocess crash after a simulated tool side effect but before outcome persistence leaves the tool execution in `running`, preserves the last `tool_call_prepared` checkpoint, and classifies the run as `reconciliation_required`.

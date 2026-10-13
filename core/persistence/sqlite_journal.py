@@ -532,6 +532,77 @@ class SQLiteJournal:
             "created_at": row["created_at"],
         }
 
+    def resolve_replay_candidate(
+        self,
+        run_id: str,
+        task_id: str,
+        logical_action_id: str,
+        tool_name: str,
+        request_sha256: str,
+    ) -> dict[str, Any]:
+        """Resolve a prior result only when durable identity and integrity all match.
+
+        This read-only lookup never executes a tool or resumes a task. A result is
+        eligible only when exactly one execution matches the run/task/logical-action
+        identity, its tool name and canonical request digest match the current
+        request, its durable status is succeeded, and its opted-in result snapshot
+        passes integrity verification. All non-eligible outcomes omit result content.
+        """
+        run_id = _required_text(run_id, "run_id")
+        task_id = _required_text(task_id, "task_id")
+        logical_action_id = _required_text(logical_action_id, "logical_action_id")
+        tool_name = _required_text(tool_name, "tool_name")
+        request_sha256 = _required_text(request_sha256, "request_sha256")
+
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT execution_id, idempotency_key, logical_action_id, tool_name,
+                          request_sha256, run_id, task_id, attempt_id, status,
+                          started_at, finished_at
+                   FROM tool_executions
+                   WHERE run_id = ? AND task_id = ? AND logical_action_id = ?
+                   ORDER BY started_at, execution_id""",
+                (run_id, task_id, logical_action_id),
+            ).fetchall()
+
+        if not rows:
+            return {"eligible": False, "disposition": "not_found"}
+        if len(rows) != 1:
+            return {
+                "eligible": False,
+                "disposition": "blocked_ambiguous_identity",
+                "matching_execution_count": len(rows),
+            }
+
+        execution = dict(rows[0])
+        if execution["tool_name"] != tool_name or execution["request_sha256"] != request_sha256:
+            return {
+                "eligible": False,
+                "disposition": "blocked_request_mismatch",
+                "execution_id": execution["execution_id"],
+            }
+        if execution["status"] != "succeeded" or execution["finished_at"] is None:
+            return {
+                "eligible": False,
+                "disposition": "blocked_execution_not_successful",
+                "execution_id": execution["execution_id"],
+                "execution_status": execution["status"],
+            }
+
+        snapshot = self.get_replayable_tool_result(execution["execution_id"])
+        if snapshot is None:
+            return {
+                "eligible": False,
+                "disposition": "blocked_snapshot_missing",
+                "execution_id": execution["execution_id"],
+            }
+        return {
+            "eligible": True,
+            "disposition": "verified_replay_candidate",
+            "execution": execution,
+            "snapshot": snapshot,
+        }
+
     def record_tool_reconciliation(
         self,
         execution_id: str,

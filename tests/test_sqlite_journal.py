@@ -236,6 +236,85 @@ class SQLiteJournalTests(unittest.TestCase):
                 self.assertEqual(snapshot["output"], {"answer": 42, "units": "none"})
                 self.assertEqual(len(snapshot["result_sha256"]), 64)
 
+    def test_resolve_replay_candidate_requires_exact_identity_and_verified_success(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-replay", payload={"execution_kind": "run"})
+            journal.upsert_task("run-replay", "task-replay", "running")
+            journal.record_attempt(
+                "attempt-replay", "run-replay", "task-replay", 1, "running"
+            )
+            journal.begin_tool_execution(
+                "execution-replay", "key-replay", "calculator", "request-sha",
+                run_id="run-replay", task_id="task-replay",
+                attempt_id="attempt-replay", logical_action_id="iteration:1:call:0",
+            )
+            journal.finish_tool_execution(
+                "execution-replay", "succeeded", {"success": True},
+                replay_result={
+                    "policy": "deterministic_json_v1",
+                    "output": {"answer": 42},
+                },
+            )
+
+            candidate = journal.resolve_replay_candidate(
+                "run-replay", "task-replay", "iteration:1:call:0",
+                "calculator", "request-sha",
+            )
+            self.assertTrue(candidate["eligible"])
+            self.assertEqual(candidate["disposition"], "verified_replay_candidate")
+            self.assertEqual(candidate["snapshot"]["output"], {"answer": 42})
+
+            mismatch = journal.resolve_replay_candidate(
+                "run-replay", "task-replay", "iteration:1:call:0",
+                "calculator", "different-request-sha",
+            )
+            self.assertFalse(mismatch["eligible"])
+            self.assertEqual(mismatch["disposition"], "blocked_request_mismatch")
+            self.assertNotIn("snapshot", mismatch)
+
+    def test_resolve_replay_candidate_blocks_missing_or_uncertain_execution(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-replay")
+            journal.upsert_task("run-replay", "task-replay", "running")
+            journal.begin_tool_execution(
+                "execution-running", "key-running", "calculator", "request-sha",
+                run_id="run-replay", task_id="task-replay",
+                logical_action_id="iteration:1:call:0",
+            )
+            candidate = journal.resolve_replay_candidate(
+                "run-replay", "task-replay", "iteration:1:call:0",
+                "calculator", "request-sha",
+            )
+            self.assertFalse(candidate["eligible"])
+            self.assertEqual(candidate["disposition"], "blocked_execution_not_successful")
+            self.assertNotIn("snapshot", candidate)
+
+            missing = journal.resolve_replay_candidate(
+                "run-replay", "task-replay", "iteration:9:call:9",
+                "calculator", "request-sha",
+            )
+            self.assertFalse(missing["eligible"])
+            self.assertEqual(missing["disposition"], "not_found")
+
+    def test_resolve_replay_candidate_blocks_duplicate_logical_action_identity(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-replay")
+            journal.upsert_task("run-replay", "task-replay", "running")
+            for index in range(2):
+                journal.begin_tool_execution(
+                    f"execution-{index}", f"key-{index}", "calculator", "request-sha",
+                    run_id="run-replay", task_id="task-replay",
+                    logical_action_id="iteration:1:call:0",
+                )
+            candidate = journal.resolve_replay_candidate(
+                "run-replay", "task-replay", "iteration:1:call:0",
+                "calculator", "request-sha",
+            )
+            self.assertFalse(candidate["eligible"])
+            self.assertEqual(candidate["disposition"], "blocked_ambiguous_identity")
+            self.assertEqual(candidate["matching_execution_count"], 2)
+            self.assertNotIn("snapshot", candidate)
+
     def test_replay_result_digest_tampering_fails_closed(self):
         with SQLiteJournal(":memory:") as journal:
             journal.begin_tool_execution(

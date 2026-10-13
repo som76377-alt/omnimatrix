@@ -47,6 +47,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add a one-shot `--run-objective` CLI command that requires a journal, persists a single-task `run()` execution, and reports the new run ID alongside the result so eligible interrupted runs can be found for inspection.
 - [x] Add schema-v5 durable tool-result snapshots with strict opt-in replay policy (default `never`), bounded JSON payloads, SHA-256 integrity verification, and an atomic commit with the terminal tool outcome.
 - [x] Enable result snapshot persistence only for the deterministic calculator; verify custom tools remain non-replayable unless they explicitly opt in.
+- [x] Add read-only replay-candidate resolution requiring exact run/task/logical-action/tool/request identity, one matching execution, terminal success, and a verified result snapshot; blocked outcomes omit result content.
 - [ ] Restore a live model/tool conversation from verified snapshots and checkpointed provider state; snapshot storage alone does not resume a task or authorize re-execution.
 - [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v5 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
