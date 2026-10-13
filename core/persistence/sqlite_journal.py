@@ -465,7 +465,7 @@ class SQLiteJournal:
                 latest = self._connection.execute(
                     """SELECT reconciliation_id, decision, recorded_by, created_at, evidence_json
                        FROM tool_reconciliations WHERE execution_id = ?
-                       ORDER BY created_at DESC, reconciliation_id DESC LIMIT 1""",
+                       ORDER BY rowid DESC LIMIT 1""",
                     (record["execution_id"],),
                 ).fetchone()
                 if latest is None:
