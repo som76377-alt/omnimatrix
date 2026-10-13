@@ -8,6 +8,7 @@ import uuid
 
 from core.conversation import Conversation
 from core.contracts import BudgetGuard, BudgetLimits, ErrorCode, OmnitrixError, RunEvent
+from core.persistence.recovery_service import RecoveryService
 from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
@@ -183,7 +184,9 @@ class Omnitrix:
         )
         task.metadata["checkpoint_sequence"] = sequence + 1
 
-    def _journal_start_task(self, task: Task) -> tuple[str | None, int]:
+    def _journal_start_task(
+        self, task: Task, execution_kind: str = "run"
+    ) -> tuple[str | None, int]:
         """Persist the initial task states before any model or tool side effect."""
         if self.journal is None:
             task.start()
@@ -194,10 +197,15 @@ class Omnitrix:
         task.metadata["run_id"] = run_id
         task.metadata["task_id"] = task_id
         self.journal.create_run(
-            run_id, status="created", payload={"objective": task.objective}
+            run_id,
+            status="created",
+            payload={"objective": task.objective, "execution_kind": execution_kind},
         )
         self.journal.upsert_task(
-            run_id, task_id, "pending", {"objective": task.objective}
+            run_id,
+            task_id,
+            "pending",
+            {"objective": task.objective, "execution_kind": execution_kind},
         )
         self._journal_event(run_id, 0, "run_created", task_id=task_id)
         task.start()
@@ -575,6 +583,202 @@ class Omnitrix:
         )
         return result
 
+    def resume_interrupted_run(
+        self,
+        run_id: str,
+        *,
+        confirm_restart_from_objective: bool = False,
+    ) -> str:
+        """Manually restart an interrupted run only when no tool was ever dispatched.
+
+        This is a narrow recovery path, not continuation from a serialized provider
+        conversation. It reruns the original objective with a fresh attempt and
+        current budget/permission policy. Any recorded tool execution or tool-call
+        preparation checkpoint blocks this path and requires separate reconciliation.
+        """
+        if self.journal is None:
+            raise RuntimeError("Manual recovery requires an enabled SQLite journal.")
+        if confirm_restart_from_objective is not True:
+            raise ValueError(
+                "Explicit confirmation is required to restart the original objective."
+            )
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError("run_id must be a non-empty string.")
+
+        inspection = RecoveryService(self.journal).inspect(run_id)
+        if inspection.integrity_errors:
+            raise RuntimeError(
+                "Recovery inspection found integrity errors; restart is blocked."
+            )
+        if inspection.decision.disposition != "revalidation_required":
+            raise RuntimeError(
+                "Run is not eligible for manual restart from the original objective: "
+                + inspection.decision.disposition
+            )
+
+        snapshot = self.journal.get_recovery_snapshot(run_id)
+        if snapshot is None:
+            raise KeyError(f"Unknown run_id: {run_id}")
+        run = snapshot["run"]
+        if run.get("status") != "running":
+            raise RuntimeError("Only a non-terminal running run can be restarted.")
+        run_payload = run.get("payload")
+        if not isinstance(run_payload, dict) or run_payload.get("execution_kind") != "run":
+            raise RuntimeError(
+                "This run's original context is not safely reconstructable; chat turns "
+                "and legacy runs without an execution kind cannot use objective-only restart."
+            )
+
+        tasks = snapshot["tasks"]
+        if len(tasks) != 1 or tasks[0].get("status") != "running":
+            raise RuntimeError(
+                "Restart requires exactly one running task; multi-task or changed task state is blocked."
+            )
+        task_row = tasks[0]
+        task_payload = task_row.get("payload")
+        objective = task_payload.get("objective") if isinstance(task_payload, dict) else None
+        if (
+            not isinstance(objective, str)
+            or not objective.strip()
+            or objective != run_payload.get("objective")
+        ):
+            raise RuntimeError("Persisted run/task objectives are missing or inconsistent.")
+
+        tool_executions = self.journal.list_tool_executions(run_id)
+        if tool_executions:
+            raise RuntimeError(
+                "At least one tool execution was recorded; reconcile or review those effects "
+                "instead of restarting the objective."
+            )
+        checkpoints = snapshot["checkpoints"]
+        if any(
+            item.get("checkpoint_type") in {"tool_call_prepared", "tool_call_result_received"}
+            for item in checkpoints
+        ):
+            raise RuntimeError(
+                "A checkpoint records a tool-call boundary; objective-only restart is blocked."
+            )
+
+        attempts = snapshot["attempts"]
+        if not attempts:
+            raise RuntimeError("No durable attempt exists for this interrupted run.")
+        latest_attempt = max(attempts, key=lambda item: item.get("attempt_number", 0))
+        if latest_attempt.get("status") != "running" or latest_attempt.get("finished_at") is not None:
+            raise RuntimeError("The latest attempt is not an open interrupted attempt.")
+        previous_attempt_id = latest_attempt.get("attempt_id")
+        task_id = task_row.get("task_id")
+        if not isinstance(previous_attempt_id, str) or not isinstance(task_id, str):
+            raise RuntimeError("Persisted attempt/task identity is malformed.")
+
+        # Record the interrupted attempt and the new attempt before any new model call.
+        events = snapshot["events"]
+        next_event_sequence = max(
+            (event["sequence"] for event in events if isinstance(event.get("sequence"), int)),
+            default=-1,
+        ) + 1
+        self.journal.finish_attempt(
+            previous_attempt_id,
+            "interrupted",
+            {"reason": "explicit_manual_restart", "tool_dispatches": 0},
+        )
+        self._journal_event(
+            run_id,
+            next_event_sequence,
+            "attempt_interrupted",
+            task_id=task_id,
+            payload={"attempt_id": previous_attempt_id, "reason": "explicit_manual_restart"},
+        )
+
+        new_attempt_id = uuid.uuid4().hex
+        attempt_number = max(item["attempt_number"] for item in attempts) + 1
+        self.journal.record_attempt(
+            new_attempt_id,
+            run_id,
+            task_id,
+            attempt_number,
+            "running",
+            {
+                "execution_kind": "run",
+                "resumed_from_attempt_id": previous_attempt_id,
+                "restart_from_objective": True,
+            },
+        )
+        self._journal_event(
+            run_id,
+            next_event_sequence + 1,
+            "attempt_started",
+            task_id=task_id,
+            payload={
+                "attempt_id": new_attempt_id,
+                "attempt_number": attempt_number,
+                "restart_from_objective": True,
+            },
+        )
+        self.journal.upsert_task(
+            run_id,
+            task_id,
+            "running",
+            {"restart_count": attempt_number - 1},
+        )
+        self.journal.update_run(
+            run_id,
+            "running",
+            {"last_recovery_mode": "explicit_restart_from_objective"},
+        )
+
+        task = Task(objective=objective, requirements=self.analyzer.analyze(objective))
+        task.metadata.update(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "attempt_id": new_attempt_id,
+                "checkpoint_sequence": max(
+                    (item["sequence"] for item in checkpoints), default=-1
+                ) + 1,
+            }
+        )
+        self._journal_checkpoint(
+            task,
+            "manual_restart_authorized",
+            {
+                "task_id": task_id,
+                "attempt_id": new_attempt_id,
+                "previous_attempt_id": previous_attempt_id,
+                "attempt_number": attempt_number,
+                "objective_sha256": hashlib.sha256(objective.encode("utf-8")).hexdigest(),
+            },
+        )
+
+        terminal_event_sequence = next_event_sequence + 2
+        try:
+            result = self._execute_task(
+                task=task,
+                messages=(
+                    ModelMessage(role=MessageRole.USER, content=objective),
+                ),
+                budget_guard=BudgetGuard(self.budget_limits),
+            )
+        except Exception as exc:
+            self._journal_checkpoint(
+                task,
+                "task_failure_observed",
+                {"error_type": type(exc).__name__},
+            )
+            self._journal_finish_task(
+                run_id, task_id, new_attempt_id, terminal_event_sequence,
+                "failed", type(exc).__name__,
+            )
+            raise
+        self._journal_checkpoint(
+            task,
+            "task_result_ready",
+            {"result_sha256": hashlib.sha256(result.encode("utf-8")).hexdigest()},
+        )
+        self._journal_finish_task(
+            run_id, task_id, new_attempt_id, terminal_event_sequence, "completed"
+        )
+        return result
+
     def chat(self, conversation: Conversation, user_message: str) -> str:
         """Process one conversational turn and update the conversation."""
         conversation.add_user_message(user_message)
@@ -583,7 +787,7 @@ class Omnitrix:
             objective=user_message,
             requirements=self.analyzer.analyze(user_message),
         )
-        run_id, next_sequence = self._journal_start_task(task)
+        run_id, next_sequence = self._journal_start_task(task, execution_kind="chat")
         task_id = task.metadata.get("task_id")
         attempt_id = task.metadata.get("attempt_id")
         try:
