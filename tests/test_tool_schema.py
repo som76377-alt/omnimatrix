@@ -139,7 +139,7 @@ class ToolSchemaValidationTests(unittest.TestCase):
                 self.assertEqual(interrupted_tool.calls, 1)
 
     def test_real_subprocess_crashes_leave_uncertain_actions_blocked(self):
-        child_code = r\'''\
+        child_code = r'''
 import os
 import sys
 from pathlib import Path
@@ -190,7 +190,7 @@ with SQLiteJournal(database_path) as journal:
         ToolPermission.from_capabilities({"testing"}),
     )
 os._exit(99)  # Reaching this line would mean the crash injection failed.
-\'''
+'''
         project_root = Path(__file__).resolve().parents[1]
 
         for crash_point, expected_exit, effect_expected in (
