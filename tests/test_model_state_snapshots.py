@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,7 +107,7 @@ class ModelStateSnapshotStoreTests(unittest.TestCase):
     def test_duplicate_interaction_sequence_is_rejected(self):
         store = self.store()
         store.save_pair("run-1", "task-1", "attempt-1", 0, self.request, self.response)
-        with self.assertRaises(Exception):
+        with self.assertRaises(sqlite3.IntegrityError):
             store.save_pair("run-1", "task-1", "attempt-1", 0, self.request, self.response)
 
     def test_explicit_delete_removes_sensitive_snapshot(self):
