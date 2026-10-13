@@ -237,6 +237,7 @@ class SQLiteJournalTests(unittest.TestCase):
                 self.assertEqual(version, 4)
                 self.assertIn("tool_executions", tables)
                 self.assertIn("tool_reconciliations", tables)
+                self.assertIn("checkpoints", tables)
                 columns = {
                     row[1] for row in database.execute("PRAGMA table_info(tool_executions)")
                 }
