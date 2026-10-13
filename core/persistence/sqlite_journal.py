@@ -468,7 +468,7 @@ class SQLiteJournal:
                 raise ValueError("Replay result must be finite, JSON-serializable data.") from exc
             if len(result_json.encode("utf-8")) > MAX_REPLAY_RESULT_BYTES:
                 raise ValueError("Replay result exceeds the durable snapshot size limit.")
-            result_sha256 = hashlib.sha256(result_json.encode("utf-8")).hexdigest()
+            result_sha256 = hashlib.sha256((policy + "\0" + result_json).encode("utf-8")).hexdigest()
             snapshot_values = (policy, result_json, result_sha256)
             if status != "succeeded":
                 raise ValueError("Only successful tool results may be snapshotted for replay.")
@@ -517,7 +517,7 @@ class SQLiteJournal:
             return None
         if row["status"] != "succeeded":
             raise RuntimeError("Replay snapshot is attached to a non-successful tool execution.")
-        actual = hashlib.sha256(row["result_json"].encode("utf-8")).hexdigest()
+        actual = hashlib.sha256((row["replay_policy"] + "\0" + row["result_json"]).encode("utf-8")).hexdigest()
         if actual != row["result_sha256"]:
             raise RuntimeError("Replay result snapshot integrity check failed.")
         try:
