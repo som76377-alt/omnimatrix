@@ -58,6 +58,25 @@ class RecoveryClassificationTests(unittest.TestCase):
         self.assertEqual(decision.disposition, "revalidation_required")
         self.assertFalse(decision.can_auto_resume)
 
+    def test_mixed_reconciliation_decisions_require_combined_review(self):
+        decision = classify_recovery({
+            "run": {"status": "running"},
+            "uncertain_tool_executions": [
+                {
+                    "execution_id": "exec-applied",
+                    "status": "running",
+                    "latest_reconciliation": {"decision": "confirmed_applied"},
+                },
+                {
+                    "execution_id": "exec-not-applied",
+                    "status": "unknown",
+                    "latest_reconciliation": {"decision": "confirmed_not_applied"},
+                },
+            ],
+        })
+        self.assertEqual(decision.disposition, "mixed_reconciliation_review_required")
+        self.assertFalse(decision.can_auto_resume)
+
     def test_running_run_without_uncertain_tools_still_requires_revalidation(self):
         decision = classify_recovery({
             "run": {"status": "running"},
