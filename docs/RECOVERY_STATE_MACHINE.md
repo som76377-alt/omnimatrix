@@ -85,3 +85,4 @@ call, retries a tool, or authorizes execution. The live orchestrator now writes 
 - Checkpoint payload digest tampering, sequence gaps, and invalid task/attempt references block recovery inspection.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
 - A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
+- A real subprocess crash after a simulated tool side effect but before outcome persistence leaves the tool execution in `running`, preserves the last `tool_call_prepared` checkpoint, and classifies the run as `reconciliation_required`.

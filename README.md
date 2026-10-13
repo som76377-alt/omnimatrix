@@ -13,7 +13,7 @@ The current codebase includes:
 - An explicitly named offline demo provider that simulates responses without performing real model inference or external work.
 - Structured task planning, plan validation, dependency-aware ordering, and passing completed dependency results to downstream tasks as untrusted context.
 - A plan-approval fingerprint workflow and task lifecycle/execution observability.
-- Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work. The orchestrator now records ordered checkpoints at task start, model request/response boundaries, tool-call boundaries, and result/failure observation.
+- Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work. The orchestrator now records ordered checkpoints at task start, model request/response boundaries, tool-call boundaries, and result/failure observation. Fault-injection tests cover both a model-call crash and a crash after a simulated side effect but before its outcome is committed.
 - A Python `unittest` suite covering the core, planning, providers, CLI, and tool behavior.
 
 Treat these as implemented foundations, not proof that every future capability is complete. Approval fingerprints currently cover the plan fields that exist today; an application must still obtain genuine user consent before executing an approved plan. The demo provider is simulated and must never be mistaken for live inference.
