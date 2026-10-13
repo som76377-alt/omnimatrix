@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
         with SQLiteJournal(args.journal) as journal:
             if args.run_objective is not None:
                 existing_ids = {
-                    item["run_id"] for item in journal.list_runs(limit=1000)
+                    item["run_id"] for item in journal.list_runs(limit=999)
                 }
                 omnitrix = Omnitrix.from_config(args.config, journal=journal)
                 result = omnitrix.run(args.run_objective)
