@@ -975,9 +975,13 @@ class Omnitrix:
                 run_id = task.metadata.get("run_id")
                 task_id = task.metadata.get("task_id")
                 attempt_id = task.metadata.get("attempt_id")
-                sequence = task.metadata.get("model_transcript_sequence", 0)
                 if not isinstance(run_id, str) or not isinstance(task_id, str):
                     raise RuntimeError("Journaled model calls require run and task identities.")
+                sequence = task.metadata.get("model_transcript_sequence")
+                if sequence is None:
+                    # A guarded restart may reuse a run whose prior model request
+                    # was recorded before a crash; continue the durable sequence.
+                    sequence = len(self.journal.list_model_transcript(run_id))
                 if isinstance(sequence, bool) or not isinstance(sequence, int):
                     raise RuntimeError("Invalid model transcript sequence.")
                 self.journal.append_model_transcript_record(
