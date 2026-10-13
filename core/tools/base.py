@@ -39,6 +39,11 @@ class Tool(ABC):
         raise NotImplementedError
 
     @property
+    def replay_policy(self) -> str:
+        """Return the durable result policy; tools must opt in explicitly."""
+        return "never"
+
+    @property
     @abstractmethod
     def parameters_schema(self) -> dict[str, Any]:
         """Return the JSON-schema-like parameter definition for this tool."""
