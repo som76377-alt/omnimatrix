@@ -13,6 +13,7 @@ The current codebase includes:
 - An explicitly named offline demo provider that simulates responses without performing real model inference or external work.
 - Structured task planning, plan validation, dependency-aware ordering, and passing completed dependency results to downstream tasks as untrusted context.
 - A plan-approval fingerprint workflow and task lifecycle/execution observability.
+- Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work.
 - A Python `unittest` suite covering the core, planning, providers, CLI, and tool behavior.
 
 Treat these as implemented foundations, not proof that every future capability is complete. Approval fingerprints currently cover the plan fields that exist today; an application must still obtain genuine user consent before executing an approved plan. The demo provider is simulated and must never be mistaken for live inference.
@@ -46,7 +47,7 @@ The current application and test suite use Python's standard library; there is n
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.2; implementation status snapshot dated 13 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.3; implementation status snapshot dated 13 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -15,7 +16,7 @@ import uuid
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 def _now() -> str:
@@ -186,6 +187,26 @@ class SQLiteJournal:
                     self._connection.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (3, _now()),
+                    )
+                if version < 4:
+                    self._connection.execute(
+                        """CREATE TABLE checkpoints (
+                            checkpoint_id TEXT PRIMARY KEY,
+                            run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+                            sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                            checkpoint_type TEXT NOT NULL,
+                            payload_json TEXT NOT NULL,
+                            payload_sha256 TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            UNIQUE (run_id, sequence)
+                        )"""
+                    )
+                    self._connection.execute(
+                        "CREATE INDEX idx_checkpoints_run ON checkpoints(run_id, sequence)"
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (4, _now()),
                     )
                 self._connection.execute("COMMIT")
             except Exception:
@@ -477,6 +498,67 @@ class SQLiteJournal:
                 results.append(record)
         return results
 
+    def save_checkpoint(
+        self,
+        run_id: str,
+        checkpoint_id: str,
+        sequence: int,
+        checkpoint_type: str,
+        payload: Mapping[str, Any],
+    ) -> str:
+        """Append an integrity-checked checkpoint; existing checkpoints are immutable.
+
+        The digest detects accidental payload corruption when the digest itself is
+        intact. It is not a signature and cannot defend against an actor rewriting
+        both the payload and digest in the database.
+        """
+        run_id = _required_text(run_id, "run_id")
+        checkpoint_id = _required_text(checkpoint_id, "checkpoint_id")
+        checkpoint_type = _required_text(checkpoint_type, "checkpoint_type")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
+            raise ValueError("sequence must be a non-negative integer.")
+        if not isinstance(payload, Mapping):
+            raise TypeError("payload must be a mapping.")
+        payload_json = _json(dict(payload))
+        payload_sha256 = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone() is None:
+                raise KeyError(f"Unknown run_id: {run_id}")
+            row = db.execute(
+                "SELECT COALESCE(MAX(sequence), -1) + 1 AS next_sequence FROM checkpoints WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if sequence != row["next_sequence"]:
+                raise ValueError(
+                    f"Checkpoint sequence must be the next contiguous value ({row['next_sequence']})."
+                )
+            db.execute(
+                """INSERT INTO checkpoints
+                   (checkpoint_id, run_id, sequence, checkpoint_type, payload_json,
+                    payload_sha256, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (checkpoint_id, run_id, sequence, checkpoint_type, payload_json,
+                 payload_sha256, _now()),
+            )
+        return payload_sha256
+
+    def list_checkpoints(self, run_id: str) -> list[dict[str, Any]]:
+        """Return checkpoints in durable sequence order with their stored digests."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT checkpoint_id, run_id, sequence, checkpoint_type,
+                          payload_json, payload_sha256, created_at
+                   FROM checkpoints WHERE run_id = ? ORDER BY sequence""",
+                (run_id,),
+            ).fetchall()
+        checkpoints = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = json.loads(item.pop("payload_json"))
+            checkpoints.append(item)
+        return checkpoints
+
     def get_recovery_snapshot(self, run_id: str) -> dict[str, Any] | None:
         """Return a read-only run/task/attempt/tool snapshot for recovery review."""
         run_id = _required_text(run_id, "run_id")
@@ -509,6 +591,8 @@ class SQLiteJournal:
             "run": run,
             "tasks": tasks,
             "attempts": attempts,
+            "checkpoints": self.list_checkpoints(run_id),
+            "events": self.list_events(run_id),
             "uncertain_tool_executions": self.list_uncertain_tool_executions(run_id),
         }
 
