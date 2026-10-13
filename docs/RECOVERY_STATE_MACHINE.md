@@ -63,9 +63,27 @@ intact; it is not a keyed MAC or signature and cannot detect a database actor wh
 payload and digest. Inspection is read-only and never restores a live orchestrator, repeats a model
 call, retries a tool, or authorizes execution. The live orchestrator now writes ordered checkpoints for task start, model request start/response receipt, tool-call preparation/result receipt, task result readiness, and observed task failure. Payloads keep only IDs, counts, names, statuses, and hashes rather than raw prompts, responses, arguments, or outputs. A process crash can therefore leave useful boundary evidence. These checkpoints still do not contain the serialized conversation/provider continuation, and the orchestrator does not resume from them.
 
+## Guarded manual restart from the original objective
+
+`Omnitrix.resume_interrupted_run(run_id, confirm_restart_from_objective=True)` is a narrow,
+explicitly requested recovery path. It is not automatic resume and does not restore provider
+continuation state. It first runs integrity-aware inspection, requires a non-terminal running
+single-task run with consistent persisted objective metadata, and refuses chat turns whose prior
+conversation context was not serialized. It also refuses if any tool execution record exists or
+if a checkpoint records tool-call preparation/result. That conservative fence means the objective
+can only be rerun when the journal proves no tool was dispatched. The current runtime's model
+budget and tool permissions apply to the new attempt.
+
+Before the next model call, the prior open attempt is marked `interrupted`, a new numbered attempt
+is persisted, the restart decision is checkpointed, and lifecycle events are appended. The new
+attempt reuses the run/task identity but receives a fresh attempt ID. A caller must explicitly pass
+`confirm_restart_from_objective=True`; omission is rejected. This path does not support multi-task
+plans, chat-context restoration, any run with prior tool executions, or ambiguous side effects.
+Those cases remain blocked for manual reconciliation/review.
+
 ## Explicitly not implemented
 
-- Automatic process-restart resume or event replay.
+- Automatic process-restart resume or event replay; only the explicitly confirmed, no-tool-dispatch restart subset described above is supported.
 - Re-running model calls from a durable checkpoint; current checkpoints are integrity-checked data records, not yet a complete replay position.
 - Automatic retries, pause/cancel execution control, or compensating actions.
 - Provider-specific or tool-specific proof that an external side effect did or did not happen.
