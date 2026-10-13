@@ -52,9 +52,10 @@ List run IDs without printing stored objectives, or inspect a run's recovery dis
 ```bash
 python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --list-runs
 python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --inspect-run RUN_ID
+python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3 --run-objective "Summarize the task in one sentence"
 ```
 
-The only restart command requires the model config and an explicit confirmation flag. It succeeds only for an integrity-valid interrupted single-task run where no tool was dispatched:
+The one-shot `--run-objective` command creates a durable `run()` record and prints its run ID with the result. The restart command requires the model config and an explicit confirmation flag. It succeeds only for an integrity-valid interrupted single-task run where no tool was dispatched:
 
 ```bash
 python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3 --restart-run RUN_ID --confirm-restart-from-objective
@@ -70,7 +71,7 @@ The current application and test suite use Python's standard library; there is n
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.8; implementation status snapshot dated 13 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.9; implementation status snapshot dated 13 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 
