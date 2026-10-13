@@ -4,7 +4,7 @@
 
 **Version:** 1.13 — Live model-call transcript instrumentation  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/safe-model-transcript`; schema-v6 transcript ledger wired into journaled task-loop model calls; crash-boundary test added, CI pending  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/live-model-transcript`, PR #28; schema-v6 transcript ledger wired into journaled task-loop model calls; crash-boundary test added, CI pending  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
