@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from core.persistence.recovery_service import RecoveryService
 from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
@@ -174,6 +175,10 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
                 event_rows = database.execute(
                     "SELECT event_type, sequence FROM events ORDER BY sequence"
                 ).fetchall()
+                checkpoint_rows = database.execute(
+                    "SELECT checkpoint_type, sequence, payload_json, payload_sha256 "
+                    "FROM checkpoints ORDER BY sequence"
+                ).fetchall()
 
             self.assertEqual(len(run_rows), 1)
             self.assertEqual(run_rows[0][1], "completed")
@@ -195,6 +200,31 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertEqual(attempt_rows[0][2], 1)
             self.assertEqual(attempt_rows[0][3], "completed")
             self.assertIsNotNone(attempt_rows[0][4])
+            self.assertEqual(
+                [row[0] for row in checkpoint_rows],
+                [
+                    "task_started",
+                    "model_request_started",
+                    "model_response_received",
+                    "tool_call_prepared",
+                    "tool_call_result_received",
+                    "model_request_started",
+                    "model_response_received",
+                    "task_result_ready",
+                ],
+            )
+            self.assertEqual(
+                [row[1] for row in checkpoint_rows],
+                list(range(len(checkpoint_rows))),
+            )
+            self.assertTrue(all(len(row[3]) == 64 for row in checkpoint_rows))
+            self.assertNotIn("Calculate 847 * 23", "".join(row[2] for row in checkpoint_rows))
+            with SQLiteJournal(database_path) as journal:
+                inspection = RecoveryService(journal).inspect(run_rows[0][0])
+                self.assertEqual(inspection.integrity_errors, ())
+                self.assertEqual(inspection.checkpoint_count, len(checkpoint_rows))
+                self.assertEqual(inspection.decision.disposition, "terminal")
+
             self.assertEqual(len(tool_execution_rows), 1)
             self.assertEqual(tool_execution_rows[0][0], run_rows[0][0])
             self.assertEqual(tool_execution_rows[0][1], task_rows[0][1])
