@@ -355,6 +355,13 @@ with SQLiteJournal(sys.argv[1]) as journal:
                 self.assertIsNotNone(run_row)
                 self.assertEqual(run_row["status"], "running")
                 checkpoints = journal.list_checkpoints(run_row["run_id"])
+                transcript = journal.list_model_transcript(run_row["run_id"])
+                self.assertEqual(
+                    [item["interaction_type"] for item in transcript],
+                    ["model_request"],
+                )
+                self.assertEqual(len(transcript[0]["request_sha256"]), 64)
+                self.assertIsNone(transcript[0]["response_sha256"])
                 self.assertEqual(
                     [item["checkpoint_type"] for item in checkpoints],
                     ["task_started", "model_request_started"],
