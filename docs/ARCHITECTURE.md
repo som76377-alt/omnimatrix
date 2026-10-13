@@ -21,6 +21,10 @@ Omnitrix is an evolving AI orchestration prototype. The intended request lifecyc
 5. Secrets belong in the process environment or a secret manager, never committed files or logs.
 6. Report success only when the relevant operation and verifier actually succeeded.
 
+## Durable tool execution
+
+When an SQLiteJournal is injected, ToolExecutor records a unique execution ID, idempotency key, tool name, and SHA-256 digest of canonical arguments before calling the tool. Reusing a key never invokes the tool a second time; reusing it for different arguments is rejected. If a tool raises or the process stops before a terminal record is committed, the recorded outcome is treated as unknown and requires reconciliation. These records do not store raw tool arguments or tool output. This is a duplicate-execution fence, not an exactly-once guarantee: a database record cannot be committed atomically with an arbitrary external side effect.
+
 ## Current limitations
 
-The project is still a prototype. Automatic restart/resume recovery, tool-level idempotency and side-effect reconciliation, complete enforcement of approval at every execution boundary, broader external tool adapters, procurement, advanced model routing, Android control, live remote workspace, and voice/multimodal features must not be described as complete until implemented and tested. See `docs/ROADMAP.md` for staged goals and acceptance gates.
+The project is still a prototype. Automatic restart/resume recovery, exactly-once execution and side-effect reconciliation, complete enforcement of approval at every execution boundary, broader external tool adapters, procurement, advanced model routing, Android control, live remote workspace, and voice/multimodal features must not be described as complete until implemented and tested. See `docs/ROADMAP.md` for staged goals and acceptance gates.

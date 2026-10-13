@@ -110,6 +110,43 @@ class SQLiteJournalTests(unittest.TestCase):
                 [1, 2],
             )
 
+    def test_tool_execution_claim_is_unique_and_terminal_outcome_is_immutable(self):
+        with SQLiteJournal(":memory:") as journal:
+            first = journal.begin_tool_execution(
+                "execution-1", "action-key", "side-effect", "sha256-a"
+            )
+            self.assertTrue(first["created"])
+            duplicate = journal.begin_tool_execution(
+                "execution-2", "action-key", "side-effect", "sha256-a"
+            )
+            self.assertFalse(duplicate["created"])
+            self.assertEqual(duplicate["execution_id"], "execution-1")
+            journal.finish_tool_execution("execution-1", "succeeded", {"success": True})
+            with self.assertRaises(RuntimeError):
+                journal.finish_tool_execution("execution-1", "unknown")
+            with self.assertRaises(KeyError):
+                journal.finish_tool_execution("missing-execution", "succeeded")
+
+    def test_schema_v1_database_is_migrated_to_tool_execution_table(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "migration.sqlite3"
+            with SQLiteJournal(path) as journal:
+                journal._connection.execute("DROP TABLE tool_executions")
+                journal._connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+            with SQLiteJournal(path) as journal:
+                with sqlite3.connect(path) as database:
+                    version = database.execute(
+                        "SELECT MAX(version) FROM schema_migrations"
+                    ).fetchone()[0]
+                    tables = {
+                        row[0] for row in database.execute(
+                            "SELECT name FROM sqlite_master WHERE type = 'table'"
+                        )
+                    }
+                self.assertEqual(version, 2)
+                self.assertIn("tool_executions", tables)
+
+
 
 if __name__ == "__main__":
     unittest.main()

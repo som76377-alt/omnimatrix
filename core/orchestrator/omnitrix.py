@@ -101,7 +101,7 @@ class Omnitrix:
         if journal is not None and not isinstance(journal, SQLiteJournal):
             raise TypeError("journal must be a SQLiteJournal or None.")
         self.journal = journal
-        self.tool_executor = ToolExecutor(self.tool_registry)
+        self.tool_executor = ToolExecutor(self.tool_registry, journal=self.journal)
 
     @classmethod
     def from_config(
@@ -662,6 +662,15 @@ class Omnitrix:
                         ToolRequest(
                             tool_name=tool_call.tool_name,
                             arguments=tool_call.arguments,
+                            run_id=task.metadata.get("run_id"),
+                            task_id=task.metadata.get("task_id"),
+                            attempt_id=task.metadata.get("attempt_id"),
+                            idempotency_key=(
+                                f"{task.metadata['attempt_id']}:{tool_iterations}:{tool_call.id}"
+                                if self.journal is not None
+                                and isinstance(task.metadata.get("attempt_id"), str)
+                                else None
+                            ),
                         ),
                         budget_guard=budget_guard,
                         allowed_tool_scopes=allowed_tool_scopes,
