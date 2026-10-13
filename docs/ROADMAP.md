@@ -48,8 +48,10 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add schema-v5 durable tool-result snapshots with strict opt-in replay policy (default `never`), bounded JSON payloads, SHA-256 integrity verification, and an atomic commit with the terminal tool outcome.
 - [x] Enable result snapshot persistence only for the deterministic calculator; verify custom tools remain non-replayable unless they explicitly opt in.
 - [x] Add read-only replay-candidate resolution requiring exact run/task/logical-action/tool/request identity, one matching execution, terminal success, and a verified result snapshot; blocked outcomes omit result content.
-- [ ] Restore a live model/tool conversation from verified snapshots and checkpointed provider state; snapshot storage alone does not resume a task or authorize re-execution.
-- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v5 migration, and cross-attempt duplicate blocking.
+- [x] Add schema-v6 privacy-minimal, append-only model request/response metadata records with contiguous ordering, SHA-256 fields, and no prompt/response body storage; migration preserves earlier journal data.
+- [ ] Wire the model transcript ledger into live request/response boundaries using canonical hashes and verify it with subprocess crash tests.
+- [ ] Restore a live model/tool conversation from verified snapshots and checkpointed provider state; metadata hashes alone cannot reconstruct provider state, and snapshot storage alone does not resume a task or authorize re-execution.
+- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v6 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
 - [ ] Implement full conversation/provider-state restoration, pause/cancel/resume, and event replay into live execution. The current explicit restart path only reruns the original objective when no tool has ever been dispatched; it deliberately blocks chat turns, legacy runs without execution-kind metadata, and any run with a tool execution or tool-call boundary.
 - [ ] Add tool/provider-specific reconciliation adapters that validate external evidence and define safe retry policies.
