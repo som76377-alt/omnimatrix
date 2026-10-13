@@ -14,7 +14,7 @@ import threading
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -139,6 +139,29 @@ class SQLiteJournal:
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (1, _now()),
                     )
+                if version < 2:
+                    self._connection.execute(
+                        """CREATE TABLE tool_executions (
+                            execution_id TEXT PRIMARY KEY,
+                            idempotency_key TEXT NOT NULL UNIQUE,
+                            tool_name TEXT NOT NULL,
+                            request_sha256 TEXT NOT NULL,
+                            run_id TEXT,
+                            task_id TEXT,
+                            attempt_id TEXT,
+                            status TEXT NOT NULL,
+                            started_at TEXT NOT NULL,
+                            finished_at TEXT,
+                            outcome_json TEXT NOT NULL
+                        )"""
+                    )
+                    self._connection.execute(
+                        "CREATE INDEX idx_tool_executions_run ON tool_executions(run_id, started_at)"
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (2, _now()),
+                    )
                 self._connection.execute("COMMIT")
             except Exception:
                 self._connection.execute("ROLLBACK")
@@ -262,6 +285,91 @@ class SQLiteJournal:
             if row is None:
                 raise KeyError(f"Unknown attempt_id: {attempt_id}")
             raise RuntimeError(f"Attempt is already finished: {attempt_id}")
+
+    def begin_tool_execution(
+        self,
+        execution_id: str,
+        idempotency_key: str,
+        tool_name: str,
+        request_sha256: str,
+        *,
+        run_id: str | None = None,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Atomically claim a tool idempotency key before any external effect.
+
+        Existing keys are returned with created=False; callers must not execute
+        that request again.
+        """
+        execution_id = _required_text(execution_id, "execution_id")
+        idempotency_key = _required_text(idempotency_key, "idempotency_key")
+        tool_name = _required_text(tool_name, "tool_name")
+        request_sha256 = _required_text(request_sha256, "request_sha256")
+        for name, value in (("run_id", run_id), ("task_id", task_id), ("attempt_id", attempt_id)):
+            if value is not None:
+                _required_text(value, name)
+        with self._transaction() as db:
+            existing = db.execute(
+                "SELECT * FROM tool_executions WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if existing is not None:
+                record = dict(existing)
+                record["outcome"] = json.loads(record.pop("outcome_json"))
+                record["created"] = False
+                return record
+            db.execute(
+                """INSERT INTO tool_executions
+                (execution_id, idempotency_key, tool_name, request_sha256,
+                 run_id, task_id, attempt_id, status, started_at, finished_at, outcome_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL, '{}')""",
+                (
+                    execution_id, idempotency_key, tool_name, request_sha256,
+                    run_id, task_id, attempt_id, _now(),
+                ),
+            )
+            return {
+                "execution_id": execution_id,
+                "idempotency_key": idempotency_key,
+                "tool_name": tool_name,
+                "request_sha256": request_sha256,
+                "run_id": run_id,
+                "task_id": task_id,
+                "attempt_id": attempt_id,
+                "status": "running",
+                "finished_at": None,
+                "outcome": {},
+                "created": True,
+            }
+
+    def finish_tool_execution(
+        self,
+        execution_id: str,
+        status: str,
+        outcome: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Record a terminal outcome once; never rewrite an existing outcome."""
+        execution_id = _required_text(execution_id, "execution_id")
+        status = _required_text(status, "status")
+        if status == "running":
+            raise ValueError("Terminal tool execution status cannot be running.")
+        with self._transaction() as db:
+            cursor = db.execute(
+                """UPDATE tool_executions
+                SET status = ?, finished_at = ?, outcome_json = ?
+                WHERE execution_id = ? AND status = 'running' AND finished_at IS NULL""",
+                (status, _now(), _json(dict(outcome or {})), execution_id),
+            )
+            if cursor.rowcount == 1:
+                return
+            row = db.execute(
+                "SELECT status FROM tool_executions WHERE execution_id = ?",
+                (execution_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown tool execution: {execution_id}")
+            raise RuntimeError(f"Tool execution is already terminal: {execution_id}")
 
     def append_event(self, event: Any) -> None:
         """Persist a validated RunEvent without silently replacing duplicates."""
