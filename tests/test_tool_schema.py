@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -135,6 +137,125 @@ class ToolSchemaValidationTests(unittest.TestCase):
                 self.assertFalse(duplicate.success)
                 self.assertEqual(duplicate.metadata["prior_status"], "running")
                 self.assertEqual(interrupted_tool.calls, 1)
+
+    def test_real_subprocess_crashes_leave_uncertain_actions_blocked(self):
+        child_code = r\'''\
+import os
+import sys
+from pathlib import Path
+
+from core.persistence.sqlite_journal import SQLiteJournal
+from core.tools.base import ToolResult
+from core.tools.executor import ToolExecutor
+from core.tools.permissions import ToolPermission
+from core.tools.registry import ToolRegistry
+from core.tools.request import ToolRequest
+
+database_path, marker_path, crash_point = sys.argv[1:]
+
+class CrashBoundaryTool:
+    name = "side-effect"
+    description = "Subprocess crash-injection test tool."
+    capabilities = frozenset({"testing"})
+    parameters_schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string", "minLength": 1}},
+        "required": ["path"],
+        "additionalProperties": False,
+    }
+
+    def execute(self, **kwargs):
+        if crash_point == "before_effect":
+            # Abruptly terminate after ToolExecutor has durably claimed the key,
+            # but before this tool performs its simulated external side effect.
+            os._exit(71)
+        with open(marker_path, "a", encoding="utf-8") as marker:
+            marker.write("effect committed\\n")
+            marker.flush()
+            os.fsync(marker.fileno())
+        # Simulate the dangerous window: external effect happened, but the
+        # executor has not yet written a terminal outcome to SQLite.
+        os._exit(72)
+
+registry = ToolRegistry()
+registry.register(CrashBoundaryTool())
+with SQLiteJournal(database_path) as journal:
+    executor = ToolExecutor(registry, journal=journal)
+    executor.execute(
+        ToolRequest(
+            tool_name="side-effect",
+            arguments={"path": "artifact.txt"},
+            idempotency_key="crash-action-key",
+        ),
+        ToolPermission.from_capabilities({"testing"}),
+    )
+os._exit(99)  # Reaching this line would mean the crash injection failed.
+\'''
+        project_root = Path(__file__).resolve().parents[1]
+
+        for crash_point, expected_exit, effect_expected in (
+            ("before_effect", 71, False),
+            ("after_effect_before_checkpoint", 72, True),
+        ):
+            with self.subTest(crash_point=crash_point), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                database_path = root / "journal.sqlite3"
+                marker_path = root / "external-effect.txt"
+
+                # Initialize the durable schema before the child process starts.
+                with SQLiteJournal(database_path):
+                    pass
+
+                process = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        child_code,
+                        str(database_path),
+                        str(marker_path),
+                        crash_point,
+                    ],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(
+                    process.returncode,
+                    expected_exit,
+                    msg=f"Child did not stop at the expected crash point. stderr={process.stderr!r}",
+                )
+                self.assertEqual(marker_path.exists(), effect_expected)
+
+                with SQLiteJournal(database_path) as reopened:
+                    uncertain = reopened.list_uncertain_tool_executions()
+                    self.assertEqual(len(uncertain), 1)
+                    record = uncertain[0]
+                    self.assertEqual(record["idempotency_key"], "crash-action-key")
+                    self.assertEqual(record["status"], "running")
+                    self.assertIsNone(record["finished_at"])
+
+                    # Restart must not imply the action's result or replay it.
+                    duplicate = ToolExecutor(
+                        self.registry, journal=reopened
+                    ).execute(
+                        ToolRequest(
+                            tool_name="side-effect",
+                            arguments={"path": "artifact.txt"},
+                            idempotency_key="crash-action-key",
+                        ),
+                        self.permission,
+                    )
+                    self.assertFalse(duplicate.success)
+                    self.assertEqual(duplicate.metadata["prior_status"], "running")
+                    self.assertEqual(self.tool.calls, 0)
+
+                if effect_expected:
+                    self.assertEqual(
+                        marker_path.read_text(encoding="utf-8"),
+                        "effect committed\\n",
+                    )
 
     def test_idempotency_key_cannot_be_reused_for_different_arguments(self):
         with SQLiteJournal(":memory:") as journal:
