@@ -133,3 +133,10 @@ Only successful outputs that serialize as finite JSON and fit within 16 KiB are 
 - A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
 - A real subprocess crash after a simulated tool side effect but before outcome persistence leaves the tool execution in `running`, preserves the last `tool_call_prepared` checkpoint, and classifies the run as `reconciliation_required`.
 - A real subprocess crash after the tool outcome is committed but before the orchestrator consumes the result leaves a terminal `succeeded` tool record and the run non-terminal; objective-only restart is still blocked because tool history exists, and recovery requires downstream revalidation.
+
+
+## Schema-v6 privacy-minimal model transcript metadata
+
+Schema v6 adds an append-only `model_transcript` ledger for ordered model request/response boundaries. It records run/task/attempt IDs, interaction type, optional provider/model labels, SHA-256 request/response digests, tool-call count, and timestamp. It deliberately does **not** store prompt text, model response text, tool arguments, or tool outputs. Sequence numbers must be contiguous per run, and SQLite triggers reject updates/deletes through ordinary SQL operations.
+
+This is correlation and crash-position groundwork, not a restorable conversation. Hashes cannot reconstruct content or provider continuation state; a digest is not authentication against an actor able to rewrite the database schema or triggers. The ledger is not yet wired into the live orchestrator, so it must not be described as a complete runtime transcript or used to resume work. The next step is to instrument request/response boundaries with canonical serialization and then prove ordering and crash behavior using subprocess tests. Existing v1-v5 journals migrate forward without deleting prior records.
