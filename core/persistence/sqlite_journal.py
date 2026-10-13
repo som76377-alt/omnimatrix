@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import sqlite3
 import threading
+import uuid
 from typing import Any, Iterator, Mapping
 
 
@@ -419,7 +420,7 @@ class SQLiteJournal:
             raise ValueError("Unsupported reconciliation decision.")
         if not isinstance(evidence, Mapping) or not evidence:
             raise ValueError("Reconciliation evidence must be a non-empty mapping.")
-        reconciliation_id = __import__("uuid").uuid4().hex
+        reconciliation_id = uuid.uuid4().hex
         with self._transaction() as db:
             row = db.execute(
                 "SELECT status FROM tool_executions WHERE execution_id = ?",
