@@ -556,10 +556,20 @@ class Omnitrix:
                 allowed_tool_scopes=_allowed_tool_scopes,
             )
         except Exception as exc:
+            self._journal_checkpoint(
+                task,
+                "task_failure_observed",
+                {"error_type": type(exc).__name__},
+            )
             self._journal_finish_task(
                 run_id, task_id, attempt_id, next_sequence, "failed", type(exc).__name__
             )
             raise
+        self._journal_checkpoint(
+            task,
+            "task_result_ready",
+            {"result_sha256": hashlib.sha256(result.encode("utf-8")).hexdigest()},
+        )
         self._journal_finish_task(
             run_id, task_id, attempt_id, next_sequence, "completed"
         )
@@ -582,10 +592,20 @@ class Omnitrix:
                 messages=conversation.messages,
             )
         except Exception as exc:
+            self._journal_checkpoint(
+                task,
+                "task_failure_observed",
+                {"error_type": type(exc).__name__},
+            )
             self._journal_finish_task(
                 run_id, task_id, attempt_id, next_sequence, "failed", type(exc).__name__
             )
             raise
+        self._journal_checkpoint(
+            task,
+            "task_result_ready",
+            {"result_sha256": hashlib.sha256(response.encode("utf-8")).hexdigest()},
+        )
         self._journal_finish_task(
             run_id, task_id, attempt_id, next_sequence, "completed"
         )
