@@ -2,7 +2,7 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.2 — Research-audited architecture and implementation specification with synchronized implementation status  
+**Version:** 1.3 — Research-audited architecture and implementation specification with synchronized implementation status  
 **Research / snapshot date:** 11 October 2026  
 **Implementation status snapshot:** 13 October 2026, checked against `som76377-alt/omnimatrix` branch `main` at the time of this revision  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
@@ -402,7 +402,7 @@ Frameworks such as Microsoft Agent Framework, Google ADK, LangGraph and OpenAI A
 
 The repository already has a useful planning foundation: immutable `PlannedTask` and `TaskPlan`, graph validation for duplicate IDs, missing dependencies, self-dependencies and cycles, dependency readiness, deterministic plan fingerprinting, `PlanApproval`, and tests including long dependency chains. `Omnitrix.propose_plan()` validates model JSON structure, `preview_plan()` provides an execution order, and `execute_approved_plan()` checks a fingerprint before execution. Preserve and extend this work.
 
-The repository now demonstrates a **partial durable execution foundation**, but not complete recovery. The current implementation includes a versioned SQLite journal (schema v3) for runs, tasks, attempts, events, approvals, artifact metadata and tool executions; opt-in integration around `run()` and `chat()`; a durable duplicate-execution fence; deterministic logical action keys scoped to a run/task/action; append-only reconciliation assertions; read-only recovery snapshots and conservative recovery classification; and file-backed plus real-subprocess crash-window tests.
+The repository now demonstrates a **partial durable execution foundation**, but not complete recovery. The current implementation includes a versioned SQLite journal (schema v4) for runs, tasks, attempts, events, approvals, artifact metadata and tool executions; opt-in integration around `run()` and `chat()`; a durable duplicate-execution fence; deterministic logical action keys scoped to a run/task/action; append-only reconciliation assertions; read-only recovery snapshots and conservative recovery classification; and file-backed plus real-subprocess crash-window tests. Schema v4 also adds append-only checkpoint records with canonical SHA-256 payload digests, while `RecoveryService.inspect()` validates checkpoint digests/sequence and run/task/attempt/tool relationships before classification.
 
 These foundations must not be overstated. Automatic run restoration, event replay into live execution, pause/cancel/resume, automatic retry, provider-state reconciliation, independently validated tool-specific evidence, sandbox management, mobile authentication, and the Android/live-workspace clients remain incomplete. The journal is opt-in. The current logical action ID uses tool-loop iteration and response position; it is conservative and requires the same action sequence to be reproduced. A reconciliation record is an auditable assertion, not proof of an external state. See `docs/ROADMAP.md` and `docs/RECOVERY_STATE_MACHINE.md` in the repository for the implementation boundary and recovery dispositions.
 
@@ -1775,3 +1775,4 @@ This is a checklist for reviewing the document itself, not proof that the implem
 | 1.0 | 11 October 2026 | Initial large baseline draft: requirements, architecture, failure handling, quality doctrine, roadmap, risks and decision ledger. |
 | 1.1 | 11 October 2026 | Added missing source register for all cited source IDs; expanded official primary-source research; clarified trademark diligence; added source refresh rules and owner acceptance checklist. |
 | 1.2 | 13 October 2026 | Synchronized implementation status against the repository; documented schema-v3 journal, stable logical tool-action identity, append-only reconciliation evidence, conservative recovery classification, and remaining Phase 2 gaps. |
+| 1.3 | 13 October 2026 | Added schema-v4 append-only checkpoints with canonical payload digests and read-only recovery inspection that blocks on checkpoint corruption or inconsistent run/task/attempt/tool references; clarified that complete execution-position checkpointing and automatic restoration remain unimplemented. |
