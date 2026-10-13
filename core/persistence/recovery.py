@@ -173,7 +173,6 @@ def classify_model_position(
         expected_sequence = 0
         expected_type = "model_request"
         pending_request: Mapping[str, Any] | None = None
-        completed_calls = 0
         for item in transcript:
             if not isinstance(item, Mapping):
                 reasons.append("Transcript contains a malformed record.")
@@ -224,7 +223,6 @@ def classify_model_position(
                     break
                 pending_request = None
                 expected_type = "model_request"
-                completed_calls += 1
 
         if disposition == "model_boundary_consistent" and pending_request is not None:
             disposition = "model_call_outcome_ambiguous"
@@ -256,7 +254,7 @@ def classify_model_position(
             isinstance(item, Mapping) and item.get("interaction_type") == "model_response"
             for item in transcript
         )
-        if disposition == "model_boundary_consistent":
+        if disposition in {"model_boundary_consistent", "model_call_outcome_ambiguous"}:
             if transcript_responses > len(response_checkpoints):
                 disposition = "model_response_checkpoint_missing"
                 reasons.append(
@@ -280,7 +278,7 @@ def classify_model_position(
             elif transcript_requests != len(request_checkpoints) or transcript_responses != len(response_checkpoints):
                 disposition = "boundary_mismatch"
                 reasons.append("Transcript and checkpoint model-call counts do not align.")
-            else:
+            elif disposition == "model_boundary_consistent":
                 reasons.append("Transcript request/response pairs align with ordered model checkpoints.")
 
     return {
