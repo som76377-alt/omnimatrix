@@ -21,7 +21,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Validate tool arguments against a documented JSON Schema subset before tool execution; malformed/unsupported schemas fail closed.
 - [x] Wire the budget guard into planner and task-loop model-call boundaries; unknown-cost providers are rejected in zero-cost mode unless explicitly classified.
 - [x] Enforce exact tool-name scopes from approved plans and reject declared targets/resources/external egress that the current runtime cannot yet enforce (fail closed).
-- [ ] Complete stable IDs, explicit state-transition tests, and retry/idempotency metadata at tool boundaries.
+- [x] Add stable tool-execution IDs and idempotency keys at the tool boundary, with tests for duplicate requests, key/request mismatches, and uncertain outcomes.
 - **Gate:** invalid plans/arguments, stale approvals, paid or unknown-cost providers in zero-cost mode, and untrusted outputs cannot trigger unauthorized side effects. This increment does not yet pass the entire Phase 1 gate.
 
 ## Phase 2 — Durable execution and recovery (in progress)
@@ -30,10 +30,11 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add atomic writes, foreign-key constraints, unique event sequence enforcement, event cursor reads, and file-backed reopen tests.
 - [x] Add opt-in journal integration for `run()` and `chat()` with run/task IDs and created, started, completed, and failed events persisted around execution.
 - [x] Persist a stable ID and terminal status for the initial task attempt, including failed attempts; reject attempts being finished twice.
-- [ ] Define pause, cancel, retry, resume, and idempotency semantics before automatic recovery.
+- [x] Add a schema-v2 tool-execution journal and a durable duplicate-execution fence. A previously claimed idempotency key is never executed again automatically; arguments are represented by a SHA-256 digest rather than stored verbatim.
+- [ ] Define pause, cancel, retry, resume, and cross-attempt idempotency semantics before automatic recovery.
 - [ ] Preserve completed work and failed-task evidence across real process restarts.
 - [ ] Add fault-injection tests around crashes between side effects and checkpoint writes.
-- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Attempt records are evidence only: a process crash may leave an attempt marked running, and automatic replay/recovery, tool-level idempotency, and side-effect reconciliation are not implemented.
+- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Attempt and tool-execution records are evidence only. A process crash may leave a tool execution marked running; duplicate requests are blocked, but this is not exactly-once execution, result replay, or side-effect reconciliation. Automatically safe retry/recovery remains unimplemented.
 
 ## Phase 3 — Tool catalog and procurement
 
