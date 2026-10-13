@@ -158,6 +158,10 @@ def _payload_to_dict(value: ModelRequest | ModelResponse) -> dict[str, Any]:
             "continuation": _continuation_to_dict(value.continuation),
         }
     if isinstance(value, ModelResponse):
+        if not all(isinstance(item, str) for item in (value.content, value.model, value.provider)):
+            raise ModelStateCodecError("Response content/model/provider must be strings.")
+        if value.usage is not None and not isinstance(value.usage, dict):
+            raise ModelStateCodecError("Response usage must be an object or null.")
         return {
             "kind": "response",
             "content": value.content,
@@ -192,7 +196,11 @@ def decode_model_state(envelope: object) -> ModelRequest | ModelResponse:
     }:
         raise ModelStateCodecError("Model-state envelope has an invalid shape.")
     version = envelope["schema_version"]
-    if isinstance(version, bool) or version != MODEL_STATE_SCHEMA_VERSION:
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != MODEL_STATE_SCHEMA_VERSION
+    ):
         raise ModelStateCodecError(f"Unsupported model-state schema version: {version!r}.")
     payload = envelope["payload"]
     digest = envelope["payload_sha256"]
