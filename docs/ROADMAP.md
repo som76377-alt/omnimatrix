@@ -121,3 +121,13 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 ## Working rule
 
 Do not skip foundational safety and recovery work to make a demo look more autonomous. A small feature that is verified, recoverable, and honest about its limits is preferable to a wider feature that can claim success incorrectly.
+
+
+### Phase 2 follow-up — encrypted model-state snapshots
+
+- [x] Add schema-v7 storage for encrypted snapshot bytes and bounded identity metadata.
+- [x] Keep persistence disabled by default and require an externally supplied 32-byte key for explicit opt-in.
+- [x] Encrypt only complete request/response pairs with AES-GCM; bind run/task/attempt/sequence/provider/model/key ID as authenticated data.
+- [x] Validate codec envelopes on write and read; test database reopen, ciphertext confidentiality, wrong-key/corruption rejection, identity constraints and explicit deletion.
+- [x] Verify CI and review dependency, privacy and migration behavior; CI run #331 passed 321 tests, compilation, configuration validation and offline CLI smoke test.
+- [ ] Restore provider-neutral request/response objects only after recovery-position validation and provider continuation compatibility are integrated; keep automatic resume disabled until full end-to-end crash recovery is tested.

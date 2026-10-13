@@ -369,6 +369,7 @@ class SQLiteJournalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "migration.sqlite3"
             with SQLiteJournal(path) as journal:
+                journal._connection.execute("DROP TABLE model_state_snapshots")
                 journal._connection.execute("DROP TABLE model_transcript")
                 journal._connection.execute("DROP TABLE tool_result_snapshots")
                 journal._connection.execute("DROP TABLE checkpoints")
@@ -385,12 +386,13 @@ class SQLiteJournalTests(unittest.TestCase):
                             "SELECT name FROM sqlite_master WHERE type = 'table'"
                         )
                     }
-                self.assertEqual(version, 6)
+                self.assertEqual(version, 7)
                 self.assertIn("tool_executions", tables)
                 self.assertIn("tool_reconciliations", tables)
                 self.assertIn("checkpoints", tables)
                 self.assertIn("tool_result_snapshots", tables)
                 self.assertIn("model_transcript", tables)
+                self.assertIn("model_state_snapshots", tables)
                 columns = {
                     row[1] for row in database.execute("PRAGMA table_info(tool_executions)")
                 }

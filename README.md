@@ -67,11 +67,11 @@ Chat turns and runs with any tool execution remain blocked from objective-only r
 
 Model profiles live under `config/`. The offline profile is `config/demo.models.json`; provider credentials must not be committed to the repository. The Gemini adapter reads `GEMINI_API_KEY` from the process environment. Set it in your shell only when intentionally testing live provider access, and verify the configured model identifier against the provider's current documentation before relying on it.
 
-The current application and test suite use Python's standard library; there is no third-party runtime dependency manifest or lockfile at this stage, and CI intentionally installs no packages. Re-check imports and update the packaging/lock strategy and CI deliberately if a third-party dependency is introduced.
+The core application uses the Python standard library, with one explicit runtime dependency (`cryptography`) for opt-in AES-GCM encrypted model-state snapshots. Install runtime dependencies with `python -m pip install -r requirements.txt`. CI installs this file before tests. The encryption key is supplied separately by the caller and is never stored in the SQLite journal.
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.9; implementation status snapshot dated 13 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.16; implementation status snapshot dated 13 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 
