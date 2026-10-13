@@ -104,3 +104,4 @@ Those cases remain blocked for manual reconciliation/review.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
 - A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
 - A real subprocess crash after a simulated tool side effect but before outcome persistence leaves the tool execution in `running`, preserves the last `tool_call_prepared` checkpoint, and classifies the run as `reconciliation_required`.
+- A real subprocess crash after the tool outcome is committed but before the orchestrator consumes the result leaves a terminal `succeeded` tool record and the run non-terminal; objective-only restart is still blocked because tool history exists, and recovery requires downstream revalidation.
