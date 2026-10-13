@@ -53,7 +53,7 @@ Schema v4 adds an append-only `checkpoints` table. Each checkpoint has a run-loc
 type, JSON payload, creation timestamp and SHA-256 digest of canonical JSON (UTF-8, sorted keys,
 compact separators). A unique constraint prevents two checkpoints from claiming the same sequence.
 `SQLiteJournal.save_checkpoint()` rejects unknown runs and invalid sequence values; inserts cannot
-silently replace an existing checkpoint. `RecoveryService.inspect(run_id)` reconstructs the stored
+silently replace an existing checkpoint; writes must use the next contiguous sequence number. `RecoveryService.inspect(run_id)` reconstructs the stored
 snapshot and checks checkpoint digests and sequence continuity, task/attempt relationships, and
 run-scoped event/tool references before returning a disposition. Integrity failures become
 `blocked_unknown_state`, never a best-effort resume.
