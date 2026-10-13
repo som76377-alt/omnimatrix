@@ -13,7 +13,7 @@ The current codebase includes:
 - An explicitly named offline demo provider that simulates responses without performing real model inference or external work.
 - Structured task planning, plan validation, dependency-aware ordering, and passing completed dependency results to downstream tasks as untrusted context.
 - A plan-approval fingerprint workflow and task lifecycle/execution observability.
-- Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work. The orchestrator now records ordered checkpoints at task start, model request/response boundaries, tool-call boundaries, and result/failure observation. Fault-injection tests cover a model-call crash, a crash after a simulated side effect but before its outcome is committed, and a crash after the tool outcome is committed but before the orchestrator consumes it. An explicitly confirmed restart-from-objective path is available only for interrupted single-task runs where integrity checks pass and no tool was dispatched; chat turns and runs with any tool execution remain blocked.
+- Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work. The orchestrator now records ordered checkpoints at task start, model request/response boundaries, tool-call boundaries, and result/failure observation. Fault-injection tests cover a model-call crash, a crash after a simulated side effect but before its outcome is committed, and a crash after the tool outcome is committed but before the orchestrator consumes it. An explicitly confirmed restart-from-objective path is available only for interrupted single-task runs where integrity checks pass and no tool was dispatched; chat turns and runs with any tool execution remain blocked. The CLI exposes recent-run listing, read-only recovery inspection, and the same explicitly confirmed guarded restart.
 - A Python `unittest` suite covering the core, planning, providers, CLI, and tool behavior.
 
 Treat these as implemented foundations, not proof that every future capability is complete. Approval fingerprints currently cover the plan fields that exist today; an application must still obtain genuine user consent before executing an approved plan. The demo provider is simulated and must never be mistaken for live inference.
@@ -38,6 +38,29 @@ python -m interfaces.cli.main --config config/demo.models.json
 ```
 
 Type a message, then enter `/exit` to quit. The demo provider deliberately labels its output as simulated. It does not call an external model.
+
+### Durable recovery commands
+
+Enable a local SQLite journal for an interactive session:
+
+```bash
+python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3
+```
+
+List run IDs without printing stored objectives, or inspect a run's recovery disposition:
+
+```bash
+python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --list-runs
+python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --inspect-run RUN_ID
+```
+
+The only restart command requires the model config and an explicit confirmation flag. It succeeds only for an integrity-valid interrupted single-task run where no tool was dispatched:
+
+```bash
+python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3 --restart-run RUN_ID --confirm-restart-from-objective
+```
+
+Chat turns and runs with any tool execution remain blocked from objective-only restart. Protect the journal file: run/task payloads include objectives even though the run-list command does not reveal them.
 
 ## Model configuration and secrets
 
