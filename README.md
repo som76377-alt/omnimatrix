@@ -44,6 +44,12 @@ Model profiles live under `config/`. The offline profile is `config/demo.models.
 
 The current application and test suite use Python's standard library; there is no third-party runtime dependency manifest or lockfile at this stage, and CI intentionally installs no packages. Re-check imports and update the packaging/lock strategy and CI deliberately if a third-party dependency is introduced.
 
+## Project specifications
+
+- [Product Requirements Document](docs/PRD.md) — version 1.2; implementation status snapshot dated 13 October 2026.
+- [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
+- [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
+
 ## Repository map
 
 | Path | Purpose |

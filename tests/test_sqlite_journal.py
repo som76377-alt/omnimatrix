@@ -168,12 +168,61 @@ class SQLiteJournalTests(unittest.TestCase):
             self.assertEqual(uncertain[0]["status"], "unknown")
             self.assertIsNotNone(uncertain[0]["finished_at"])
 
+    def test_reconciliation_is_append_only_and_exposed_in_recovery_snapshot(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.create_run("run-1", status="running")
+            journal.upsert_task("run-1", "task-1", "running")
+            journal.record_attempt("attempt-1", "run-1", "task-1", 1, "running")
+            journal.begin_tool_execution(
+                "execution-1", "action-key", "side-effect", "sha256-a",
+                run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+                logical_action_id="iteration:1:call:0",
+            )
+            reconciliation_id = journal.record_tool_reconciliation(
+                "execution-1",
+                "confirmed_not_applied",
+                {"source": "read-after-write check", "result": "target absent"},
+                "operator",
+            )
+            snapshot = journal.get_recovery_snapshot("run-1")
+            self.assertEqual(snapshot["run"]["status"], "running")
+            self.assertEqual(len(snapshot["tasks"]), 1)
+            self.assertEqual(len(snapshot["attempts"]), 1)
+            uncertain = snapshot["uncertain_tool_executions"]
+            self.assertEqual(uncertain[0]["logical_action_id"], "iteration:1:call:0")
+            self.assertEqual(
+                uncertain[0]["latest_reconciliation"]["reconciliation_id"],
+                reconciliation_id,
+            )
+            self.assertEqual(
+                uncertain[0]["latest_reconciliation"]["decision"],
+                "confirmed_not_applied",
+            )
+            # The original execution remains uncertain and immutable; reconciliation
+            # is a separate evidence record, not a rewritten success/failure.
+            self.assertEqual(uncertain[0]["status"], "running")
+            self.assertIsNone(uncertain[0]["finished_at"])
+
+    def test_reconciliation_rejects_terminal_execution_and_empty_evidence(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.begin_tool_execution("execution-1", "action-key", "side-effect", "sha256-a")
+            with self.assertRaises(ValueError):
+                journal.record_tool_reconciliation(
+                    "execution-1", "confirmed_applied", {}, "operator"
+                )
+            journal.finish_tool_execution("execution-1", "succeeded", {"success": True})
+            with self.assertRaises(RuntimeError):
+                journal.record_tool_reconciliation(
+                    "execution-1", "confirmed_applied", {"source": "check"}, "operator"
+                )
+
     def test_schema_v1_database_is_migrated_to_tool_execution_table(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "migration.sqlite3"
             with SQLiteJournal(path) as journal:
+                journal._connection.execute("DROP TABLE tool_reconciliations")
                 journal._connection.execute("DROP TABLE tool_executions")
-                journal._connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+                journal._connection.execute("DELETE FROM schema_migrations WHERE version >= 2")
             with SQLiteJournal(path) as journal:
                 with sqlite3.connect(path) as database:
                     version = database.execute(
@@ -184,8 +233,13 @@ class SQLiteJournalTests(unittest.TestCase):
                             "SELECT name FROM sqlite_master WHERE type = 'table'"
                         )
                     }
-                self.assertEqual(version, 2)
+                self.assertEqual(version, 3)
                 self.assertIn("tool_executions", tables)
+                self.assertIn("tool_reconciliations", tables)
+                columns = {
+                    row[1] for row in database.execute("PRAGMA table_info(tool_executions)")
+                }
+                self.assertIn("logical_action_id", columns)
 
 
 

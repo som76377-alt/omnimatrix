@@ -80,6 +80,7 @@ class ToolExecutor:
                 run_id=request.run_id,
                 task_id=request.task_id,
                 attempt_id=request.attempt_id,
+                logical_action_id=request.logical_action_id,
             )
         except Exception as exc:
             return ToolResult(

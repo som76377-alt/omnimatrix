@@ -33,7 +33,7 @@ from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
 from core.tools.base import ToolResult
-from core.tools.request import ToolRequest
+from core.tools.request import ToolRequest, stable_tool_idempotency_key
 
 
 logger = logging.getLogger(__name__)
@@ -650,13 +650,36 @@ class Omnitrix:
 
             tool_messages = []
 
-            for tool_call in response.tool_calls:
+            for tool_call_index, tool_call in enumerate(response.tool_calls):
                 tool_started_at = time.perf_counter()
                 _log_safely(
                     logging.INFO,
                     "tool_started",
                     tool_name=tool_call.tool_name,
                 )
+                logical_action_id = (
+                    f"iteration:{tool_iterations}:call:{tool_call_index}"
+                    if self.journal is not None
+                    and isinstance(task.metadata.get("run_id"), str)
+                    and isinstance(task.metadata.get("task_id"), str)
+                    else None
+                )
+                if logical_action_id is not None:
+                    idempotency_key = stable_tool_idempotency_key(
+                        task.metadata["run_id"],
+                        task.metadata["task_id"],
+                        logical_action_id,
+                    )
+                elif self.journal is not None and isinstance(
+                    task.metadata.get("attempt_id"), str
+                ):
+                    # Legacy/fallback identity for callers without durable task IDs.
+                    idempotency_key = (
+                        f"{task.metadata['attempt_id']}:{tool_iterations}:{tool_call.id}"
+                    )
+                else:
+                    idempotency_key = None
+
                 try:
                     tool_result = self.execute_tool(
                         ToolRequest(
@@ -665,12 +688,8 @@ class Omnitrix:
                             run_id=task.metadata.get("run_id"),
                             task_id=task.metadata.get("task_id"),
                             attempt_id=task.metadata.get("attempt_id"),
-                            idempotency_key=(
-                                f"{task.metadata['attempt_id']}:{tool_iterations}:{tool_call.id}"
-                                if self.journal is not None
-                                and isinstance(task.metadata.get("attempt_id"), str)
-                                else None
-                            ),
+                            idempotency_key=idempotency_key,
+                            logical_action_id=logical_action_id,
                         ),
                         budget_guard=budget_guard,
                         allowed_tool_scopes=allowed_tool_scopes,
