@@ -170,7 +170,7 @@ class CrashBoundaryTool:
             # but before this tool performs its simulated external side effect.
             os._exit(71)
         with open(marker_path, "a", encoding="utf-8") as marker:
-            marker.write("effect committed\\n")
+            marker.write("effect committed\n")
             marker.flush()
             os.fsync(marker.fileno())
         # Simulate the dangerous window: external effect happened, but the
@@ -254,7 +254,7 @@ os._exit(99)  # Reaching this line would mean the crash injection failed.
                 if effect_expected:
                     self.assertEqual(
                         marker_path.read_text(encoding="utf-8"),
-                        "effect committed\\n",
+                        "effect committed\n",
                     )
 
     def test_idempotency_key_cannot_be_reused_for_different_arguments(self):
