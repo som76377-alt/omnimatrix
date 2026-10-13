@@ -40,6 +40,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add append-only schema-v4 checkpoints with canonical SHA-256 payload digests and a read-only recovery inspection service that validates checkpoint sequence/digests and run/task/attempt/tool references before classification.
 - [x] Write digest-checked checkpoints from the live orchestrator at task start, before/after model calls, around tool calls, and before terminal lifecycle persistence; avoid storing raw prompts, model responses, tool arguments, or tool outputs in checkpoint payloads.
 - [x] Verify ordered checkpoints through a real journaled run and a subprocess terminated at a model-call boundary; interrupted runs remain non-terminal and require recovery review.
+- [x] Fault-inject a subprocess exit after a tool has performed a simulated external side effect but before its outcome can be committed; after reopening the database, the tool remains `running`/uncertain and recovery requires reconciliation.
 - [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v4 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
 - [ ] Implement whole-run restoration from validated checkpoints, pause/cancel/resume, and replay into live execution. Checkpoints currently record boundaries and hashes, not enough state to replay provider conversations or safely continue.
