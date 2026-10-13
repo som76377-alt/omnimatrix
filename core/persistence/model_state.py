@@ -6,6 +6,7 @@ store provider secrets, or authorize conversation restoration or execution.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from typing import Any, Mapping
 
@@ -208,7 +209,7 @@ def decode_model_state(envelope: object) -> ModelRequest | ModelResponse:
             f"Model state exceeds the {MAX_MODEL_STATE_BYTES}-byte limit."
         )
     actual_digest = hashlib.sha256(encoded).hexdigest()
-    if not hashlib.compare_digest(actual_digest, digest.lower()):
+    if not hmac.compare_digest(actual_digest, digest.lower()):
         raise ModelStateCodecError("Model-state payload digest mismatch.")
 
     kind = payload.get("kind")
