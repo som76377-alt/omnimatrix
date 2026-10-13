@@ -262,7 +262,6 @@ class SQLiteJournalTests(unittest.TestCase):
                     "execution-replay", "succeeded", {"success": True},
                     replay_result={"policy": "unapproved_policy", "output": 42},
                 )
-            record = journal.list_tool_executions("run-unused") if False else None
             with journal._lock:
                 status = journal._connection.execute(
                     "SELECT status FROM tool_executions WHERE execution_id = ?",
