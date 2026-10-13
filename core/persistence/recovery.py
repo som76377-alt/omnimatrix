@@ -195,7 +195,11 @@ def classify_model_position(
                 break
             if expected_type == "model_request":
                 digest = item.get("request_sha256")
-                if not isinstance(digest, str) or len(digest) != 64:
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest.lower())
+                ):
                     reasons.append(f"Transcript request at sequence {sequence} has no valid digest.")
                     disposition = "boundary_mismatch"
                     break
@@ -217,7 +221,11 @@ def classify_model_position(
                     disposition = "boundary_mismatch"
                     break
                 digest = item.get("response_sha256")
-                if not isinstance(digest, str) or len(digest) != 64:
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest.lower())
+                ):
                     reasons.append(f"Transcript response at sequence {sequence} has no valid digest.")
                     disposition = "boundary_mismatch"
                     break
