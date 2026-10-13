@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.13 — Live model-call transcript instrumentation  
+**Version:** 1.14 — Recovery-position validation  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/live-model-transcript`, PR #28; schema-v6 transcript ledger wired into journaled task-loop model calls; crash-boundary test added, CI pending  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/recovery-position-validator`; recovery inspection correlates schema-v6 model transcript metadata with ordered model checkpoints; crash-gap tests added, CI pending  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1793,3 +1793,8 @@ Schema v6 introduces an append-only model request/response metadata ledger with 
 ## Version 1.13 change log — live model-call transcript instrumentation
 
 The task execution loop now records canonical SHA-256 request and response fingerprints in the schema-v6 metadata ledger. Request fingerprints cover ordered message context, tool definitions and continuation state; response fingerprints cover normalized content, tool calls, usage metadata and continuation state. Only hashes and bounded metadata are persisted. A subprocess crash test verifies that an adapter crash leaves the request record durable and no fabricated response record. This does not restore provider state or enable automatic resume. Planner calls made outside a journaled task run are not covered.
+
+
+## Version 1.14 change log — recovery-position validation
+
+Recovery inspection now validates the ordered metadata transcript against model request-start and response-received checkpoints. It detects transcript sequence/order errors, request/response identity mismatches, missing request/response boundaries, an unmatched request with an ambiguous provider outcome, and the crash gap where a response digest is durable but its checkpoint is absent. A subprocess test exercises that exact gap. The validator is read-only and does not reconstruct prompt/response content, restore provider continuation, replay tools, or enable automatic resume; all outcomes remain non-resumable.
