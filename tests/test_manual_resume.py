@@ -84,10 +84,11 @@ class GuardedManualRestartTests(unittest.TestCase):
             snapshot = journal.get_recovery_snapshot("run-safe")
             self.assertEqual(snapshot["run"]["status"], "completed")
             self.assertEqual(snapshot["run"]["payload"]["objective"], objective)
-            self.assertEqual(len(snapshot["attempts"]), 2)
-            self.assertEqual(snapshot["attempts"][0]["status"], "interrupted")
-            self.assertEqual(snapshot["attempts"][1]["status"], "completed")
-            self.assertEqual(snapshot["attempts"][1]["attempt_number"], 2)
+            attempts = sorted(snapshot["attempts"], key=lambda item: item["attempt_number"])
+            self.assertEqual(len(attempts), 2)
+            self.assertEqual(attempts[0]["status"], "interrupted")
+            self.assertEqual(attempts[1]["status"], "completed")
+            self.assertEqual(attempts[1]["attempt_number"], 2)
             self.assertEqual(snapshot["tasks"][0]["status"], "completed")
             self.assertTrue(
                 any(
