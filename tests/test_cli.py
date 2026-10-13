@@ -1,7 +1,11 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from core.conversation import Conversation
+from core.persistence.sqlite_journal import SQLiteJournal
 from interfaces.cli.main import main, run_cli
 
 
@@ -83,6 +87,65 @@ class CliTests(unittest.TestCase):
             outputs,
             ["Response to: Hello"],
         )
+
+    def test_list_runs_does_not_print_stored_objectives(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal_path = Path(directory) / "journal.sqlite3"
+            with SQLiteJournal(journal_path) as journal:
+                journal.create_run(
+                    "run-visible",
+                    status="running",
+                    payload={
+                        "objective": "SENSITIVE OBJECTIVE TEXT",
+                        "execution_kind": "run",
+                    },
+                )
+
+            with patch("builtins.print") as print_mock:
+                main(["--journal", str(journal_path), "--list-runs"])
+
+            output = print_mock.call_args.args[0]
+            records = json.loads(output)
+            self.assertEqual(records[0]["run_id"], "run-visible")
+            self.assertEqual(records[0]["status"], "running")
+            self.assertNotIn("SENSITIVE OBJECTIVE TEXT", output)
+            self.assertNotIn("objective", records[0])
+
+    def test_inspect_run_prints_conservative_recovery_disposition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal_path = Path(directory) / "journal.sqlite3"
+            with SQLiteJournal(journal_path) as journal:
+                journal.create_run(
+                    "run-inspect",
+                    status="running",
+                    payload={"objective": "private", "execution_kind": "run"},
+                )
+
+            with patch("builtins.print") as print_mock:
+                main([
+                    "--journal", str(journal_path),
+                    "--inspect-run", "run-inspect",
+                ])
+
+            output = json.loads(print_mock.call_args.args[0])
+            self.assertEqual(output["run_id"], "run-inspect")
+            self.assertEqual(output["decision"]["disposition"], "revalidation_required")
+            self.assertFalse(output["can_auto_resume"])
+
+    def test_restart_command_requires_explicit_confirmation(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--journal", "journal.sqlite3",
+                "--restart-run", "run-1",
+            ])
+
+    def test_restart_confirmation_flag_is_rejected_without_restart_command(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--confirm-restart-from-objective",
+            ])
 
     @patch("interfaces.cli.main.Omnitrix")
     def test_main_builds_application_and_starts_cli(self, omnitrix_class):

@@ -268,6 +268,34 @@ class SQLiteJournal:
         result["payload"] = json.loads(result.pop("payload_json"))
         return result
 
+    def list_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        """List recent run metadata without returning objectives or other payload data."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer between 1 and 1000.")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT run_id, status, created_at, updated_at, payload_json
+                   FROM runs ORDER BY updated_at DESC, created_at DESC, run_id LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            results.append(
+                {
+                    "run_id": row["run_id"],
+                    "status": row["status"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "execution_kind": (
+                        payload.get("execution_kind")
+                        if isinstance(payload, dict)
+                        else None
+                    ),
+                }
+            )
+        return results
+
     def upsert_task(
         self, run_id: str, task_id: str, status: str,
         payload: Mapping[str, Any] | None = None,
