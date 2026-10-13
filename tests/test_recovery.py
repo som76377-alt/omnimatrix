@@ -131,6 +131,10 @@ class ModelRecoveryPositionTests(unittest.TestCase):
         result = classify_model_position([self.request, self.response], self.checkpoints[:1])
         self.assertEqual(result["disposition"], "model_response_checkpoint_missing")
 
+    def test_unmatched_request_without_request_checkpoint_is_inconsistent(self):
+        result = classify_model_position([self.request], [])
+        self.assertEqual(result["disposition"], "boundary_mismatch")
+
     def test_transcript_identity_mismatch_fails_closed(self):
         mismatched = dict(self.response, attempt_id="attempt-2")
         result = classify_model_position([self.request, mismatched], self.checkpoints)
