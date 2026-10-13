@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 MAX_REPLAY_RESULT_BYTES = 16_384
 
 
@@ -260,6 +260,33 @@ class SQLiteJournal:
                     self._connection.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (6, _now()),
+                    )
+                if version < 7:
+                    self._connection.execute(
+                        """CREATE TABLE model_state_snapshots (
+                            snapshot_id TEXT PRIMARY KEY,
+                            run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+                            task_id TEXT NOT NULL,
+                            attempt_id TEXT NOT NULL REFERENCES attempts(attempt_id) ON DELETE CASCADE,
+                            interaction_sequence INTEGER NOT NULL CHECK (interaction_sequence >= 0),
+                            provider TEXT NOT NULL,
+                            model TEXT NOT NULL,
+                            key_id TEXT NOT NULL,
+                            nonce BLOB NOT NULL CHECK (length(nonce) = 12),
+                            ciphertext BLOB NOT NULL,
+                            payload_sha256 TEXT NOT NULL CHECK (length(payload_sha256) = 64),
+                            created_at TEXT NOT NULL,
+                            FOREIGN KEY (run_id, task_id) REFERENCES tasks(run_id, task_id)
+                                ON DELETE CASCADE,
+                            UNIQUE (run_id, task_id, attempt_id, interaction_sequence)
+                        )"""
+                    )
+                    self._connection.execute(
+                        "CREATE INDEX idx_model_state_snapshots_run ON model_state_snapshots(run_id, task_id, interaction_sequence)"
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (7, _now()),
                     )
                 self._connection.execute("COMMIT")
             except Exception:
@@ -973,6 +1000,84 @@ class SQLiteJournal:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT * FROM model_transcript WHERE run_id = ? ORDER BY sequence",
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+    def save_encrypted_model_state_snapshot(
+        self, *, run_id: str, task_id: str, attempt_id: str,
+        interaction_sequence: int, provider: str, model: str, key_id: str,
+        nonce: bytes, ciphertext: bytes, payload_sha256: str,
+    ) -> str:
+        """Persist ciphertext only; plaintext and encryption keys are never accepted."""
+        run_id = _required_text(run_id, "run_id")
+        task_id = _required_text(task_id, "task_id")
+        attempt_id = _required_text(attempt_id, "attempt_id")
+        provider = _required_text(provider, "provider")
+        model = _required_text(model, "model")
+        key_id = _required_text(key_id, "key_id")
+        if isinstance(interaction_sequence, bool) or not isinstance(interaction_sequence, int) or interaction_sequence < 0:
+            raise ValueError("interaction_sequence must be a non-negative integer.")
+        if not isinstance(nonce, bytes) or len(nonce) != 12:
+            raise ValueError("nonce must be exactly 12 bytes.")
+        if not isinstance(ciphertext, bytes) or not 16 <= len(ciphertext) <= 140_000:
+            raise ValueError("ciphertext must be between 16 and 140000 bytes.")
+        payload_sha256 = self._validate_optional_sha256(payload_sha256, "payload_sha256")
+        if payload_sha256 is None:
+            raise ValueError("payload_sha256 is required.")
+        for name, value in (("provider", provider), ("model", model), ("key_id", key_id)):
+            if len(value) > 200:
+                raise ValueError(f"{name} must be at most 200 characters.")
+        snapshot_id = uuid.uuid4().hex
+        with self._transaction() as db:
+            attempt = db.execute(
+                "SELECT 1 FROM attempts WHERE attempt_id = ? AND run_id = ? AND task_id = ?",
+                (attempt_id, run_id, task_id),
+            ).fetchone()
+            if attempt is None:
+                raise ValueError("Snapshot run/task/attempt identity does not match a persisted attempt.")
+            db.execute(
+                """INSERT INTO model_state_snapshots
+                   (snapshot_id, run_id, task_id, attempt_id, interaction_sequence,
+                    provider, model, key_id, nonce, ciphertext, payload_sha256, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (snapshot_id, run_id, task_id, attempt_id, interaction_sequence,
+                 provider, model, key_id, sqlite3.Binary(nonce), sqlite3.Binary(ciphertext),
+                 payload_sha256, _now()),
+            )
+        return snapshot_id
+
+    def get_encrypted_model_state_snapshot(self, snapshot_id: str) -> dict[str, Any] | None:
+        """Fetch encrypted bytes for the snapshot decoder; never decrypts data."""
+        snapshot_id = _required_text(snapshot_id, "snapshot_id")
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT snapshot_id, run_id, task_id, attempt_id, interaction_sequence,
+                          provider, model, key_id, nonce, ciphertext, payload_sha256, created_at
+                   FROM model_state_snapshots WHERE snapshot_id = ?""",
+                (snapshot_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def delete_encrypted_model_state_snapshot(self, snapshot_id: str) -> bool:
+        """Delete one sensitive snapshot when the owner requests retention cleanup."""
+        snapshot_id = _required_text(snapshot_id, "snapshot_id")
+        with self._transaction() as db:
+            cursor = db.execute(
+                "DELETE FROM model_state_snapshots WHERE snapshot_id = ?", (snapshot_id,)
+            )
+            return cursor.rowcount == 1
+
+    def list_model_state_snapshot_metadata(self, run_id: str) -> list[dict[str, Any]]:
+        """List snapshot identity and timestamps only, never ciphertext or model content."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT snapshot_id, run_id, task_id, attempt_id, interaction_sequence,
+                          provider, model, key_id, payload_sha256, created_at
+                   FROM model_state_snapshots WHERE run_id = ?
+                   ORDER BY task_id, interaction_sequence""",
                 (run_id,),
             ).fetchall()
         return [dict(row) for row in rows]
