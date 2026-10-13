@@ -61,8 +61,7 @@ run-scoped event/tool references before returning a disposition. Integrity failu
 The digest is an integrity check against accidental payload changes when the stored digest remains
 intact; it is not a keyed MAC or signature and cannot detect a database actor who rewrites both
 payload and digest. Inspection is read-only and never restores a live orchestrator, repeats a model
-call, retries a tool, or authorizes execution. Checkpoints currently provide a durable data primitive;
-the orchestrator does not yet write complete execution-position checkpoints or resume from them.
+call, retries a tool, or authorizes execution. The live orchestrator now writes ordered checkpoints for task start, model request start/response receipt, tool-call preparation/result receipt, task result readiness, and observed task failure. Payloads keep only IDs, counts, names, statuses, and hashes rather than raw prompts, responses, arguments, or outputs. A process crash can therefore leave useful boundary evidence. These checkpoints still do not contain the serialized conversation/provider continuation, and the orchestrator does not resume from them.
 
 ## Explicitly not implemented
 
@@ -85,3 +84,4 @@ the orchestrator does not yet write complete execution-position checkpoints or r
 - SQLite migration from schema v1 to v4 retains journal data and adds reconciliation plus checkpoint support.
 - Checkpoint payload digest tampering, sequence gaps, and invalid task/attempt references block recovery inspection.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
+- A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
