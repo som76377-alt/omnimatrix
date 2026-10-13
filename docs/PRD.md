@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.15 — Versioned model-state codec  
+**Version:** 1.16 — Opt-in encrypted model-state snapshots  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/model-state-codec`, PR #30; versioned, bounded request/response codec and round-trip tests added; CI run #313 passed 312 tests, compile/config validation and offline CLI smoke test  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/encrypted-model-state-snapshots`; opt-in AES-GCM encrypted request/response snapshot storage proposed in PR #31; validation pending CI  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1803,3 +1803,8 @@ Recovery inspection now validates the ordered metadata transcript against model 
 ## Version 1.15 change log — versioned model-state codec
 
 Added an in-memory-only, schema-v1 canonical JSON envelope for normalized model requests and responses. It preserves ordered messages, tool definitions/calls/results, usage data and JSON-compatible provider continuation fields; decoding checks exact schema shape, version, a 64 KiB payload bound, SHA-256 integrity and model-type constraints. Round-trip, tamper, unknown-version, invalid-value and size-limit tests define the contract. This is not yet persisted, and no runtime restoration or automatic resume is enabled. Because envelopes can contain private prompt/response/tool/continuation content, persistence and key/privacy controls must be designed separately before any real conversation payload is stored.
+
+
+## Version 1.16 change log — opt-in encrypted model-state snapshots
+
+Schema v7 adds an encrypted model-state snapshot table containing ciphertext, nonce, key identifier, identity metadata and a plaintext digest; it never accepts raw model content or encryption keys. The new store persists only complete request/response pairs, requires an explicit opt-in and externally supplied 32-byte AES key, uses AES-GCM authenticated encryption with identity-bound associated data, validates the existing model-state codec on load, and supports explicit deletion. Persistence is disabled by default; keys are not stored in SQLite. The new runtime dependency is declared in `requirements.txt` and installed by CI. This is storage groundwork only: it does not restore a live provider session, validate that provider continuation state remains usable, reconstruct the current orchestration position, replay tools, or enable automatic resume. Snapshot retention and external key management remain the caller's responsibility.
