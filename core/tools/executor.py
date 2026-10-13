@@ -2,7 +2,7 @@ import hashlib
 import json
 import uuid
 
-from core.persistence.sqlite_journal import SQLiteJournal
+from core.persistence.sqlite_journal import MAX_REPLAY_RESULT_BYTES, SQLiteJournal
 from core.tools.base import ToolResult
 from core.tools.permissions import ToolPermission
 from core.tools.registry import ToolRegistry
@@ -138,8 +138,26 @@ class ToolExecutor:
             "success": result.success,
             "error_type": "ToolReturnedFailure" if not result.success else None,
         }
+        replay_result = None
+        replay_policy = getattr(tool, "replay_policy", "never")
+        if result.success and replay_policy == "deterministic_json_v1":
+            try:
+                encoded_output = json.dumps(
+                    result.output, ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"), allow_nan=False,
+                )
+                if len(encoded_output.encode("utf-8")) <= MAX_REPLAY_RESULT_BYTES:
+                    replay_result = {
+                        "policy": replay_policy,
+                        "output": result.output,
+                    }
+            except (TypeError, ValueError):
+                # Tool success remains recorded, but an unsafe/non-JSON output is not replayable.
+                replay_result = None
         try:
-            self.journal.finish_tool_execution(execution_id, terminal_status, outcome)
+            self.journal.finish_tool_execution(
+                execution_id, terminal_status, outcome, replay_result=replay_result
+            )
         except Exception as exc:
             # Never claim a durable success if the outcome could not be committed.
             return ToolResult(
@@ -160,6 +178,7 @@ class ToolExecutor:
                 "execution_id": execution_id,
                 "idempotency_key": idempotency_key,
                 "execution_outcome": terminal_status,
+                "replayable_result_persisted": replay_result is not None,
             }
         )
         return ToolResult(

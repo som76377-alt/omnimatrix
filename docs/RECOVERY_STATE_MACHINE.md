@@ -100,6 +100,15 @@ Normal chat can opt into persistence with `--journal PATH`. The database still s
 - A fully stable semantic action ID across changed plans; the current iteration/position scheme is conservative
   and blocks on argument mismatches but requires deterministic replay of the same task sequence.
 
+
+## Opt-in replayable tool-result snapshots (schema v5)
+
+Schema v5 adds `tool_result_snapshots`, linked to a durable tool-execution record. The executor persists a result only when the tool explicitly declares `replay_policy = "deterministic_json_v1"`; the base `Tool` contract defaults to `never`. The calculator is the initial opt-in because its arithmetic result is deterministic and has no external side effect. This policy is a promise by the tool implementation, not a general declaration that arbitrary tool output is safe to store.
+
+Only successful outputs that serialize as finite JSON and fit within 16 KiB are snapshotted. The result payload is stored separately from the request arguments. Its SHA-256 digest binds both the replay-policy label and canonical result JSON, so tampering with either is detected. `finish_tool_execution()` commits the terminal outcome and optional snapshot in one SQLite transaction, so a crash cannot leave a terminal success with a half-written snapshot. Read access verifies the digest and refuses corrupted snapshots. A tool that does not opt in, or whose output is not eligible for bounded JSON storage, has no replay snapshot; that absence is not evidence that the tool failed.
+
+**This is storage groundwork, not resume.** Omnitrix does not yet reconstruct the provider conversation, prove that the saved result belongs at the current model position, or feed the snapshot back into a live run. No automatic retry or resume is enabled by schema v5. Snapshot integrity detects accidental payload modification when the stored digest remains intact; it is not a signature against an actor who can rewrite both fields. The SQLite journal can contain tool outputs, so protect the local database and avoid opting sensitive-output tools in without an explicit privacy review.
+
 ## Acceptance tests
 
 - Terminal and unknown run states do not auto-resume.
@@ -108,8 +117,11 @@ Normal chat can opt into persistence with `--journal PATH`. The database still s
 - `confirmed_applied` leads to downstream revalidation.
 - Stable action keys are identical across attempt IDs for the same run/task/action.
 - Changed arguments under a previously claimed key are refused.
-- SQLite migration from schema v1 to v4 retains journal data and adds reconciliation plus checkpoint support.
+- SQLite migration from schema v1 to v5 retains journal data and adds reconciliation, checkpoint, and replay-snapshot support.
 - Checkpoint payload digest tampering, sequence gaps, and invalid task/attempt references block recovery inspection.
+- Schema-v5 replay snapshots are created only for explicitly opted-in successful tools, stay within the payload size bound, survive reopen, and fail closed on digest corruption.
+- Terminal outcome and replay snapshot commit atomically; invalid snapshot data leaves the tool record non-terminal.
+- Missing replay snapshots never authorize rerunning a tool or automatically resuming a task.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
 - A real subprocess crash at a model-call boundary leaves the latest committed checkpoint visible after reopening the journal; the run remains non-terminal and is never auto-resumed.
 - A real subprocess crash after a simulated tool side effect but before outcome persistence leaves the tool execution in `running`, preserves the last `tool_call_prepared` checkpoint, and classifies the run as `reconciliation_required`.

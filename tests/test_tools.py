@@ -7,6 +7,7 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.request import ToolRequest
 from core.tools.permissions import ToolPermission
 from core.tools.executor import ToolExecutor
+from core.persistence.sqlite_journal import SQLiteJournal
 
 
 class TestTool(Tool):
@@ -377,5 +378,38 @@ class ToolExecutorTests(unittest.TestCase):
                 request,
                 permission,
             )
+class ToolResultReplayPolicyTests(unittest.TestCase):
+    def test_tools_default_to_never_persisting_results(self):
+        self.assertEqual(TestTool().replay_policy, "never")
+        self.assertEqual(SecondTestTool().replay_policy, "never")
+
+    def test_calculator_result_is_persisted_under_explicit_policy(self):
+        with SQLiteJournal(":memory:") as journal:
+            registry = build_tool_registry()
+            executor = ToolExecutor(registry, journal=journal)
+            result = executor.execute(
+                ToolRequest(tool_name="calculator", arguments={"expression": "6 * 7"}),
+                ToolPermission.from_capabilities({"calculation"}),
+            )
+            self.assertTrue(result.success)
+            self.assertTrue(result.metadata["replayable_result_persisted"])
+            snapshot = journal.get_replayable_tool_result(result.metadata["execution_id"])
+            self.assertEqual(snapshot["output"], 42)
+            self.assertEqual(snapshot["replay_policy"], "deterministic_json_v1")
+
+    def test_custom_tool_output_is_not_persisted_without_opt_in(self):
+        with SQLiteJournal(":memory:") as journal:
+            registry = ToolRegistry()
+            registry.register(TestTool())
+            executor = ToolExecutor(registry, journal=journal)
+            result = executor.execute(
+                ToolRequest(tool_name="test-tool", arguments={}),
+                ToolPermission.from_capabilities({"testing"}),
+            )
+            self.assertTrue(result.success)
+            self.assertFalse(result.metadata["replayable_result_persisted"])
+            self.assertIsNone(journal.get_replayable_tool_result(result.metadata["execution_id"]))
+
+
 if __name__ == "__main__":
     unittest.main()

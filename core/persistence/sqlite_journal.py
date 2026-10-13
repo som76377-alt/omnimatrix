@@ -16,7 +16,8 @@ import uuid
 from typing import Any, Iterator, Mapping
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
+MAX_REPLAY_RESULT_BYTES = 16_384
 
 
 def _now() -> str:
@@ -207,6 +208,20 @@ class SQLiteJournal:
                     self._connection.execute(
                         "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                         (4, _now()),
+                    )
+                if version < 5:
+                    self._connection.execute(
+                        """CREATE TABLE tool_result_snapshots (
+                            execution_id TEXT PRIMARY KEY REFERENCES tool_executions(execution_id),
+                            replay_policy TEXT NOT NULL,
+                            result_json TEXT NOT NULL,
+                            result_sha256 TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        )"""
+                    )
+                    self._connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (5, _now()),
                     )
                 self._connection.execute("COMMIT")
             except Exception:
@@ -428,12 +443,36 @@ class SQLiteJournal:
         execution_id: str,
         status: str,
         outcome: Mapping[str, Any] | None = None,
+        *,
+        replay_result: Mapping[str, Any] | None = None,
     ) -> None:
-        """Record a terminal outcome once; never rewrite an existing outcome."""
+        """Commit a terminal outcome and optional opted-in result snapshot atomically."""
         execution_id = _required_text(execution_id, "execution_id")
         status = _required_text(status, "status")
         if status == "running":
             raise ValueError("Terminal tool execution status cannot be running.")
+
+        snapshot_values = None
+        if replay_result is not None:
+            if not isinstance(replay_result, Mapping):
+                raise TypeError("replay_result must be a mapping when provided.")
+            policy = _required_text(replay_result.get("policy"), "replay policy")
+            if policy != "deterministic_json_v1":
+                raise ValueError("Unsupported tool result replay policy.")
+            try:
+                result_json = json.dumps(
+                    replay_result.get("output"), ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"), allow_nan=False,
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Replay result must be finite, JSON-serializable data.") from exc
+            if len(result_json.encode("utf-8")) > MAX_REPLAY_RESULT_BYTES:
+                raise ValueError("Replay result exceeds the durable snapshot size limit.")
+            result_sha256 = hashlib.sha256((policy + "\0" + result_json).encode("utf-8")).hexdigest()
+            snapshot_values = (policy, result_json, result_sha256)
+            if status != "succeeded":
+                raise ValueError("Only successful tool results may be snapshotted for replay.")
+
         with self._transaction() as db:
             cursor = db.execute(
                 """UPDATE tool_executions
@@ -441,15 +480,57 @@ class SQLiteJournal:
                 WHERE execution_id = ? AND status = 'running' AND finished_at IS NULL""",
                 (status, _now(), _json(dict(outcome or {})), execution_id),
             )
-            if cursor.rowcount == 1:
-                return
-            row = db.execute(
-                "SELECT status FROM tool_executions WHERE execution_id = ?",
+            if cursor.rowcount != 1:
+                row = db.execute(
+                    "SELECT status FROM tool_executions WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"Unknown tool execution: {execution_id}")
+                raise RuntimeError(f"Tool execution is already terminal: {execution_id}")
+            if snapshot_values is not None:
+                db.execute(
+                    """INSERT INTO tool_result_snapshots
+                       (execution_id, replay_policy, result_json, result_sha256, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (execution_id, *snapshot_values, _now()),
+                )
+
+    def get_replayable_tool_result(self, execution_id: str) -> dict[str, Any] | None:
+        """Return a verified snapshot only for a durably successful execution.
+
+        A missing snapshot is not an error: the tool may not have opted in, or its
+        output may have been ineligible for bounded JSON persistence. Digest mismatch
+        is an integrity error and must not be treated as a usable result.
+        """
+        execution_id = _required_text(execution_id, "execution_id")
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT s.replay_policy, s.result_json, s.result_sha256, s.created_at,
+                          t.status
+                   FROM tool_result_snapshots AS s
+                   JOIN tool_executions AS t ON t.execution_id = s.execution_id
+                   WHERE s.execution_id = ?""",
                 (execution_id,),
             ).fetchone()
-            if row is None:
-                raise KeyError(f"Unknown tool execution: {execution_id}")
-            raise RuntimeError(f"Tool execution is already terminal: {execution_id}")
+        if row is None:
+            return None
+        if row["status"] != "succeeded":
+            raise RuntimeError("Replay snapshot is attached to a non-successful tool execution.")
+        actual = hashlib.sha256((row["replay_policy"] + "\0" + row["result_json"]).encode("utf-8")).hexdigest()
+        if actual != row["result_sha256"]:
+            raise RuntimeError("Replay result snapshot integrity check failed.")
+        try:
+            output = json.loads(row["result_json"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Replay result snapshot contains invalid JSON.") from exc
+        return {
+            "execution_id": execution_id,
+            "replay_policy": row["replay_policy"],
+            "output": output,
+            "result_sha256": row["result_sha256"],
+            "created_at": row["created_at"],
+        }
 
     def record_tool_reconciliation(
         self,
