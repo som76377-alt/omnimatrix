@@ -4,7 +4,7 @@
 
 **Version:** 1.10 — Schema-v5 opt-in replayable tool-result snapshots and recovery safety contract  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, working branch `phase2/replayable-tool-results`; CI validation is pending and no new test-pass claim is made here  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/replayable-tool-results`; GitHub Actions run #244 passed compilation, configuration validation, 290 unit tests, and the offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
