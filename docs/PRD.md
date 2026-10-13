@@ -4,7 +4,7 @@
 
 **Version:** 1.15 — Versioned model-state codec  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/model-state-codec`; versioned, bounded request/response codec and round-trip tests added; CI pending  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/model-state-codec`, PR #30; versioned, bounded request/response codec and round-trip tests added; CI run #313 passed 312 tests, compile/config validation and offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
