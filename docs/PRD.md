@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.12 — Privacy-minimal model transcript ledger groundwork  
+**Version:** 1.13 — Live model-call transcript instrumentation  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/safe-model-transcript`; schema-v6 transcript metadata implementation pending CI verification  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/safe-model-transcript`; schema-v6 transcript ledger wired into journaled task-loop model calls; crash-boundary test added, CI pending  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1788,3 +1788,8 @@ This is a checklist for reviewing the document itself, not proof that the implem
 ## Version 1.12 change log — schema-v6 transcript metadata groundwork
 
 Schema v6 introduces an append-only model request/response metadata ledger with contiguous per-run sequence numbers, run/task/attempt linkage, provider/model labels, bounded tool-call counts, and optional SHA-256 digests. It stores no prompt or response bodies and uses database triggers to reject ordinary updates/deletes. This is intentionally not a complete transcript and cannot restore provider state. Live orchestrator instrumentation and process-crash verification remain open; automatic resume remains disabled.
+
+
+## Version 1.13 change log — live model-call transcript instrumentation
+
+The task execution loop now records canonical SHA-256 request and response fingerprints in the schema-v6 metadata ledger. Request fingerprints cover ordered message context, tool definitions and continuation state; response fingerprints cover normalized content, tool calls, usage metadata and continuation state. Only hashes and bounded metadata are persisted. A subprocess crash test verifies that an adapter crash leaves the request record durable and no fabricated response record. This does not restore provider state or enable automatic resume. Planner calls made outside a journaled task run are not covered.
