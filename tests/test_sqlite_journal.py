@@ -369,6 +369,7 @@ class SQLiteJournalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "migration.sqlite3"
             with SQLiteJournal(path) as journal:
+                journal._connection.execute("DROP TABLE model_transcript")
                 journal._connection.execute("DROP TABLE tool_result_snapshots")
                 journal._connection.execute("DROP TABLE checkpoints")
                 journal._connection.execute("DROP TABLE tool_reconciliations")
