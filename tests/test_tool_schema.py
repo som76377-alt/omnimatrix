@@ -102,6 +102,40 @@ class ToolSchemaValidationTests(unittest.TestCase):
                 self.assertEqual(duplicate.metadata["prior_status"], "succeeded")
                 self.assertEqual(self.tool.calls, 1)
 
+    def test_crash_after_effect_before_checkpoint_remains_unknown_after_restart(self):
+        class EffectThenInterrupt(SideEffectTool):
+            def execute(self, **kwargs):
+                self.calls += 1
+                # Represents an external action succeeding before the process
+                # disappears prior to finish_tool_execution().
+                raise SystemExit("simulated process interruption after side effect")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "interrupted-tool.sqlite3"
+            interrupted_tool = EffectThenInterrupt()
+            registry = ToolRegistry()
+            registry.register(interrupted_tool)
+            request = ToolRequest(
+                tool_name="side-effect",
+                arguments={"path": "possibly-created.txt"},
+                idempotency_key="durable-action",
+            )
+            with SQLiteJournal(path) as journal:
+                executor = ToolExecutor(registry, journal=journal)
+                with self.assertRaisesRegex(SystemExit, "simulated process interruption"):
+                    executor.execute(request, self.permission)
+                self.assertEqual(interrupted_tool.calls, 1)
+
+            with SQLiteJournal(path) as reopened:
+                uncertain = reopened.list_uncertain_tool_executions()
+                self.assertEqual(len(uncertain), 1)
+                self.assertEqual(uncertain[0]["status"], "running")
+                executor = ToolExecutor(registry, journal=reopened)
+                duplicate = executor.execute(request, self.permission)
+                self.assertFalse(duplicate.success)
+                self.assertEqual(duplicate.metadata["prior_status"], "running")
+                self.assertEqual(interrupted_tool.calls, 1)
+
     def test_idempotency_key_cannot_be_reused_for_different_arguments(self):
         with SQLiteJournal(":memory:") as journal:
             executor = ToolExecutor(self.registry, journal=journal)

@@ -371,6 +371,24 @@ class SQLiteJournal:
                 raise KeyError(f"Unknown tool execution: {execution_id}")
             raise RuntimeError(f"Tool execution is already terminal: {execution_id}")
 
+    def list_uncertain_tool_executions(self) -> list[dict[str, Any]]:
+        """List executions that need reconciliation after interruption.
+
+        This is a read-only inspection primitive. It does not retry, replay, or
+        change status: a running record may mean a crash before or after an
+        external side effect, while unknown means the caller observed an
+        exception or could not establish a reliable outcome.
+        """
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT execution_id, idempotency_key, tool_name, request_sha256,
+                          run_id, task_id, attempt_id, status, started_at, finished_at
+                   FROM tool_executions
+                   WHERE status IN ('running', 'unknown')
+                   ORDER BY started_at, execution_id"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def append_event(self, event: Any) -> None:
         """Persist a validated RunEvent without silently replacing duplicates."""
         required = ("event_id", "run_id", "sequence", "event_type", "timestamp",

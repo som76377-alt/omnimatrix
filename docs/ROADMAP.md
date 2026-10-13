@@ -33,7 +33,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add a schema-v2 tool-execution journal and a durable duplicate-execution fence. A previously claimed idempotency key is never executed again automatically; arguments are represented by a SHA-256 digest rather than stored verbatim.
 - [ ] Define pause, cancel, retry, resume, and cross-attempt idempotency semantics before automatic recovery.
 - [ ] Preserve completed work and failed-task evidence across real process restarts.
-- [ ] Add fault-injection tests around crashes between side effects and checkpoint writes.
+- [x] Add fault-injection tests around crashes before/after the tool boundary; expose read-only inspection of running/unknown tool records for reconciliation.
 - **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Attempt and tool-execution records are evidence only. A process crash may leave a tool execution marked running; duplicate requests are blocked, but this is not exactly-once execution, result replay, or side-effect reconciliation. Automatically safe retry/recovery remains unimplemented.
 
 ## Phase 3 — Tool catalog and procurement
