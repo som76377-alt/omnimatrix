@@ -81,6 +81,14 @@ attempt reuses the run/task identity but receives a fresh attempt ID. A caller m
 plans, chat-context restoration, any run with prior tool executions, or ambiguous side effects.
 Those cases remain blocked for manual reconciliation/review.
 
+The CLI exposes these operations when given `--journal PATH`:
+
+- `--list-runs`: list recent IDs/statuses without printing stored objective payloads.
+- `--inspect-run RUN_ID`: print the read-only disposition and integrity findings.
+- `--restart-run RUN_ID --confirm-restart-from-objective`: invoke the narrow guarded restart; a missing confirmation flag is a parser error.
+
+Normal chat can opt into persistence with `--journal PATH`. The database still stores objectives in run/task payloads, so the file must be protected at rest.
+
 ## Explicitly not implemented
 
 - Automatic process-restart resume or event replay; only the explicitly confirmed, no-tool-dispatch restart subset described above is supported.
