@@ -38,9 +38,11 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add append-only reconciliation assertions and a read-only run/task/attempt/tool recovery snapshot.
 - [x] Define a conservative recovery classifier: unresolved effects require reconciliation; confirmed-applied effects require downstream verification; confirmed-not-applied effects require fresh retry review; no disposition auto-resumes.
 - [x] Add append-only schema-v4 checkpoints with canonical SHA-256 payload digests and a read-only recovery inspection service that validates checkpoint sequence/digests and run/task/attempt/tool references before classification.
-- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v3 migration, and cross-attempt duplicate blocking.
+- [x] Write digest-checked checkpoints from the live orchestrator at task start, before/after model calls, around tool calls, and before terminal lifecycle persistence; avoid storing raw prompts, model responses, tool arguments, or tool outputs in checkpoint payloads.
+- [x] Verify ordered checkpoints through a real journaled run and a subprocess terminated at a model-call boundary; interrupted runs remain non-terminal and require recovery review.
+- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v4 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
-- [ ] Implement whole-run restoration from validated checkpoints, pause/cancel/resume, and replay into live execution.
+- [ ] Implement whole-run restoration from validated checkpoints, pause/cancel/resume, and replay into live execution. Checkpoints currently record boundaries and hashes, not enough state to replay provider conversations or safely continue.
 - [ ] Add tool/provider-specific reconciliation adapters that validate external evidence and define safe retry policies.
 - **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Reconciliation records are assertions, not proof. The logical action key is stable across attempts only when run/task/action identity is preserved; the current iteration/position identity conservatively blocks changed arguments but does not infer semantic equivalence. Automatic resume/retry remains unimplemented.
 
