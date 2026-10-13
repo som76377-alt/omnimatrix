@@ -41,6 +41,77 @@ from core.tools.request import ToolRequest, stable_tool_idempotency_key
 logger = logging.getLogger(__name__)
 
 
+def _canonical_sha256(value: object) -> str:
+    """Hash canonical JSON without persisting the underlying model payload."""
+    try:
+        encoded = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Model transcript values must be finite JSON-compatible data.") from exc
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _model_request_sha256(request: ModelRequest) -> str:
+    """Fingerprint the full normalized request, including context and tool schemas."""
+    messages: list[dict[str, object]] = []
+    for message in request.messages:
+        tool_calls = [
+            {"id": call.id, "tool_name": call.tool_name, "arguments": call.arguments}
+            for call in message.tool_calls
+        ]
+        tool_result = None
+        if message.tool_result is not None:
+            tool_result = {
+                "tool_call_id": message.tool_result.tool_call_id,
+                "tool_name": message.tool_result.tool_name,
+                "success": message.tool_result.success,
+                "output": message.tool_result.output,
+                "error": message.tool_result.error,
+            }
+        messages.append({
+            "role": message.role.value,
+            "content": message.content,
+            "tool_calls": tool_calls,
+            "tool_result": tool_result,
+        })
+    continuation = None
+    if request.continuation is not None:
+        continuation = {
+            "provider": request.continuation.provider,
+            "state": request.continuation.state,
+        }
+    return _canonical_sha256({
+        "instructions": request.instructions,
+        "messages": messages,
+        "tools": [
+            {"name": tool.name, "description": tool.description,
+             "parameters_schema": tool.parameters_schema}
+            for tool in request.tools
+        ],
+        "continuation": continuation,
+    })
+
+
+def _model_response_sha256(response: object) -> str:
+    """Fingerprint normalized response data without storing response contents."""
+    return _canonical_sha256({
+        "content": response.content,
+        "provider": response.provider,
+        "model": response.model,
+        "usage": response.usage,
+        "tool_calls": [
+            {"id": call.id, "tool_name": call.tool_name, "arguments": call.arguments}
+            for call in response.tool_calls
+        ],
+        "continuation": (
+            {"provider": response.continuation.provider, "state": response.continuation.state}
+            if response.continuation is not None else None
+        ),
+    })
+
+
 def _log_safely(level: int, event: str, **metadata: object) -> None:
     """Emit diagnostics without changing application behavior."""
     try:
@@ -899,7 +970,44 @@ class Omnitrix:
                 },
             )
             self._reserve_model_call(budget_guard, selected_model.name)
+            request_sha256 = _model_request_sha256(request)
+            if self.journal is not None:
+                run_id = task.metadata.get("run_id")
+                task_id = task.metadata.get("task_id")
+                attempt_id = task.metadata.get("attempt_id")
+                if not isinstance(run_id, str) or not isinstance(task_id, str):
+                    raise RuntimeError("Journaled model calls require run and task identities.")
+                sequence = task.metadata.get("model_transcript_sequence")
+                if sequence is None:
+                    # A guarded restart may reuse a run whose prior model request
+                    # was recorded before a crash; continue the durable sequence.
+                    sequence = len(self.journal.list_model_transcript(run_id))
+                if isinstance(sequence, bool) or not isinstance(sequence, int):
+                    raise RuntimeError("Invalid model transcript sequence.")
+                self.journal.append_model_transcript_record(
+                    run_id, sequence, "model_request",
+                    task_id=task_id,
+                    attempt_id=attempt_id if isinstance(attempt_id, str) else None,
+                    provider=selected_model.provider,
+                    model=selected_model.name,
+                    request_sha256=request_sha256,
+                )
+                task.metadata["model_transcript_sequence"] = sequence + 1
             response = adapter.generate(request)
+            response_sha256 = _model_response_sha256(response)
+            if self.journal is not None:
+                sequence = task.metadata.get("model_transcript_sequence", 0)
+                self.journal.append_model_transcript_record(
+                    run_id, sequence, "model_response",
+                    task_id=task_id,
+                    attempt_id=attempt_id if isinstance(attempt_id, str) else None,
+                    provider=response.provider,
+                    model=response.model,
+                    request_sha256=request_sha256,
+                    response_sha256=response_sha256,
+                    tool_call_count=len(response.tool_calls),
+                )
+                task.metadata["model_transcript_sequence"] = sequence + 1
             self._journal_checkpoint(
                 task,
                 "model_response_received",

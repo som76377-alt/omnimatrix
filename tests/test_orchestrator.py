@@ -181,9 +181,22 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
                     "SELECT checkpoint_type, sequence, payload_json, payload_sha256 "
                     "FROM checkpoints ORDER BY sequence"
                 ).fetchall()
+                transcript_rows = database.execute(
+                    "SELECT sequence, interaction_type, request_sha256, response_sha256, "
+                    "tool_call_count FROM model_transcript ORDER BY sequence"
+                ).fetchall()
 
             self.assertEqual(len(run_rows), 1)
             self.assertEqual(run_rows[0][1], "completed")
+            self.assertEqual([row[0] for row in transcript_rows], [0, 1, 2, 3])
+            self.assertEqual(
+                [row[1] for row in transcript_rows],
+                ["model_request", "model_response", "model_request", "model_response"],
+            )
+            self.assertTrue(all(len(row[2]) == 64 for row in transcript_rows))
+            self.assertTrue(all(row[3] is None or len(row[3]) == 64 for row in transcript_rows))
+            self.assertEqual(transcript_rows[1][4], 1)
+            self.assertEqual(transcript_rows[3][4], 0)
             self.assertEqual(len(task_rows), 1)
             self.assertEqual(task_rows[0][2], "completed")
             self.assertIn("Calculate 847 * 23", run_rows[0][2])
@@ -342,6 +355,13 @@ with SQLiteJournal(sys.argv[1]) as journal:
                 self.assertIsNotNone(run_row)
                 self.assertEqual(run_row["status"], "running")
                 checkpoints = journal.list_checkpoints(run_row["run_id"])
+                transcript = journal.list_model_transcript(run_row["run_id"])
+                self.assertEqual(
+                    [item["interaction_type"] for item in transcript],
+                    ["model_request"],
+                )
+                self.assertEqual(len(transcript[0]["request_sha256"]), 64)
+                self.assertIsNone(transcript[0]["response_sha256"])
                 self.assertEqual(
                     [item["checkpoint_type"] for item in checkpoints],
                     ["task_started", "model_request_started"],
