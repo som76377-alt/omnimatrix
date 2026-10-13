@@ -1,6 +1,6 @@
 import unittest
 
-from core.persistence.recovery import classify_recovery
+from core.persistence.recovery import classify_model_position, classify_recovery
 
 
 class RecoveryClassificationTests(unittest.TestCase):
@@ -92,6 +92,60 @@ class RecoveryClassificationTests(unittest.TestCase):
         })
         self.assertEqual(decision.disposition, "blocked_unknown_state")
         self.assertFalse(decision.can_auto_resume)
+
+
+class ModelRecoveryPositionTests(unittest.TestCase):
+    def setUp(self):
+        self.request = {
+            "sequence": 0, "interaction_type": "model_request",
+            "task_id": "task-1", "attempt_id": "attempt-1",
+            "request_sha256": "a" * 64, "response_sha256": None,
+        }
+        self.response = {
+            "sequence": 1, "interaction_type": "model_response",
+            "task_id": "task-1", "attempt_id": "attempt-1",
+            "request_sha256": "a" * 64, "response_sha256": "b" * 64,
+        }
+        self.checkpoints = [
+            {"checkpoint_type": "model_request_started"},
+            {"checkpoint_type": "model_response_received"},
+        ]
+
+    def test_no_model_activity_is_explicit(self):
+        result = classify_model_position([], [])
+        self.assertEqual(result["disposition"], "no_model_activity")
+        self.assertFalse(result["can_auto_resume"])
+
+    def test_matching_transcript_and_checkpoints_are_consistent(self):
+        result = classify_model_position([self.request, self.response], self.checkpoints)
+        self.assertEqual(result["disposition"], "model_boundary_consistent")
+        self.assertEqual(result["model_call_count"], 1)
+        self.assertFalse(result["can_auto_resume"])
+
+    def test_request_without_response_is_ambiguous(self):
+        result = classify_model_position([self.request], self.checkpoints[:1])
+        self.assertEqual(result["disposition"], "model_call_outcome_ambiguous")
+        self.assertIn("provider completion is unknown", result["reasons"][0])
+
+    def test_response_record_without_response_checkpoint_is_detected(self):
+        result = classify_model_position([self.request, self.response], self.checkpoints[:1])
+        self.assertEqual(result["disposition"], "model_response_checkpoint_missing")
+
+    def test_unmatched_request_without_request_checkpoint_is_inconsistent(self):
+        result = classify_model_position([self.request], [])
+        self.assertEqual(result["disposition"], "boundary_mismatch")
+
+    def test_transcript_identity_mismatch_fails_closed(self):
+        mismatched = dict(self.response, attempt_id="attempt-2")
+        result = classify_model_position([self.request, mismatched], self.checkpoints)
+        self.assertEqual(result["disposition"], "boundary_mismatch")
+
+    def test_checkpoint_order_mismatch_fails_closed(self):
+        result = classify_model_position(
+            [self.request, self.response],
+            list(reversed(self.checkpoints)),
+        )
+        self.assertEqual(result["disposition"], "boundary_mismatch")
 
 
 if __name__ == "__main__":

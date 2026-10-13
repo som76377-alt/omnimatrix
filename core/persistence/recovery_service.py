@@ -10,7 +10,11 @@ import hashlib
 import json
 from typing import Any, Mapping
 
-from core.persistence.recovery import RecoveryDecision, classify_recovery
+from core.persistence.recovery import (
+    RecoveryDecision,
+    classify_model_position,
+    classify_recovery,
+)
 from core.persistence.sqlite_journal import SQLiteJournal
 
 
@@ -23,6 +27,7 @@ class RecoveryInspection:
     integrity_errors: tuple[str, ...]
     checkpoint_count: int
     latest_checkpoint_id: str | None
+    model_position: Mapping[str, Any] | None = None
 
     @property
     def can_auto_resume(self) -> bool:
@@ -36,6 +41,7 @@ class RecoveryInspection:
             "integrity_errors": list(self.integrity_errors),
             "checkpoint_count": self.checkpoint_count,
             "latest_checkpoint_id": self.latest_checkpoint_id,
+            "model_position": dict(self.model_position or {}),
             "can_auto_resume": False,
         }
 
@@ -68,6 +74,21 @@ class RecoveryService:
             )
 
         errors = self._validate_snapshot(run_id, snapshot)
+        checkpoints = snapshot.get("checkpoints", [])
+        try:
+            transcript = self._journal.list_model_transcript(run_id)
+            model_position = classify_model_position(transcript, checkpoints)
+        except (ValueError, TypeError, KeyError) as exc:
+            model_position = {
+                "disposition": "boundary_mismatch",
+                "reasons": ["Model transcript could not be inspected.", type(exc).__name__],
+                "model_call_count": 0,
+                "transcript_record_count": 0,
+                "request_checkpoint_count": 0,
+                "response_checkpoint_count": 0,
+                "can_auto_resume": False,
+            }
+
         if errors:
             decision = RecoveryDecision(
                 "blocked_unknown_state",
@@ -76,8 +97,27 @@ class RecoveryService:
             )
         else:
             decision = classify_recovery(snapshot)
+            position_disposition = model_position["disposition"]
+            if position_disposition == "model_call_outcome_ambiguous":
+                decision = RecoveryDecision(
+                    "model_call_outcome_ambiguous",
+                    tuple(model_position["reasons"]),
+                    can_auto_resume=False,
+                )
+            elif position_disposition == "model_response_checkpoint_missing":
+                decision = RecoveryDecision(
+                    "model_response_checkpoint_missing",
+                    tuple(model_position["reasons"]),
+                    can_auto_resume=False,
+                )
+            elif position_disposition == "boundary_mismatch":
+                decision = RecoveryDecision(
+                    "blocked_unknown_state",
+                    ("Model transcript and checkpoint boundaries are inconsistent.",
+                     *tuple(model_position["reasons"])),
+                    can_auto_resume=False,
+                )
 
-        checkpoints = snapshot.get("checkpoints", [])
         latest_id = checkpoints[-1].get("checkpoint_id") if checkpoints else None
         return RecoveryInspection(
             run_id=run_id,
@@ -85,6 +125,7 @@ class RecoveryService:
             integrity_errors=tuple(errors),
             checkpoint_count=len(checkpoints),
             latest_checkpoint_id=latest_id,
+            model_position=model_position,
         )
 
     @staticmethod
