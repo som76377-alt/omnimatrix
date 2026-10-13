@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.14 — Recovery-position validation  
+**Version:** 1.15 — Versioned model-state codec  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/recovery-position-validator`, PR #29; recovery inspection correlates schema-v6 model transcript metadata with ordered model checkpoints; CI run #297 passed 303 tests, compile/config validation and offline CLI smoke test  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/model-state-codec`, PR #30; versioned, bounded request/response codec and round-trip tests added; CI run #313 passed 312 tests, compile/config validation and offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1798,3 +1798,8 @@ The task execution loop now records canonical SHA-256 request and response finge
 ## Version 1.14 change log — recovery-position validation
 
 Recovery inspection now validates the ordered metadata transcript against model request-start and response-received checkpoints. It detects transcript sequence/order errors, request/response identity mismatches, missing request/response boundaries, an unmatched request with an ambiguous provider outcome, and the crash gap where a response digest is durable but its checkpoint is absent. A subprocess test exercises that exact gap. The validator is read-only and does not reconstruct prompt/response content, restore provider continuation, replay tools, or enable automatic resume; all outcomes remain non-resumable.
+
+
+## Version 1.15 change log — versioned model-state codec
+
+Added an in-memory-only, schema-v1 canonical JSON envelope for normalized model requests and responses. It preserves ordered messages, tool definitions/calls/results, usage data and JSON-compatible provider continuation fields; decoding checks exact schema shape, version, a 64 KiB payload bound, SHA-256 integrity and model-type constraints. Round-trip, tamper, unknown-version, invalid-value and size-limit tests define the contract. This is not yet persisted, and no runtime restoration or automatic resume is enabled. Because envelopes can contain private prompt/response/tool/continuation content, persistence and key/privacy controls must be designed separately before any real conversation payload is stored.

@@ -51,6 +51,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [x] Add schema-v6 privacy-minimal, append-only model request/response metadata records with contiguous ordering, SHA-256 fields, and no prompt/response body storage; migration preserves earlier journal data.
 - [x] Wire the model transcript ledger into task-loop model request/response boundaries using canonical hashes; a subprocess crash test proves the unmatched request record survives, and automatic resume remains disabled.
 - [x] Validate recovery position by correlating transcript sequence/identity with ordered request/response checkpoints; classify unmatched requests and the response-recorded/checkpoint-missing crash gap, with subprocess coverage and no automatic resume.
+- [x] Define a versioned, bounded model-state codec with request/response round-trip tests, canonical SHA-256 verification, and fail-closed schema/size/type checks; this is in-memory only and does not persist sensitive conversation content or enable resume.
 - [ ] Restore a live model/tool conversation from verified snapshots and checkpointed provider state; metadata hashes alone cannot reconstruct provider state, and snapshot storage alone does not resume a task or authorize re-execution.
 - [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v6 migration, and cross-attempt duplicate blocking.
 - [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
