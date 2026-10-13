@@ -39,7 +39,7 @@ class SnapshotRecoveryGateTests(unittest.TestCase):
         self.assertIsNone(self.gate())
 
     def test_wrong_run_is_rejected(self):
-        with self.assertRaisesRegex(SnapshotRecoveryGateError, "run identity"):
+        with self.assertRaisesRegex(SnapshotRecoveryGateError, "run_id does not match"):
             self.gate(run_id="other-run")
 
     def test_wrong_task_or_attempt_is_rejected(self):
