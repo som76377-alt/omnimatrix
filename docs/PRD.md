@@ -4,7 +4,7 @@
 
 **Version:** 1.16 — Opt-in encrypted model-state snapshots  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/encrypted-model-state-snapshots`; opt-in AES-GCM encrypted request/response snapshot storage proposed in PR #31; validation pending CI  
+**Implementation status snapshot:** 13 October 2026, branch `phase2/encrypted-model-state-snapshots`, PR #31; opt-in AES-GCM encrypted request/response snapshot storage; CI run #331 passed 321 tests, compilation, configuration validation and offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
