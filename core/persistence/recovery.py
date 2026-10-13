@@ -92,6 +92,13 @@ def classify_recovery(snapshot: Mapping[str, Any] | None) -> RecoveryDecision:
             ("Tool outcome is ambiguous; no retry or resume is safe by default.",
              "Unresolved execution IDs: " + ", ".join(unresolved)),
         )
+    if retry_review and applied:
+        return RecoveryDecision(
+            "mixed_reconciliation_review_required",
+            ("Some actions are asserted applied while others are asserted not applied; inspect all effects before any continuation.",
+             "Applied execution IDs: " + ", ".join(applied),
+             "Retry-review execution IDs: " + ", ".join(retry_review)),
+        )
     if retry_review:
         return RecoveryDecision(
             "retry_review_required",
