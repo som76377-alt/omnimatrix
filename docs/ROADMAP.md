@@ -34,7 +34,14 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 - [ ] Define pause, cancel, retry, resume, and cross-attempt idempotency semantics before automatic recovery.
 - [ ] Preserve completed work and failed-task evidence across real process restarts.
 - [x] Add real subprocess crash-injection tests that terminate the process before a side effect and after a side effect but before its checkpoint; expose read-only inspection of running/unknown tool records.
-- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Attempt and tool-execution records are evidence only. A process crash may leave a tool execution marked running; duplicate requests are blocked, but this is not exactly-once execution, result replay, or side-effect reconciliation. Automatically safe retry/recovery remains unimplemented.
+- [x] Add schema-v3 logical action IDs and deterministic idempotency keys that do not change with the attempt ID; reject changed arguments under the same key.
+- [x] Add append-only reconciliation assertions and a read-only run/task/attempt/tool recovery snapshot.
+- [x] Define a conservative recovery classifier: unresolved effects require reconciliation; confirmed-applied effects require downstream verification; confirmed-not-applied effects require fresh retry review; no disposition auto-resumes.
+- [x] Add unit tests for recovery classification, reconciliation evidence, schema-v1-to-v3 migration, and cross-attempt duplicate blocking.
+- [x] Version the PRD into `docs/PRD.md` and synchronize the implementation snapshot against the repository.
+- [ ] Implement whole-run restoration, checkpoint integrity checks, pause/cancel/resume, and event replay.
+- [ ] Add tool/provider-specific reconciliation adapters that validate external evidence and define safe retry policies.
+- **Gate:** restart/resume results match the declared state machine and never fabricate completion. The journal is opt-in and stores task objectives in its SQLite payloads; choose a protected local path and do not enable it for sensitive prompts without considering at-rest data protection. Reconciliation records are assertions, not proof. The logical action key is stable across attempts only when run/task/action identity is preserved; the current iteration/position identity conservatively blocks changed arguments but does not infer semantic equivalence. Automatic resume/retry remains unimplemented.
 
 ## Phase 3 — Tool catalog and procurement
 
