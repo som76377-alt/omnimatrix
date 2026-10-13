@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from core.models.registry import ModelRegistry
+from core.orchestrator.omnitrix import Omnitrix
 from core.persistence.recovery_service import RecoveryService
 from core.persistence.sqlite_journal import SQLiteJournal
 
@@ -242,9 +244,7 @@ with SQLiteJournal(sys.argv[1]) as journal:
                     inspection.decision.disposition, "revalidation_required"
                 )
                 with self.assertRaisesRegex(RuntimeError, "tool execution was recorded"):
-                    Omnitrix(registry=__import__(
-                        "core.models.registry", fromlist=["ModelRegistry"]
-                    ).ModelRegistry(), journal=journal).resume_interrupted_run(
+                    Omnitrix(registry=ModelRegistry(), journal=journal).resume_interrupted_run(
                         run["run_id"], confirm_restart_from_objective=True
                     )
 
