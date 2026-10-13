@@ -51,7 +51,17 @@ class RecoveryService:
     def inspect(self, run_id: str) -> RecoveryInspection:
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError("run_id must be a non-empty string.")
-        snapshot = self._journal.get_recovery_snapshot(run_id)
+        try:
+            snapshot = self._journal.get_recovery_snapshot(run_id)
+        except (ValueError, TypeError, KeyError) as exc:
+            # Malformed persisted JSON must become a blocked inspection result,
+            # not an exception that could be mistaken for a missing/empty run.
+            decision = RecoveryDecision(
+                "blocked_unknown_state",
+                ("Persisted recovery snapshot could not be decoded.", type(exc).__name__),
+                can_auto_resume=False,
+            )
+            return RecoveryInspection(run_id, decision, (type(exc).__name__,), 0, None)
         if snapshot is None:
             return RecoveryInspection(
                 run_id, classify_recovery(None), (), 0, None
