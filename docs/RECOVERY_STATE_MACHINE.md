@@ -83,6 +83,7 @@ Those cases remain blocked for manual reconciliation/review.
 
 The CLI exposes these operations when given `--journal PATH`:
 
+- `--run-objective OBJECTIVE`: execute a single task through `run()` with `--config PATH --journal PATH`, and print the resulting run ID with the result.
 - `--list-runs`: list recent IDs/statuses without printing stored objective payloads.
 - `--inspect-run RUN_ID`: print the read-only disposition and integrity findings.
 - `--restart-run RUN_ID --confirm-restart-from-objective`: invoke the narrow guarded restart; a missing confirmation flag is a parser error.

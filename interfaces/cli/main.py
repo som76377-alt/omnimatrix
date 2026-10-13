@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     recovery = parser.add_mutually_exclusive_group()
     recovery.add_argument(
+        "--run-objective",
+        metavar="OBJECTIVE",
+        help="Execute one non-interactive task and persist it to the required journal.",
+    )
+    recovery.add_argument(
         "--list-runs",
         action="store_true",
         help="List recent run IDs and statuses without showing stored objectives.",
@@ -71,12 +76,17 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     has_recovery_command = (
-        args.list_runs or args.inspect_run is not None or args.restart_run is not None
+        args.run_objective is not None
+        or args.list_runs
+        or args.inspect_run is not None
+        or args.restart_run is not None
     )
     if args.confirm_restart_from_objective and args.restart_run is None:
         parser.error("--confirm-restart-from-objective is only valid with --restart-run.")
     if has_recovery_command and not args.journal:
         parser.error("Recovery commands require --journal PATH.")
+    if args.run_objective is not None and not args.config:
+        parser.error("--run-objective requires --config PATH.")
     if args.restart_run is not None:
         if not args.config:
             parser.error("--restart-run requires --config PATH.")
@@ -87,6 +97,32 @@ def main(argv: list[str] | None = None) -> None:
 
     if has_recovery_command:
         with SQLiteJournal(args.journal) as journal:
+            if args.run_objective is not None:
+                existing_ids = {
+                    item["run_id"] for item in journal.list_runs(limit=999)
+                }
+                omnitrix = Omnitrix.from_config(args.config, journal=journal)
+                result = omnitrix.run(args.run_objective)
+                new_runs = [
+                    item for item in journal.list_runs(limit=1000)
+                    if item["run_id"] not in existing_ids
+                ]
+                if len(new_runs) == 1:
+                    print(json.dumps(
+                        {"run_id": new_runs[0]["run_id"], "result": result},
+                        ensure_ascii=False,
+                        indent=2,
+                    ))
+                else:
+                    print(json.dumps(
+                        {
+                            "result": result,
+                            "note": "Run completed; use --list-runs to identify its run ID if concurrent writers were active.",
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ))
+                return
             if args.list_runs:
                 print(json.dumps(journal.list_runs(), ensure_ascii=False, indent=2))
                 return

@@ -132,6 +132,43 @@ class CliTests(unittest.TestCase):
             self.assertEqual(output["decision"]["disposition"], "revalidation_required")
             self.assertFalse(output["can_auto_resume"])
 
+    def test_one_shot_run_requires_journal_and_reports_new_run_id(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--run-objective", "Do one task",
+            ])
+
+        with tempfile.TemporaryDirectory() as directory:
+            journal_path = Path(directory) / "journal.sqlite3"
+
+            def fake_from_config(config_path, journal):
+                journal.create_run(
+                    "run-one-shot",
+                    status="completed",
+                    payload={"objective": "private objective", "execution_kind": "run"},
+                )
+                return type(
+                    "FakeRunner",
+                    (),
+                    {"run": lambda self, objective: "one-shot result"},
+                )()
+
+            with patch(
+                "interfaces.cli.main.Omnitrix.from_config",
+                side_effect=fake_from_config,
+            ):
+                with patch("builtins.print") as print_mock:
+                    main([
+                        "--config", "config/demo.models.json",
+                        "--journal", str(journal_path),
+                        "--run-objective", "Do one task",
+                    ])
+
+            output = json.loads(print_mock.call_args.args[0])
+            self.assertEqual(output["run_id"], "run-one-shot")
+            self.assertEqual(output["result"], "one-shot result")
+
     def test_restart_command_requires_explicit_confirmation(self):
         with self.assertRaises(SystemExit):
             main([
