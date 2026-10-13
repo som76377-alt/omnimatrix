@@ -4,7 +4,7 @@
 
 **Version:** 1.6 — Research-audited architecture and implementation specification with synchronized implementation status  
 **Research / snapshot date:** 11 October 2026  
-**Implementation status snapshot:** 13 October 2026, checked against `som76377-alt/omnimatrix` branch `phase2/guarded-manual-restart` in PR #21; CI validation is pending  
+**Implementation status snapshot:** 13 October 2026, checked against `som76377-alt/omnimatrix` branch `phase2/guarded-manual-restart` in PR #21; GitHub Actions run #185 passed compilation, configuration validation, 277 unit tests, and the offline CLI smoke test  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
