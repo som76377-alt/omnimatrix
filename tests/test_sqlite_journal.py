@@ -251,6 +251,12 @@ class SQLiteJournalTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
                 journal.get_replayable_tool_result("execution-replay")
+            journal._connection.execute(
+                "UPDATE tool_result_snapshots SET result_json = '42', replay_policy = 'never' "
+                "WHERE execution_id = 'execution-replay'"
+            )
+            with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
+                journal.get_replayable_tool_result("execution-replay")
 
     def test_invalid_replay_snapshot_does_not_commit_terminal_status(self):
         with SQLiteJournal(":memory:") as journal:
