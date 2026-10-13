@@ -89,6 +89,12 @@ class ModelStateCodecTests(unittest.TestCase):
         with self.assertRaisesRegex(ModelStateCodecError, "Unsupported"):
             decode_model_state(envelope)
 
+    def test_non_integer_schema_version_is_rejected(self):
+        envelope = encode_model_state(self.request)
+        envelope["schema_version"] = 1.0
+        with self.assertRaisesRegex(ModelStateCodecError, "Unsupported"):
+            decode_model_state(envelope)
+
     def test_unknown_payload_fields_are_rejected(self):
         envelope = encode_model_state(self.response)
         envelope["payload"]["unexpected"] = True
