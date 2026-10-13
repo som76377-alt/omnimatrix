@@ -162,7 +162,7 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
                     "SELECT run_id, status, payload_json FROM runs"
                 ).fetchall()
                 task_rows = database.execute(
-                    "SELECT run_id, status, payload_json FROM tasks"
+                    "SELECT run_id, task_id, status, payload_json FROM tasks"
                 ).fetchall()
                 attempt_rows = database.execute(
                     "SELECT run_id, task_id, attempt_number, status, finished_at FROM attempts"
@@ -178,9 +178,9 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertEqual(len(run_rows), 1)
             self.assertEqual(run_rows[0][1], "completed")
             self.assertEqual(len(task_rows), 1)
-            self.assertEqual(task_rows[0][1], "completed")
+            self.assertEqual(task_rows[0][2], "completed")
             self.assertIn("Calculate 847 * 23", run_rows[0][2])
-            self.assertIn("Calculate 847 * 23", task_rows[0][2])
+            self.assertIn("Calculate 847 * 23", task_rows[0][3])
             self.assertEqual(
                 event_rows,
                 [
@@ -197,7 +197,7 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
             self.assertIsNotNone(attempt_rows[0][4])
             self.assertEqual(len(tool_execution_rows), 1)
             self.assertEqual(tool_execution_rows[0][0], run_rows[0][0])
-            self.assertEqual(tool_execution_rows[0][1], task_rows[0][0] if len(task_rows[0]) > 2 else None)
+            self.assertEqual(tool_execution_rows[0][1], task_rows[0][1])
             self.assertEqual(tool_execution_rows[0][3], "calculator")
             self.assertEqual(tool_execution_rows[0][4], "succeeded")
             self.assertIsNotNone(tool_execution_rows[0][5])
