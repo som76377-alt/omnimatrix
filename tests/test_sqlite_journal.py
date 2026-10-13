@@ -127,6 +127,47 @@ class SQLiteJournalTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 journal.finish_tool_execution("missing-execution", "succeeded")
 
+    def test_running_tool_execution_survives_restart_as_uncertain_not_replayed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "crash-window.sqlite3"
+            # Simulate a process stopping after the durable claim. We cannot
+            # know whether the external effect happened before the stop.
+            with SQLiteJournal(path) as journal:
+                journal.begin_tool_execution(
+                    "execution-crashed", "logical-action-1", "side-effect", "sha256-a",
+                    run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+                )
+
+            with SQLiteJournal(path) as reopened:
+                uncertain = reopened.list_uncertain_tool_executions()
+                self.assertEqual(len(uncertain), 1)
+                self.assertEqual(uncertain[0]["execution_id"], "execution-crashed")
+                self.assertEqual(uncertain[0]["status"], "running")
+                self.assertEqual(uncertain[0]["idempotency_key"], "logical-action-1")
+                # Inspection is read-only; it must not silently rewrite history.
+                self.assertEqual(reopened.list_uncertain_tool_executions(), uncertain)
+                duplicate = reopened.begin_tool_execution(
+                    "execution-retry", "logical-action-1", "side-effect", "sha256-a",
+                    run_id="run-1", task_id="task-1", attempt_id="attempt-2",
+                )
+                self.assertFalse(duplicate["created"])
+                self.assertEqual(duplicate["status"], "running")
+                self.assertEqual(
+                    [item["execution_id"] for item in reopened.list_uncertain_tool_executions()],
+                    ["execution-crashed"],
+                )
+
+    def test_unknown_tool_execution_is_visible_for_reconciliation(self):
+        with SQLiteJournal(":memory:") as journal:
+            journal.begin_tool_execution(
+                "execution-1", "action-1", "side-effect", "sha256-a"
+            )
+            journal.finish_tool_execution("execution-1", "unknown", {"error_type": "RuntimeError"})
+            uncertain = journal.list_uncertain_tool_executions()
+            self.assertEqual(len(uncertain), 1)
+            self.assertEqual(uncertain[0]["status"], "unknown")
+            self.assertIsNotNone(uncertain[0]["finished_at"])
+
     def test_schema_v1_database_is_migrated_to_tool_execution_table(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "migration.sqlite3"
