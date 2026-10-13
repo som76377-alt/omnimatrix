@@ -32,6 +32,11 @@ class CalculatorTool(Tool):
         return frozenset({"calculation"})
 
     @property
+    def replay_policy(self) -> str:
+        """Arithmetic results are deterministic and safe to persist as JSON."""
+        return "deterministic_json_v1"
+
+    @property
     def parameters_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
