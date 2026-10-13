@@ -47,7 +47,7 @@ The current application and test suite use Python's standard library; there is n
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.4; implementation status snapshot dated 13 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.6; implementation status snapshot dated 13 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 
