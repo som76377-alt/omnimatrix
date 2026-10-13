@@ -47,10 +47,27 @@ A reconciliation record does not rewrite the original tool-execution status, exe
 own claim. The latest record guides classification; the full history remains available for audit. Tool-specific
 reconciliation adapters and evidence validation are still future work.
 
+## Durable checkpoints and integrity-aware inspection
+
+Schema v4 adds an append-only `checkpoints` table. Each checkpoint has a run-local sequence,
+type, JSON payload, creation timestamp and SHA-256 digest of canonical JSON (UTF-8, sorted keys,
+compact separators). A unique constraint prevents two checkpoints from claiming the same sequence.
+`SQLiteJournal.save_checkpoint()` rejects unknown runs and invalid sequence values; inserts cannot
+silently replace an existing checkpoint. `RecoveryService.inspect(run_id)` reconstructs the stored
+snapshot and checks checkpoint digests and sequence continuity, task/attempt relationships, and
+run-scoped event/tool references before returning a disposition. Integrity failures become
+`blocked_unknown_state`, never a best-effort resume.
+
+The digest is an integrity check against accidental payload changes when the stored digest remains
+intact; it is not a keyed MAC or signature and cannot detect a database actor who rewrites both
+payload and digest. Inspection is read-only and never restores a live orchestrator, repeats a model
+call, retries a tool, or authorizes execution. Checkpoints currently provide a durable data primitive;
+the orchestrator does not yet write complete execution-position checkpoints or resume from them.
+
 ## Explicitly not implemented
 
 - Automatic process-restart resume or event replay.
-- Re-running model calls from a durable checkpoint.
+- Re-running model calls from a durable checkpoint; current checkpoints are integrity-checked data records, not yet a complete replay position.
 - Automatic retries, pause/cancel execution control, or compensating actions.
 - Provider-specific or tool-specific proof that an external side effect did or did not happen.
 - Cryptographic identity/authentication for the actor who records a reconciliation decision.
@@ -65,5 +82,6 @@ reconciliation adapters and evidence validation are still future work.
 - `confirmed_applied` leads to downstream revalidation.
 - Stable action keys are identical across attempt IDs for the same run/task/action.
 - Changed arguments under a previously claimed key are refused.
-- SQLite migration from schema v1 to v3 retains journal data and adds reconciliation support.
+- SQLite migration from schema v1 to v4 retains journal data and adds reconciliation plus checkpoint support.
+- Checkpoint payload digest tampering, sequence gaps, and invalid task/attempt references block recovery inspection.
 - A real process crash before and after a simulated side effect leaves a visible uncertain record.
