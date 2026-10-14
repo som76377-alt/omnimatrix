@@ -1,7 +1,6 @@
 """Read-only lookup that gates encrypted model snapshots on recovery evidence.
 
-This is preflight only: it does not decrypt state, call a model, resume a run,
-or authorize replay of any tool.
+This is read-only preflight: decryption is optional and requires the explicitly enabled snapshot store. It never calls a model, resumes a run, or authorizes tool replay.
 """
 from __future__ import annotations
 
