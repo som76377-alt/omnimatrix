@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.16 — Opt-in encrypted model-state snapshots  
+**Version:** 1.17 — Verified model-state reconstruction without resume  
 **Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 13 October 2026, branch `phase2/encrypted-model-state-snapshots`, PR #31; opt-in AES-GCM encrypted request/response snapshot storage; CI run #331 passed 321 tests, compilation, configuration validation and offline CLI smoke test  
+**Implementation status snapshot:** 14 October 2026, branch `phase2/snapshot-transcript-correlation`, PR #33; encrypted snapshot content verification, transcript correlation, provider continuation compatibility, and typed verified-pair reconstruction are implemented as read-only recovery building blocks; CI evidence is tracked in PR #33 and must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1808,3 +1808,8 @@ Added an in-memory-only, schema-v1 canonical JSON envelope for normalized model 
 ## Version 1.16 change log — opt-in encrypted model-state snapshots
 
 Schema v7 adds an encrypted model-state snapshot table containing ciphertext, nonce, key identifier, identity metadata and a plaintext digest; it never accepts raw model content or encryption keys. The new store persists only complete request/response pairs, requires an explicit opt-in and externally supplied 32-byte AES key, uses AES-GCM authenticated encryption with identity-bound associated data, validates the existing model-state codec on load, and supports explicit deletion. Persistence is disabled by default; keys are not stored in SQLite. The new runtime dependency is declared in `requirements.txt` and installed by CI. This is storage groundwork only: it does not restore a live provider session, validate that provider continuation state remains usable, reconstruct the current orchestration position, replay tools, or enable automatic resume. Snapshot retention and external key management remain the caller's responsibility.
+
+
+## Version 1.17 change log — verified model-state reconstruction without resume
+
+Added a bounded reconstruction API that returns the decoded provider-neutral request/response pair only after read-only recovery preflight verifies the requested run/task/attempt identity, transcript correlation, decrypted request/response hashes, and registered provider/model compatibility. The API rejects disabled snapshot storage, incomplete verification evidence, identity mismatch, and unsupported continuation state. It does not call a model, execute tools, replay events, reconstruct the full live orchestrator/task state, or authorize automatic resume. The transcript correlator also distinguishes the selected request-side adapter/model label from the provider-reported response model ID, avoiding false rejection when an adapter alias maps to a concrete provider model. A subprocess crash/reopen test exercises durable snapshot, transcript, and checkpoint evidence followed by verified typed-pair reconstruction. This still does not restore the full live task state or authorize model/tool execution; full conversation restoration and the end-to-end crash-recovery gate remain open.

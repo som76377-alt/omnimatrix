@@ -78,6 +78,17 @@ class GeminiAdapter(ModelAdapter):
     def provider(self) -> str:
         return "google"
 
+    def supports_model_id(self, model_id: str) -> bool:
+        return isinstance(model_id, str) and model_id == self._model_id
+
+    def supports_continuation(self, continuation: ModelContinuation) -> bool:
+        if continuation.provider != self.provider:
+            return False
+        if set(continuation.state) != {"interaction_id"}:
+            return False
+        interaction_id = continuation.state.get("interaction_id")
+        return isinstance(interaction_id, str) and bool(interaction_id.strip())
+
     def generate(self, request: ModelRequest) -> ModelResponse:
         api_key = self._api_key or os.getenv(self._api_key_env)
 

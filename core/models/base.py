@@ -49,6 +49,18 @@ class ModelAdapter(ABC):
         """Return the model provider identifier."""
         raise NotImplementedError
 
+    def supports_model_id(self, model_id: str) -> bool:
+        """Return whether this adapter can serve a provider-reported model ID.
+
+        Adapters whose configured name differs from the provider model ID should
+        override this method. Recovery inspection uses it without making a call.
+        """
+        return isinstance(model_id, str) and model_id == self.name
+
+    def supports_continuation(self, continuation: ModelContinuation) -> bool:
+        """Fail closed unless an adapter explicitly validates its state format."""
+        return False
+
     @abstractmethod
     def generate(self, request: ModelRequest) -> ModelResponse:
         """Generate a normalized response from the model."""
