@@ -24,6 +24,9 @@ class DemoAdapter(ModelAdapter):
     def provider(self) -> str:
         return "demo"
 
+    def supports_model_id(self, model_id: str) -> bool:
+        return isinstance(model_id, str) and model_id == self._model_id
+
     def generate(self, request: ModelRequest) -> ModelResponse:
         if not isinstance(request, ModelRequest):
             raise TypeError("request must be a ModelRequest.")
