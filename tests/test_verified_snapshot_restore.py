@@ -1,5 +1,8 @@
 import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -132,6 +135,100 @@ class VerifiedSnapshotReconstructionTests(unittest.TestCase):
             restored.preflight["provider_continuation_compatibility"]["provider_compatible"]
         )
         self.assertFalse(restored.execution_authorized)
+
+    def test_subprocess_crash_reopen_and_verified_reconstruction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "crash-recovery.sqlite3"
+            key = os.urandom(32)
+            script = textwrap.dedent(
+                """
+                import os
+                import sys
+                from core.models.base import ModelResponse
+                from core.models.messages import MessageRole, ModelMessage, ModelRequest
+                from core.persistence.model_state import (
+                    model_request_transcript_sha256, model_response_transcript_sha256,
+                )
+                from core.persistence.model_state_snapshots import ModelStateSnapshotStore
+                from core.persistence.sqlite_journal import SQLiteJournal
+
+                journal = SQLiteJournal(sys.argv[1])
+                journal.create_run("run-crash", status="running")
+                journal.upsert_task("run-crash", "task-crash", "running")
+                journal.record_attempt("attempt-crash", "run-crash", "task-crash", 1, "running")
+                request = ModelRequest(
+                    instructions="Crash recovery test",
+                    messages=(ModelMessage(MessageRole.USER, "durable test prompt"),),
+                )
+                response = ModelResponse(
+                    content="durable test response", provider="demo", model="demo-v1",
+                )
+                request_digest = model_request_transcript_sha256(request)
+                response_digest = model_response_transcript_sha256(response)
+                journal.append_model_transcript_record(
+                    "run-crash", 0, "model_request",
+                    task_id="task-crash", attempt_id="attempt-crash",
+                    provider="demo", model="demo-adapter-alias",
+                    request_sha256=request_digest,
+                )
+                journal.append_model_transcript_record(
+                    "run-crash", 1, "model_response",
+                    task_id="task-crash", attempt_id="attempt-crash",
+                    provider="demo", model="demo-v1",
+                    request_sha256=request_digest, response_sha256=response_digest,
+                )
+                journal.save_checkpoint(
+                    "run-crash", "checkpoint-0", 0, "task_started",
+                    {"task_id": "task-crash", "attempt_id": "attempt-crash"},
+                )
+                journal.save_checkpoint(
+                    "run-crash", "checkpoint-1", 1, "model_request_started",
+                    {"task_id": "task-crash", "attempt_id": "attempt-crash"},
+                )
+                journal.save_checkpoint(
+                    "run-crash", "checkpoint-2", 2, "model_response_received",
+                    {"task_id": "task-crash", "attempt_id": "attempt-crash"},
+                )
+                store = ModelStateSnapshotStore(
+                    journal, enabled=True, encryption_key=bytes.fromhex(sys.argv[2]),
+                )
+                store.save_pair(
+                    "run-crash", "task-crash", "attempt-crash", 0, request, response,
+                )
+                os._exit(73)
+                """
+            )
+            crashed = subprocess.run(
+                [sys.executable, "-c", script, str(database_path), key.hex()],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(crashed.returncode, 73, crashed.stderr)
+
+            with SQLiteJournal(database_path) as reopened:
+                metadata = reopened.list_model_state_snapshot_metadata("run-crash")
+                self.assertEqual(len(metadata), 1)
+                registry = AdapterRegistry()
+                registry.register(DemoAdapter(name="demo-offline", model_id="demo-v1"))
+                restored = reconstruct_verified_snapshot_pair(
+                    reopened,
+                    RecoveryService(reopened),
+                    ModelStateSnapshotStore(
+                        reopened, enabled=True, encryption_key=key,
+                    ),
+                    registry,
+                    metadata[0]["snapshot_id"],
+                    expected_run_id="run-crash",
+                    expected_task_id="task-crash",
+                    expected_attempt_id="attempt-crash",
+                )
+                self.assertEqual(
+                    restored.request.messages[0].content, "durable test prompt"
+                )
+                self.assertEqual(restored.response.content, "durable test response")
+                self.assertFalse(restored.execution_authorized)
+                self.assertFalse(restored.preflight["can_auto_resume"])
 
     def test_unverified_content_is_blocked(self):
         evidence = {
