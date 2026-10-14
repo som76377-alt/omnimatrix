@@ -262,3 +262,33 @@ def decode_model_state(envelope: object) -> ModelRequest | ModelResponse:
             raise
         raise ModelStateCodecError("Model-state payload violates model type constraints.") from exc
     raise ModelStateCodecError("Model-state payload kind must be request or response.")
+
+
+
+def model_request_transcript_sha256(request: ModelRequest) -> str:
+    """Return the same canonical digest written to the metadata-only transcript."""
+    if not isinstance(request, ModelRequest):
+        raise TypeError("request must be a ModelRequest.")
+    continuation = _continuation_to_dict(request.continuation)
+    payload = {
+        "instructions": request.instructions,
+        "messages": [_message_to_dict(message) for message in request.messages],
+        "tools": [_tool_definition_to_dict(tool) for tool in request.tools],
+        "continuation": continuation,
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def model_response_transcript_sha256(response: ModelResponse) -> str:
+    """Return the same canonical digest written to the metadata-only transcript."""
+    if not isinstance(response, ModelResponse):
+        raise TypeError("response must be a ModelResponse.")
+    payload = {
+        "content": response.content,
+        "provider": response.provider,
+        "model": response.model,
+        "usage": response.usage,
+        "tool_calls": [_tool_call_to_dict(call) for call in response.tool_calls],
+        "continuation": _continuation_to_dict(response.continuation),
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
