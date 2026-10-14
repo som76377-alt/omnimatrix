@@ -46,6 +46,15 @@ class SnapshotTranscriptCorrelationTests(unittest.TestCase):
         self.assertEqual(result["response_sha256"], "b" * 64)
         self.assertFalse(result["content_hashes_verified"])
 
+    def test_request_adapter_alias_can_differ_from_provider_reported_model_id(self):
+        transcript = self.pair(0, "task-1", "attempt-1", "a", "b", model="adapter-alias")
+        transcript[1]["model"] = "provider-model-v2"
+        metadata = {**self.metadata, "model": "provider-model-v2"}
+        result = validate_snapshot_transcript_correlation(
+            snapshot_metadata=metadata, transcript=transcript
+        )
+        self.assertEqual(result["response_transcript_sequence"], 1)
+
     def test_attempt_local_ordinal_skips_earlier_attempts_and_tasks(self):
         prior = self.pair(0, "task-1", "attempt-0", "c", "d")
         same_attempt_first = self.pair(2, "task-1", "attempt-1", "a", "b")
