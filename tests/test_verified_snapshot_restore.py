@@ -8,6 +8,7 @@ from core.models.base import ModelResponse
 from core.models.adapters import AdapterRegistry
 from core.models.providers.demo import DemoAdapter
 from core.models.messages import MessageRole, ModelMessage, ModelRequest
+from core.persistence.model_state import model_request_transcript_sha256, model_response_transcript_sha256
 from core.persistence.model_state_snapshots import ModelStateSnapshotStore
 from core.persistence.recovery_service import RecoveryService
 from core.persistence.snapshot_recovery_gate import SnapshotRecoveryGateError
@@ -85,6 +86,52 @@ class VerifiedSnapshotReconstructionTests(unittest.TestCase):
         self.assertEqual(restored.interaction_sequence, 0)
         self.assertFalse(restored.execution_authorized)
         self.assertFalse(restored.preflight["can_auto_resume"])
+
+    def test_real_preflight_reconstructs_pair_after_transcript_and_checkpoint_verification(self):
+        request_digest = model_request_transcript_sha256(self.request)
+        response_digest = model_response_transcript_sha256(self.response)
+        self.journal.append_model_transcript_record(
+            "run-1", 0, "model_request",
+            task_id="task-1", attempt_id="attempt-1",
+            provider="demo", model="demo-adapter-alias",
+            request_sha256=request_digest,
+        )
+        self.journal.append_model_transcript_record(
+            "run-1", 1, "model_response",
+            task_id="task-1", attempt_id="attempt-1",
+            provider="demo", model="demo-v1",
+            request_sha256=request_digest, response_sha256=response_digest,
+        )
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-0", 0, "task_started",
+            {"task_id": "task-1", "attempt_id": "attempt-1"},
+        )
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-1", 1, "model_request_started",
+            {"task_id": "task-1", "attempt_id": "attempt-1", "model_name": "demo-adapter-alias"},
+        )
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-2", 2, "model_response_received",
+            {"task_id": "task-1", "attempt_id": "attempt-1", "model_name": "demo-v1"},
+        )
+
+        restored = reconstruct_verified_snapshot_pair(
+            self.journal,
+            self.service,
+            self.store,
+            self.registry,
+            self.snapshot_id,
+            expected_run_id="run-1",
+            expected_task_id="task-1",
+            expected_attempt_id="attempt-1",
+        )
+        self.assertEqual(restored.request, self.request)
+        self.assertEqual(restored.response, self.response)
+        self.assertTrue(restored.preflight["transcript_correlation"]["content_hashes_verified"])
+        self.assertTrue(
+            restored.preflight["provider_continuation_compatibility"]["provider_compatible"]
+        )
+        self.assertFalse(restored.execution_authorized)
 
     def test_unverified_content_is_blocked(self):
         evidence = {
