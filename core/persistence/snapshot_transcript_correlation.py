@@ -78,12 +78,24 @@ def validate_snapshot_transcript_correlation(
             "Snapshot has no complete matching request/response pair for its task/attempt ordinal."
         )
     request, response = matching_pairs[ordinal]
+    # The request record labels the selected Omnitrix model/adapter; the
+    # response record labels the provider-reported model ID. Those may differ
+    # (for example, an adapter alias can map to a concrete provider model ID).
+    # The provider must agree on both records, while the snapshot's model field
+    # must match the provider-reported response model.
     for record, label in ((request, "request"), (response, "response")):
-        for field in ("provider", "model"):
-            if record.get(field) != snapshot_metadata.get(field):
-                raise SnapshotRecoveryGateError(
-                    f"Snapshot does not match transcript {label} {field}."
-                )
+        if record.get("provider") != snapshot_metadata.get("provider"):
+            raise SnapshotRecoveryGateError(
+                f"Snapshot does not match transcript {label} provider."
+            )
+        if not isinstance(record.get("model"), str) or not record.get("model").strip():
+            raise SnapshotRecoveryGateError(
+                f"Transcript {label} model identity is missing."
+            )
+    if response.get("model") != snapshot_metadata.get("model"):
+        raise SnapshotRecoveryGateError(
+            "Snapshot does not match transcript response model."
+        )
 
     return {
         "interaction_sequence": ordinal,
