@@ -9,6 +9,10 @@ import uuid
 from core.conversation import Conversation
 from core.contracts import BudgetGuard, BudgetLimits, ErrorCode, OmnitrixError, RunEvent
 from core.persistence.recovery_service import RecoveryService
+from core.persistence.model_state import (
+    model_request_transcript_sha256,
+    model_response_transcript_sha256,
+)
 from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
 from core.models.loader import ModelConfigLoader
@@ -42,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 def _canonical_sha256(value: object) -> str:
-    """Hash canonical JSON without persisting the underlying model payload."""
+    """Compatibility wrapper for canonical transcript hashing."""
     try:
         encoded = json.dumps(
             value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -55,61 +59,12 @@ def _canonical_sha256(value: object) -> str:
 
 def _model_request_sha256(request: ModelRequest) -> str:
     """Fingerprint the full normalized request, including context and tool schemas."""
-    messages: list[dict[str, object]] = []
-    for message in request.messages:
-        tool_calls = [
-            {"id": call.id, "tool_name": call.tool_name, "arguments": call.arguments}
-            for call in message.tool_calls
-        ]
-        tool_result = None
-        if message.tool_result is not None:
-            tool_result = {
-                "tool_call_id": message.tool_result.tool_call_id,
-                "tool_name": message.tool_result.tool_name,
-                "success": message.tool_result.success,
-                "output": message.tool_result.output,
-                "error": message.tool_result.error,
-            }
-        messages.append({
-            "role": message.role.value,
-            "content": message.content,
-            "tool_calls": tool_calls,
-            "tool_result": tool_result,
-        })
-    continuation = None
-    if request.continuation is not None:
-        continuation = {
-            "provider": request.continuation.provider,
-            "state": request.continuation.state,
-        }
-    return _canonical_sha256({
-        "instructions": request.instructions,
-        "messages": messages,
-        "tools": [
-            {"name": tool.name, "description": tool.description,
-             "parameters_schema": tool.parameters_schema}
-            for tool in request.tools
-        ],
-        "continuation": continuation,
-    })
+    return model_request_transcript_sha256(request)
 
 
 def _model_response_sha256(response: object) -> str:
     """Fingerprint normalized response data without storing response contents."""
-    return _canonical_sha256({
-        "content": response.content,
-        "provider": response.provider,
-        "model": response.model,
-        "usage": response.usage,
-        "tool_calls": [
-            {"id": call.id, "tool_name": call.tool_name, "arguments": call.arguments}
-            for call in response.tool_calls
-        ],
-        "continuation": (
-            {"provider": response.continuation.provider, "state": response.continuation.state}
-            if response.continuation is not None else None
-        ),
-    })
+    return model_response_transcript_sha256(response)
 
 
 def _log_safely(level: int, event: str, **metadata: object) -> None:
