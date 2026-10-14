@@ -1,8 +1,8 @@
 """Fail-closed metadata correlation between an encrypted snapshot and transcript.
 
-This validates the exact model-call slot and identity without decrypting content.
-It deliberately does not claim that snapshot payload hashes match transcript
-request/response hashes; that requires decrypting the pair with the external key.
+The snapshot interaction sequence is scoped to a run/task/attempt, whereas the
+append-only transcript sequence is global to the run. This module maps between
+those coordinate systems without decrypting model content.
 """
 from __future__ import annotations
 
@@ -12,83 +12,84 @@ from typing import Any
 from core.persistence.snapshot_recovery_gate import SnapshotRecoveryGateError
 
 
+def _valid_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value.lower())
+    )
+
+
 def validate_snapshot_transcript_correlation(
     *, snapshot_metadata: Mapping[str, Any], transcript: Sequence[Mapping[str, Any]]
 ) -> dict[str, Any]:
-    """Validate a snapshot's call ordinal against one complete transcript pair.
+    """Validate the snapshot's attempt-local ordinal against one complete pair.
 
-    interaction_sequence is the zero-based model-call ordinal. The append-only
-    transcript stores two records per completed call: request at 2*n and response
-    at 2*n+1. Any gap, ambiguous boundary, or identity mismatch blocks preflight.
+    Transcript records use global run-level sequence numbers. Snapshot
+    interaction_sequence is the zero-based call ordinal for the exact run/task/
+    attempt identity. Each complete model call must be adjacent request/response
+    records. Any malformed, unmatched, or identity-inconsistent boundary blocks.
     """
-    sequence = snapshot_metadata.get("interaction_sequence")
-    if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
+    ordinal = snapshot_metadata.get("interaction_sequence")
+    if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 0:
         raise SnapshotRecoveryGateError("Snapshot interaction sequence is invalid.")
 
-    request_index = sequence * 2
-    response_index = request_index + 1
-    if response_index >= len(transcript):
+    if not isinstance(transcript, Sequence) or isinstance(transcript, (str, bytes)):
+        raise SnapshotRecoveryGateError("Model transcript must be an ordered record sequence.")
+
+    matching_pairs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    index = 0
+    while index < len(transcript):
+        if index + 1 >= len(transcript):
+            raise SnapshotRecoveryGateError("Transcript ends with an unmatched model request.")
+        request, response = transcript[index], transcript[index + 1]
+        if not isinstance(request, Mapping) or not isinstance(response, Mapping):
+            raise SnapshotRecoveryGateError("Transcript contains a malformed model record.")
+        if request.get("interaction_type") != "model_request":
+            raise SnapshotRecoveryGateError("Transcript request/response order is invalid.")
+        if response.get("interaction_type") != "model_response":
+            raise SnapshotRecoveryGateError("Transcript request has no adjacent response.")
+        if request.get("sequence") != index or response.get("sequence") != index + 1:
+            raise SnapshotRecoveryGateError("Transcript global sequence is not contiguous.")
+        if (
+            request.get("run_id") != snapshot_metadata.get("run_id")
+            or response.get("run_id") != snapshot_metadata.get("run_id")
+        ):
+            raise SnapshotRecoveryGateError("Transcript run identity does not match snapshot.")
+        for field in ("task_id", "attempt_id"):
+            if request.get(field) != response.get(field):
+                raise SnapshotRecoveryGateError(f"Transcript request/response {field} mismatch.")
+        if request.get("request_sha256") != response.get("request_sha256"):
+            raise SnapshotRecoveryGateError("Transcript response request digest does not match its request.")
+        if not _valid_digest(request.get("request_sha256")):
+            raise SnapshotRecoveryGateError("Transcript request digest is invalid.")
+        if not _valid_digest(response.get("response_sha256")):
+            raise SnapshotRecoveryGateError("Transcript response digest is invalid.")
+
+        if (
+            request.get("task_id") == snapshot_metadata.get("task_id")
+            and request.get("attempt_id") == snapshot_metadata.get("attempt_id")
+        ):
+            matching_pairs.append((request, response))
+        index += 2
+
+    if ordinal >= len(matching_pairs):
         raise SnapshotRecoveryGateError(
-            "Snapshot has no complete matching request/response transcript pair."
+            "Snapshot has no complete matching request/response pair for its task/attempt ordinal."
         )
-
-    request = transcript[request_index]
-    response = transcript[response_index]
-    if not isinstance(request, Mapping) or not isinstance(response, Mapping):
-        raise SnapshotRecoveryGateError("Matching transcript pair is malformed.")
-
-    expected_request_fields = {
-        "interaction_type": "model_request",
-        "sequence": request_index,
-        "run_id": snapshot_metadata.get("run_id"),
-        "task_id": snapshot_metadata.get("task_id"),
-        "attempt_id": snapshot_metadata.get("attempt_id"),
-        "provider": snapshot_metadata.get("provider"),
-        "model": snapshot_metadata.get("model"),
-    }
-    expected_response_fields = {
-        "interaction_type": "model_response",
-        "sequence": response_index,
-        "run_id": snapshot_metadata.get("run_id"),
-        "task_id": snapshot_metadata.get("task_id"),
-        "attempt_id": snapshot_metadata.get("attempt_id"),
-        "provider": snapshot_metadata.get("provider"),
-        "model": snapshot_metadata.get("model"),
-    }
-    for record, expected, label in (
-        (request, expected_request_fields, "request"),
-        (response, expected_response_fields, "response"),
-    ):
-        for field, value in expected.items():
-            if record.get(field) != value:
+    request, response = matching_pairs[ordinal]
+    for record, label in ((request, "request"), (response, "response")):
+        for field in ("provider", "model"):
+            if record.get(field) != snapshot_metadata.get(field):
                 raise SnapshotRecoveryGateError(
                     f"Snapshot does not match transcript {label} {field}."
                 )
 
-    request_digest = request.get("request_sha256")
-    response_request_digest = response.get("request_sha256")
-    response_digest = response.get("response_sha256")
-    for label, digest in (
-        ("request", request_digest),
-        ("response request", response_request_digest),
-        ("response", response_digest),
-    ):
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(character not in "0123456789abcdef" for character in digest.lower())
-        ):
-            raise SnapshotRecoveryGateError(f"Transcript {label} digest is invalid.")
-    if request_digest != response_request_digest:
-        raise SnapshotRecoveryGateError(
-            "Transcript response request digest does not match its request."
-        )
-
     return {
-        "interaction_sequence": sequence,
-        "request_transcript_sequence": request_index,
-        "response_transcript_sequence": response_index,
-        "request_sha256": request_digest,
-        "response_sha256": response_digest,
+        "interaction_sequence": ordinal,
+        "request_transcript_sequence": request["sequence"],
+        "response_transcript_sequence": response["sequence"],
+        "request_sha256": request["request_sha256"],
+        "response_sha256": response["response_sha256"],
         "content_hashes_verified": False,
     }
