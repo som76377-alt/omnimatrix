@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.persistence.recovery_service import RecoveryService
+from core.persistence.model_state_snapshots import ModelStateSnapshotStore
+from core.persistence.snapshot_content_verification import verify_snapshot_content_hashes
 from core.persistence.snapshot_recovery_gate import (
     SnapshotRecoveryGateError,
     validate_snapshot_recovery_gate,
@@ -26,6 +28,7 @@ def inspect_snapshot_preflight(
     expected_run_id: str,
     expected_task_id: str,
     expected_attempt_id: str,
+    snapshot_store: ModelStateSnapshotStore | None = None,
 ) -> dict[str, Any]:
     """Return sanitized identity after recovery and transcript-correlation checks."""
     if not isinstance(journal, SQLiteJournal):
@@ -55,6 +58,19 @@ def inspect_snapshot_preflight(
         snapshot_metadata=metadata,
         transcript=journal.list_model_transcript(expected_run_id),
     )
+    content_verification = {"content_hashes_verified": False}
+    if snapshot_store is not None:
+        if not isinstance(snapshot_store, ModelStateSnapshotStore):
+            raise TypeError("snapshot_store must be a ModelStateSnapshotStore.")
+        if snapshot_store._journal is not journal:
+            raise SnapshotRecoveryGateError("Snapshot store must use the same journal as preflight.")
+        content_verification = verify_snapshot_content_hashes(
+            snapshot_store=snapshot_store,
+            snapshot_id=snapshot_id,
+            expected_request_sha256=correlation["request_sha256"],
+            expected_response_sha256=correlation["response_sha256"],
+        )
+
     return {
         "snapshot_id": snapshot_id,
         "run_id": expected_run_id,
@@ -63,7 +79,7 @@ def inspect_snapshot_preflight(
         "interaction_sequence": metadata["interaction_sequence"],
         "provider": metadata["provider"],
         "model": metadata["model"],
-        "transcript_correlation": correlation,
+        "transcript_correlation": {**correlation, **content_verification},
         "recovery_disposition": inspection["decision"]["disposition"],
         "model_position_disposition": inspection["model_position"]["disposition"],
         "can_auto_resume": False,
