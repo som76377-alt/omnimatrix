@@ -8,7 +8,7 @@ from core.persistence.model_state import (
     model_request_transcript_sha256,
     model_response_transcript_sha256,
 )
-from core.persistence.model_state_snapshots import ModelStateSnapshotStore, ModelStateSnapshotError
+from core.persistence.model_state_snapshots import ModelStateSnapshotStore
 from core.persistence.snapshot_recovery_gate import SnapshotRecoveryGateError
 
 
