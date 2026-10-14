@@ -12,6 +12,9 @@ from core.persistence.snapshot_recovery_gate import (
     SnapshotRecoveryGateError,
     validate_snapshot_recovery_gate,
 )
+from core.persistence.snapshot_transcript_correlation import (
+    validate_snapshot_transcript_correlation,
+)
 from core.persistence.sqlite_journal import SQLiteJournal
 
 
@@ -24,7 +27,7 @@ def inspect_snapshot_preflight(
     expected_task_id: str,
     expected_attempt_id: str,
 ) -> dict[str, Any]:
-    """Return sanitized identity plus recovery disposition after fail-closed checks."""
+    """Return sanitized identity after recovery and transcript-correlation checks."""
     if not isinstance(journal, SQLiteJournal):
         raise TypeError("journal must be a SQLiteJournal.")
     if not isinstance(recovery_service, RecoveryService):
@@ -48,6 +51,10 @@ def inspect_snapshot_preflight(
         expected_task_id=expected_task_id,
         expected_attempt_id=expected_attempt_id,
     )
+    correlation = validate_snapshot_transcript_correlation(
+        snapshot_metadata=metadata,
+        transcript=journal.list_model_transcript(expected_run_id),
+    )
     return {
         "snapshot_id": snapshot_id,
         "run_id": expected_run_id,
@@ -56,6 +63,7 @@ def inspect_snapshot_preflight(
         "interaction_sequence": metadata["interaction_sequence"],
         "provider": metadata["provider"],
         "model": metadata["model"],
+        "transcript_correlation": correlation,
         "recovery_disposition": inspection["decision"]["disposition"],
         "model_position_disposition": inspection["model_position"]["disposition"],
         "can_auto_resume": False,
