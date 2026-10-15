@@ -95,7 +95,7 @@ class RecoveryInventoryTests(unittest.TestCase):
         result = self.inventory()
         self.assertEqual(result["disposition"], "blocked_unknown_state")
         self.assertIn(
-            "tool_result_checkpoint_missing",
+            "tool_result_checkpoint_missing_or_ambiguous",
             {item["code"] for item in result["findings"]},
         )
         self.assertNotIn("success", repr(result["tool_executions"]))
