@@ -95,7 +95,7 @@ def inspect_recovery_inventory(
 
     checkpoints = snapshot.get("checkpoints", [])
     prepared: dict[str, dict[str, Any]] = {}
-    result_received: set[str] = set()
+    result_received: dict[str, list[dict[str, Any]]] = {}
     for checkpoint in checkpoints:
         if not isinstance(checkpoint, dict):
             finding("malformed_checkpoint", "block", "A checkpoint is not an object.")
@@ -131,7 +131,7 @@ def inspect_recovery_inventory(
                     )
                 prepared[action_id] = checkpoint
             elif checkpoint_type == "tool_call_result_received":
-                result_received.add(action_id)
+                result_received.setdefault(action_id, []).append(checkpoint)
 
     execution_by_action: dict[str, list[dict[str, Any]]] = {}
     task_by_id = {item.get("task_id"): item for item in snapshot.get("tasks", [])}
@@ -174,19 +174,45 @@ def inspect_recovery_inventory(
                 "tool_failure_requires_review", "review",
                 f"Failed tool execution {record.get('execution_id')} may have partial side effects.",
             )
-        if status in _TERMINAL_TOOL_STATUSES and action_id and action_id not in result_received:
+        result_checkpoints = result_received.get(action_id, []) if action_id else []
+        if status in _TERMINAL_TOOL_STATUSES and action_id:
+            if len(result_checkpoints) != 1:
+                finding(
+                    "tool_result_checkpoint_missing_or_ambiguous", "block",
+                    f"Tool execution {record.get('execution_id')} has {len(result_checkpoints)} matching result checkpoints.",
+                )
+            elif (
+                result_checkpoints[0].get("payload", {}).get("task_id") != record.get("task_id")
+                or result_checkpoints[0].get("payload", {}).get("attempt_id") != record.get("attempt_id")
+            ):
+                finding(
+                    "tool_result_checkpoint_identity_mismatch", "block",
+                    f"Tool execution {record.get('execution_id')} and its result checkpoint disagree on task/attempt identity.",
+                )
+        elif status not in _TERMINAL_TOOL_STATUSES and result_checkpoints:
             finding(
-                "tool_result_checkpoint_missing", "block",
-                f"Tool execution {record.get('execution_id')} has no matching result checkpoint.",
+                "tool_result_checkpoint_without_terminal_execution", "block",
+                f"Tool execution {record.get('execution_id')} has a result checkpoint but is not terminal.",
             )
 
-    for action_id in prepared:
+    for action_id, checkpoint in prepared.items():
         matches = execution_by_action.get(action_id, [])
         if len(matches) != 1:
             finding(
                 "tool_boundary_execution_mismatch", "block",
                 f"Prepared tool action {action_id} has {len(matches)} matching execution records.",
             )
+        else:
+            payload = checkpoint.get("payload", {})
+            execution = matches[0]
+            if (
+                payload.get("task_id") != execution.get("task_id")
+                or payload.get("attempt_id") != execution.get("attempt_id")
+            ):
+                finding(
+                    "tool_prepared_checkpoint_identity_mismatch", "block",
+                    f"Prepared tool action {action_id} and its execution disagree on task/attempt identity.",
+                )
     for action_id, matches in execution_by_action.items():
         if action_id not in prepared or len(matches) != 1:
             finding(
@@ -198,6 +224,11 @@ def inspect_recovery_inventory(
             finding(
                 "orphan_tool_result_checkpoint", "block",
                 f"Tool result checkpoint {action_id} has no matching durable execution record.",
+            )
+        elif len(result_received[action_id]) > 1:
+            finding(
+                "duplicate_tool_result_checkpoint", "block",
+                f"Tool action {action_id} has multiple result checkpoints.",
             )
 
     approval_summaries = []
