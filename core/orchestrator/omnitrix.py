@@ -201,12 +201,25 @@ class Omnitrix:
         if isinstance(sequence, bool) or not isinstance(sequence, int):
             raise RuntimeError("Invalid in-memory checkpoint sequence.")
         checkpoint_id = f"{run_id}:checkpoint:{sequence}"
+        # Identity belongs to the journal boundary, not caller-provided payload.
+        # This enables later checkpoint-to-attempt reconciliation without
+        # persisting prompts, model responses, tool arguments, or tool outputs.
+        checkpoint_payload = dict(payload)
+        for identity_field in ("task_id", "attempt_id"):
+            identity_value = task.metadata.get(identity_field)
+            if isinstance(identity_value, str) and identity_value:
+                supplied = checkpoint_payload.get(identity_field)
+                if supplied is not None and supplied != identity_value:
+                    raise RuntimeError(
+                        f"Checkpoint {identity_field} conflicts with live task identity."
+                    )
+                checkpoint_payload[identity_field] = identity_value
         self.journal.save_checkpoint(
             run_id,
             checkpoint_id,
             sequence,
             checkpoint_type,
-            payload,
+            checkpoint_payload,
         )
         task.metadata["checkpoint_sequence"] = sequence + 1
 
