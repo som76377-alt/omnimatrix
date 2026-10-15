@@ -106,6 +106,22 @@ def inspect_recovery_inventory(
             continue
         action_id = payload.get("logical_action_id")
         checkpoint_type = checkpoint.get("checkpoint_type")
+        if checkpoint_type in {"tool_call_prepared", "tool_call_result_received"}:
+            if (
+                not isinstance(payload.get("task_id"), str)
+                or not payload.get("task_id")
+                or not isinstance(payload.get("attempt_id"), str)
+                or not payload.get("attempt_id")
+            ):
+                finding(
+                    "tool_checkpoint_identity_missing", "block",
+                    "A tool-call checkpoint lacks task/attempt identity.",
+                )
+            if not isinstance(action_id, str) or not action_id:
+                finding(
+                    "tool_checkpoint_action_identity_missing", "block",
+                    "A tool-call checkpoint lacks a logical action ID.",
+                )
         if isinstance(action_id, str) and action_id:
             if checkpoint_type == "tool_call_prepared":
                 if action_id in prepared:
@@ -137,6 +153,11 @@ def inspect_recovery_inventory(
         action_id = record.get("logical_action_id")
         if isinstance(action_id, str) and action_id:
             execution_by_action.setdefault(action_id, []).append(record)
+        else:
+            finding(
+                "tool_execution_action_identity_missing", "block",
+                f"Tool execution {record.get('execution_id')} has no logical action ID.",
+            )
         status = record.get("status")
         if status in _UNCERTAIN_TOOL_STATUSES or status not in _TERMINAL_TOOL_STATUSES:
             finding(
