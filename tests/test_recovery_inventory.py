@@ -61,6 +61,32 @@ class RecoveryInventoryTests(unittest.TestCase):
         )
         self.assertNotIn("success", repr(result["tool_executions"]))
 
+    def test_unknown_tool_execution_status_blocks_inventory(self):
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "external_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+            logical_action_id="action-1",
+        )
+        self.journal.finish_tool_execution("execution-1", "mystery_status", {"ignored": True})
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertIn(
+            "tool_execution_uncertain",
+            {item["code"] for item in result["findings"]},
+        )
+
+    def test_orphan_result_checkpoint_blocks_inventory(self):
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-0", 0, "tool_call_result_received",
+            {"logical_action_id": "action-without-execution", "task_id": "task-1", "attempt_id": "attempt-1"},
+        )
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertIn(
+            "orphan_tool_result_checkpoint",
+            {item["code"] for item in result["findings"]},
+        )
+
     def test_failed_tool_execution_requires_manual_review_even_with_result_checkpoint(self):
         self.journal.save_checkpoint(
             "run-1", "checkpoint-0", 0, "tool_call_prepared",
