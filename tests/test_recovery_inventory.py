@@ -33,6 +33,45 @@ class RecoveryInventoryTests(unittest.TestCase):
         self.assertTrue(result["approvals"][0]["requires_revalidation"])
         self.assertNotIn("secret_like_payload", repr(result))
 
+    def test_file_backed_reopen_preserves_uncertain_execution_and_blocks(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "inventory.sqlite3"
+            with SQLiteJournal(path) as journal:
+                journal.create_run("durable-run", status="running")
+                journal.upsert_task("durable-run", "task-1", "running")
+                journal.record_attempt("attempt-1", "durable-run", "task-1", 1, "running")
+                journal.begin_tool_execution(
+                    "execution-1", "idempotency-1", "external_tool", "a" * 64,
+                    run_id="durable-run", task_id="task-1", attempt_id="attempt-1",
+                    logical_action_id="action-1",
+                )
+            with SQLiteJournal(path) as reopened:
+                result = inspect_recovery_inventory(
+                    reopened, RecoveryService(reopened), "durable-run"
+                )
+                self.assertEqual(result["disposition"], "blocked_unknown_state")
+                self.assertFalse(result["execution_authorized"])
+                self.assertIn(
+                    "tool_execution_uncertain",
+                    {item["code"] for item in result["findings"]},
+                )
+
+    def test_terminal_tool_execution_without_logical_action_id_blocks(self):
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "legacy_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+        )
+        self.journal.finish_tool_execution("execution-1", "succeeded", {"secret": "not exposed"})
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertIn(
+            "tool_execution_action_identity_missing",
+            {item["code"] for item in result["findings"]},
+        )
+
     def test_running_tool_execution_blocks_inventory(self):
         self.journal.begin_tool_execution(
             "execution-1", "idempotency-1", "external_tool", "a" * 64,
