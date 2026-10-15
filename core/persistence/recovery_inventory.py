@@ -118,7 +118,22 @@ def inspect_recovery_inventory(
                 result_received.add(action_id)
 
     execution_by_action: dict[str, list[dict[str, Any]]] = {}
+    task_by_id = {item.get("task_id"): item for item in snapshot.get("tasks", [])}
+    attempt_by_id = {item.get("attempt_id"): item for item in snapshot.get("attempts", [])}
     for record in tool_records:
+        task_id = record.get("task_id")
+        attempt_id = record.get("attempt_id")
+        attempt = attempt_by_id.get(attempt_id)
+        if (
+            record.get("run_id") != run_id
+            or task_id not in task_by_id
+            or attempt is None
+            or attempt.get("task_id") != task_id
+        ):
+            finding(
+                "tool_execution_identity_mismatch", "block",
+                f"Tool execution {record.get('execution_id')} has inconsistent run/task/attempt identity.",
+            )
         action_id = record.get("logical_action_id")
         if isinstance(action_id, str) and action_id:
             execution_by_action.setdefault(action_id, []).append(record)
@@ -156,6 +171,12 @@ def inspect_recovery_inventory(
             finding(
                 "tool_execution_checkpoint_mismatch", "block",
                 f"Logical action {action_id} does not map to exactly one prepared checkpoint.",
+            )
+    for action_id in result_received:
+        if action_id not in execution_by_action:
+            finding(
+                "orphan_tool_result_checkpoint", "block",
+                f"Tool result checkpoint {action_id} has no matching durable execution record.",
             )
 
     approval_summaries = []
