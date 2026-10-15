@@ -114,6 +114,30 @@ class RecoveryInventoryTests(unittest.TestCase):
             {item["code"] for item in result["findings"]},
         )
 
+    def test_prepared_checkpoint_from_different_attempt_blocks_inventory(self):
+        self.journal.finish_attempt("attempt-1", "interrupted")
+        self.journal.record_attempt("attempt-2", "run-1", "task-1", 2, "running")
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-0", 0, "tool_call_prepared",
+            {"logical_action_id": "action-1", "task_id": "task-1", "attempt_id": "attempt-2"},
+        )
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "external_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+            logical_action_id="action-1",
+        )
+        self.journal.finish_tool_execution("execution-1", "succeeded", {"success": True})
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-1", 1, "tool_call_result_received",
+            {"logical_action_id": "action-1", "task_id": "task-1", "attempt_id": "attempt-1"},
+        )
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertIn(
+            "tool_prepared_checkpoint_identity_mismatch",
+            {item["code"] for item in result["findings"]},
+        )
+
     def test_orphan_result_checkpoint_blocks_inventory(self):
         self.journal.save_checkpoint(
             "run-1", "checkpoint-0", 0, "tool_call_result_received",
