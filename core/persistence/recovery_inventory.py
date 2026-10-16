@@ -54,6 +54,7 @@ def inspect_recovery_inventory(
     try:
         snapshot = journal.get_recovery_snapshot(run_id)
         tool_records = journal.list_tool_executions(run_id)
+        uncertain_records = journal.list_uncertain_tool_executions(run_id)
         approvals = journal.list_approvals(run_id)
         snapshot_metadata = journal.list_model_state_snapshot_metadata(run_id)
     except (ValueError, TypeError, KeyError, RuntimeError) as exc:
@@ -67,6 +68,7 @@ def inspect_recovery_inventory(
             "findings": findings,
             "inspection": inspection.to_dict(),
             "tool_executions": [],
+            "reconciliations": [],
             "approvals": [],
             "snapshot": None,
             "can_auto_resume": False,
@@ -231,6 +233,29 @@ def inspect_recovery_inventory(
                 f"Tool action {action_id} has multiple result checkpoints.",
             )
 
+    # Reconciliation records are operator assertions, not proof of an external
+    # outcome. Surface only their metadata; never expose arbitrary evidence JSON.
+    reconciliation_summaries = []
+    reconciliation_by_execution: dict[str, dict[str, Any]] = {}
+    for record in uncertain_records:
+        reconciliation = record.get("latest_reconciliation")
+        if not isinstance(reconciliation, dict):
+            continue
+        summary = {
+            "execution_id": record.get("execution_id"),
+            "reconciliation_id": reconciliation.get("reconciliation_id"),
+            "decision": reconciliation.get("decision"),
+            "recorded_by": reconciliation.get("recorded_by"),
+            "created_at": reconciliation.get("created_at"),
+            "assertion_only": True,
+        }
+        reconciliation_summaries.append(summary)
+        reconciliation_by_execution[str(record.get("execution_id"))] = summary
+        finding(
+            "tool_reconciliation_assertion_not_authority", "review",
+            f"Reconciliation for execution {record.get('execution_id')} is an assertion only and does not clear the uncertain execution blocker.",
+        )
+
     approval_summaries = []
     for approval in approvals:
         status = approval.get("status")
@@ -326,6 +351,7 @@ def inspect_recovery_inventory(
         "started_at": item.get("started_at"),
         "finished_at": item.get("finished_at"),
         "has_outcome_record": bool(item.get("outcome")),
+        "latest_reconciliation": reconciliation_by_execution.get(str(item.get("execution_id"))),
     } for item in tool_records]
 
     return {
@@ -334,6 +360,7 @@ def inspect_recovery_inventory(
         "findings": findings,
         "inspection": inspection.to_dict(),
         "tool_executions": safe_tool_records,
+        "reconciliations": reconciliation_summaries,
         "approvals": approval_summaries,
         "snapshot": ({
             key: selected_snapshot.get(key)
