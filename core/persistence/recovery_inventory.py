@@ -5,6 +5,7 @@ It intentionally omits approval payloads, tool outcomes and model content.
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from core.persistence.recovery_service import RecoveryService
@@ -50,14 +51,35 @@ def inspect_recovery_inventory(
     def finding(code: str, severity: str, message: str) -> None:
         findings.append({"code": code, "severity": severity, "message": message})
 
-    inspection = recovery_service.inspect(run_id)
+    try:
+        inspection = recovery_service.inspect(run_id)
+    except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError) as exc:
+        finding(
+            "recovery_inspection_unavailable", "block",
+            f"Recovery inspection could not be completed ({type(exc).__name__}).",
+        )
+        return {
+            "run_id": run_id,
+            "disposition": "blocked_unknown_state",
+            "findings": findings,
+            "inspection": {
+                "integrity_errors": [type(exc).__name__],
+                "can_auto_resume": False,
+            },
+            "tool_executions": [],
+            "reconciliations": [],
+            "approvals": [],
+            "snapshot": None,
+            "can_auto_resume": False,
+            "execution_authorized": False,
+        }
     try:
         snapshot = journal.get_recovery_snapshot(run_id)
         tool_records = journal.list_tool_executions(run_id)
         uncertain_records = journal.list_uncertain_tool_executions(run_id)
         approvals = journal.list_approvals(run_id)
         snapshot_metadata = journal.list_model_state_snapshot_metadata(run_id)
-    except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+    except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError) as exc:
         finding(
             "journal_inventory_unreadable", "block",
             f"Recovery inventory could not be read ({type(exc).__name__}).",
