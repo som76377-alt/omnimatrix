@@ -2,7 +2,7 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.19 — Auditable tool reconciliation evidence  
+**Version:** 1.20 — Fail-closed handling of unavailable recovery storage  
 **Research / snapshot date:** 15 October 2026  
 **Implementation status snapshot:** 16 October 2026, branch `phase2/recovery-execution-inventory`, PR #34; encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. The inventory surfaces latest tool-reconciliation assertions without treating them as proof or permission to retry. CI evidence must match the latest PR head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
@@ -1823,3 +1823,8 @@ Added a read-only inventory that summarizes checkpoint boundaries, every durable
 ## Version 1.19 change log — auditable tool reconciliation evidence
 
 The recovery inventory now surfaces the latest recorded reconciliation decision for each uncertain tool execution using metadata only. It omits arbitrary evidence payloads and explicitly marks each record as assertion-only. Even a `confirmed_not_applied` or `confirmed_applied` assertion does not clear the uncertain-execution blocker, authorize a retry, or rewrite the original execution outcome. Tests verify latest-record selection, evidence redaction, and fail-closed behavior.
+
+
+## Version 1.20 change log — unavailable recovery storage
+
+Recovery inventory now catches SQLite failures during both initial inspection and follow-up journal reads. It returns a minimal blocked report with execution authorization disabled rather than propagating a database exception or implying an empty run. A regression test exercises inspection against a closed journal. This does not make storage corruption recoverable; it makes the failure mode explicit and non-executable.
