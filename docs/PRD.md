@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.18 — Fail-closed recovery execution inventory  
+**Version:** 1.19 — Auditable tool reconciliation evidence  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 15 October 2026, branch `phase2/recovery-execution-inventory`, PR #34; encrypted snapshot verification and typed-pair reconstruction are read-only foundations; PR #34 adds a fail-closed inventory for tool outcomes, approval metadata, checkpoint boundaries and snapshot/attempt identity. CI evidence must match the latest PR head  
+**Implementation status snapshot:** 16 October 2026, branch `phase2/recovery-execution-inventory`, PR #34; encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. The inventory surfaces latest tool-reconciliation assertions without treating them as proof or permission to retry. CI evidence must match the latest PR head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1818,3 +1818,8 @@ Added a bounded reconstruction API that returns the decoded provider-neutral req
 ## Version 1.18 change log — fail-closed recovery execution inventory
 
 Added a read-only inventory that summarizes checkpoint boundaries, every durable tool execution, approval metadata and encrypted snapshot identity. Newly written checkpoints bind task/attempt identity at the journal boundary. The inventory blocks on running/unknown or unrecognized tool statuses, unmatched prepared/result checkpoints, stale snapshot attempts, snapshot/checkpoint identity mismatches, and unknown approval states; successful and failed tool outcomes require downstream review. Approval payloads and tool outcome contents are omitted. Neither inventory nor historical approvals authorize execution; full live conversation restoration, provider/tool continuation, and pause/cancel/resume semantics remain incomplete.
+
+
+## Version 1.19 change log — auditable tool reconciliation evidence
+
+The recovery inventory now surfaces the latest recorded reconciliation decision for each uncertain tool execution using metadata only. It omits arbitrary evidence payloads and explicitly marks each record as assertion-only. Even a `confirmed_not_applied` or `confirmed_applied` assertion does not clear the uncertain-execution blocker, authorize a retry, or rewrite the original execution outcome. Tests verify latest-record selection, evidence redaction, and fail-closed behavior.
