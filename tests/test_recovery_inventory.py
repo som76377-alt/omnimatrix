@@ -249,6 +249,20 @@ class RecoveryInventoryTests(unittest.TestCase):
             {item["code"] for item in result["findings"]},
         )
 
+    def test_closed_journal_fails_closed_without_leaking_database_exception(self):
+        self.journal.close()
+        result = inspect_recovery_inventory(
+            self.journal, self.recovery, "run-1"
+        )
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertFalse(result["can_auto_resume"])
+        self.assertFalse(result["execution_authorized"])
+        self.assertIn(
+            "recovery_inspection_unavailable",
+            {item["code"] for item in result["findings"]},
+        )
+        self.assertNotIn("Traceback", repr(result))
+
     def test_missing_run_is_blocked_without_throwing(self):
         result = inspect_recovery_inventory(
             self.journal, self.recovery, "missing-run"
