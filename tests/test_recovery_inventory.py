@@ -72,6 +72,49 @@ class RecoveryInventoryTests(unittest.TestCase):
             {item["code"] for item in result["findings"]},
         )
 
+    def test_reconciliation_assertions_are_visible_but_never_clear_execution_blocker(self):
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "external_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+            logical_action_id="action-1",
+        )
+        self.journal.record_tool_reconciliation(
+            "execution-1", "confirmed_not_applied",
+            {"private_evidence_text": "must not be returned by the inventory"},
+            "operator-1",
+        )
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertFalse(result["execution_authorized"])
+        self.assertEqual(len(result["reconciliations"]), 1)
+        self.assertEqual(result["reconciliations"][0]["decision"], "confirmed_not_applied")
+        self.assertTrue(result["reconciliations"][0]["assertion_only"])
+        self.assertNotIn("private_evidence_text", repr(result))
+        self.assertIn(
+            "tool_reconciliation_assertion_not_authority",
+            {item["code"] for item in result["findings"]},
+        )
+
+    def test_latest_reconciliation_only_is_reported_without_evidence_payload(self):
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "external_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+            logical_action_id="action-1",
+        )
+        self.journal.record_tool_reconciliation(
+            "execution-1", "unresolved", {"evidence": "first"}, "operator-1"
+        )
+        self.journal.record_tool_reconciliation(
+            "execution-1", "confirmed_applied", {"evidence": "second"}, "operator-2"
+        )
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "blocked_unknown_state")
+        self.assertEqual(len(result["reconciliations"]), 1)
+        self.assertEqual(result["reconciliations"][0]["decision"], "confirmed_applied")
+        self.assertEqual(result["reconciliations"][0]["recorded_by"], "operator-2")
+        self.assertNotIn("first", repr(result))
+        self.assertNotIn("second", repr(result))
+
     def test_running_tool_execution_blocks_inventory(self):
         self.journal.begin_tool_execution(
             "execution-1", "idempotency-1", "external_tool", "a" * 64,
