@@ -90,10 +90,14 @@ def main(argv: list[str] | None = None) -> None:
     def create_omnitrix(config_path: str, journal: SQLiteJournal | None = None) -> Omnitrix:
         if args.allow_workspace_read:
             workspace_root = Path(args.workspace_root).expanduser() if args.workspace_root else Path.cwd()
+            try:
+                tool_registry = build_tool_registry(workspace_root)
+            except RuntimeError as exc:
+                parser.error(str(exc))
             return Omnitrix.from_config(
                 config_path,
                 journal=journal,
-                tool_registry=build_tool_registry(workspace_root),
+                tool_registry=tool_registry,
                 tool_permission=ToolPermission.from_capabilities({"workspace.read"}),
             )
         if journal is not None:
