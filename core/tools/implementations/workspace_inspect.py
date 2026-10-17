@@ -62,14 +62,36 @@ class WorkspaceInspectTool(Tool):
             )
 
         self._closed = False
-        self._root_fd = os.open(
-            str(self._root),
-            os.O_RDONLY | directory_flag | nofollow_flag,
+        self._root_fd = self._open_root_handle(
+            self._root, directory_flag, nofollow_flag
         )
         if not stat.S_ISDIR(os.fstat(self._root_fd).st_mode):
             os.close(self._root_fd)
             self._closed = True
             raise ValueError("Workspace root must be an existing directory.")
+
+    @staticmethod
+    def _open_root_handle(
+        root: Path, directory_flag: int, nofollow_flag: int
+    ) -> int:
+        """Open the canonical root from '/' without following any path component."""
+        current_fd = os.open(
+            os.path.sep,
+            os.O_RDONLY | directory_flag | nofollow_flag,
+        )
+        try:
+            for part in root.parts[1:]:
+                next_fd = os.open(
+                    part,
+                    os.O_RDONLY | directory_flag | nofollow_flag,
+                    dir_fd=current_fd,
+                )
+                os.close(current_fd)
+                current_fd = next_fd
+            return current_fd
+        except Exception:
+            os.close(current_fd)
+            raise
 
     @property
     def name(self) -> str:
