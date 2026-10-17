@@ -168,6 +168,22 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
         self.assertEqual(result.reason, "outcome_unknown")
         self.assertFalse(result.verified)
 
+    def test_unhashable_status_and_outcome_fail_closed(self):
+        result = verify_tool_reconciliation(
+            execution(status=["unknown"]), self.evidence, self.registry
+        )
+        self.assertEqual(result.reason, "execution_not_uncertain")
+        self.assertFalse(result.verified)
+
+        self.verifier.result = lambda identity, evidence: VerificationResult(
+            identity.execution_id, identity.idempotency_key, identity.tool_name,
+            identity.request_sha256, self.verifier.verifier_id, ["applied"],
+            "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
+        )
+        result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
+        self.assertEqual(result.reason, "verification_outcome_invalid")
+        self.assertFalse(result.verified)
+
     def test_registry_rejects_duplicate_tool_verifier(self):
         with self.assertRaises(ValueError):
             self.registry.register(FakeVerifier())
