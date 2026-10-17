@@ -136,6 +136,9 @@ private class GitHubClient(context: Context) {
         private set
     var accessToken: String = prefs.getString("access_token", "") ?: ""
         private set
+    private var refreshToken: String = prefs.getString("refresh_token", "") ?: ""
+    private var accessTokenExpiresAt: Long = prefs.getLong("access_token_expires_at", 0L)
+    private var refreshTokenExpiresAt: Long = prefs.getLong("refresh_token_expires_at", 0L)
     var username: String = prefs.getString("username", "") ?: ""
         private set
 
@@ -147,7 +150,13 @@ private class GitHubClient(context: Context) {
     fun signOut() {
         accessToken = ""
         username = ""
-        prefs.edit().remove("access_token").remove("username").apply()
+        refreshToken = ""
+        accessTokenExpiresAt = 0L
+        refreshTokenExpiresAt = 0L
+        prefs.edit()
+            .remove("access_token").remove("refresh_token")
+            .remove("access_token_expires_at").remove("refresh_token_expires_at")
+            .remove("username").apply()
     }
 
     suspend fun beginDeviceLogin(): DeviceLogin = withContext(Dispatchers.IO) {
@@ -198,9 +207,19 @@ private class GitHubClient(context: Context) {
                 "" -> {
                     val value = result.optString("access_token", "")
                     if (value.isBlank()) throw IOException("GitHub returned no access token.")
+                    val expiresIn = result.optLong("expires_in", 0L)
+                    val refreshExpiresIn = result.optLong("refresh_token_expires_in", 0L)
                     withContext(Dispatchers.IO) {
                         accessToken = value
-                        prefs.edit().putString("access_token", value).apply()
+                        refreshToken = result.optString("refresh_token", "")
+                        accessTokenExpiresAt = if (expiresIn > 0L) System.currentTimeMillis() + expiresIn * 1000L else Long.MAX_VALUE
+                        refreshTokenExpiresAt = if (refreshExpiresIn > 0L) System.currentTimeMillis() + refreshExpiresIn * 1000L else Long.MAX_VALUE
+                        prefs.edit()
+                            .putString("access_token", accessToken)
+                            .putString("refresh_token", refreshToken)
+                            .putLong("access_token_expires_at", accessTokenExpiresAt)
+                            .putLong("refresh_token_expires_at", refreshTokenExpiresAt)
+                            .apply()
                     }
                     val viewer = getJson("/user")
                     username = viewer.optString("login", "")
@@ -218,6 +237,7 @@ private class GitHubClient(context: Context) {
         val encoded = if (path.isBlank()) "" else path.split("/").joinToString("/") { encodePathPart(it) }
         val address = "https://api.github.com/repos/" + REPOSITORY + "/contents" +
             (if (encoded.isBlank()) "" else "/$encoded") + "?ref=main"
+        ensureValidAccessToken()
         val parsed = withContext(Dispatchers.IO) {
             if (!ready()) throw IOException("Sign in with GitHub first.")
             JSONTokener(requestRaw("GET", address, null, accessToken)).nextValue()
@@ -288,11 +308,52 @@ private class GitHubClient(context: Context) {
 
     private suspend fun getJson(path: String) = requestJson("GET", path, null)
 
-    private suspend fun requestJson(method: String, path: String, body: JSONObject?): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun requestJson(method: String, path: String, body: JSONObject?): JSONObject {
         if (!ready()) throw IOException("Sign in with GitHub first.")
-        val full = if (path.startsWith("https://")) path else "https://api.github.com" + path
-        val content = body?.toString()
-        JSONObject(requestRaw(method, full, content, accessToken, "application/json; charset=utf-8", "application/vnd.github+json"))
+        ensureValidAccessToken()
+        return withContext(Dispatchers.IO) {
+            val full = if (path.startsWith("https://")) path else "https://api.github.com" + path
+            val content = body?.toString()
+            JSONObject(requestRaw(method, full, content, accessToken, "application/json; charset=utf-8", "application/vnd.github+json"))
+        }
+    }
+
+    private suspend fun ensureValidAccessToken() {
+        if (!ready()) throw IOException("Sign in with GitHub first.")
+        if (accessTokenExpiresAt == 0L || System.currentTimeMillis() < accessTokenExpiresAt - 60_000L) return
+        if (refreshToken.isBlank() || System.currentTimeMillis() >= refreshTokenExpiresAt) {
+            throw IOException("GitHub sign-in expired. Sign in again from Account.")
+        }
+        val body = form(mapOf(
+            "client_id" to clientId,
+            "grant_type" to "refresh_token",
+            "refresh_token" to refreshToken
+        ))
+        val result = withContext(Dispatchers.IO) {
+            JSONObject(requestRaw(
+                "POST", "https://github.com/login/oauth/access_token", body,
+                contentType = "application/x-www-form-urlencoded; charset=utf-8", accept = "application/json"
+            ))
+        }
+        if (result.has("error")) {
+            signOut()
+            throw IOException("GitHub session expired. Sign in again from Account.")
+        }
+        val newAccess = result.optString("access_token", "")
+        if (newAccess.isBlank()) throw IOException("GitHub did not refresh the session.")
+        val newRefresh = result.optString("refresh_token", "").ifBlank { refreshToken }
+        val accessLifetime = result.optLong("expires_in", 0L)
+        val refreshLifetime = result.optLong("refresh_token_expires_in", 0L)
+        accessToken = newAccess
+        refreshToken = newRefresh
+        accessTokenExpiresAt = if (accessLifetime > 0L) System.currentTimeMillis() + accessLifetime * 1000L else Long.MAX_VALUE
+        refreshTokenExpiresAt = if (refreshLifetime > 0L) System.currentTimeMillis() + refreshLifetime * 1000L else refreshTokenExpiresAt
+        prefs.edit()
+            .putString("access_token", accessToken)
+            .putString("refresh_token", refreshToken)
+            .putLong("access_token_expires_at", accessTokenExpiresAt)
+            .putLong("refresh_token_expires_at", refreshTokenExpiresAt)
+            .apply()
     }
 
     private fun encodePathPart(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
