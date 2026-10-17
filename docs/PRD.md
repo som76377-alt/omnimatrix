@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.23 — Explicit read-only workspace inspection  
+**Version:** 1.24 — Race-resistant workspace file opening  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PRs #34–#36 are merged into `main`. Recovery inspection and the reconciliation-verifier contract are read-only foundations; no concrete external-provider verifier is registered. This branch adds opt-in, root-confined workspace inspection, pending CI and review. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PRs #34–#37 are merged into `main`. Workspace inspection is opt-in and read-only, and now uses pinned directory handles plus no-follow opens on supported systems; unsupported systems fail closed. CI evidence must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1846,4 +1846,4 @@ The tool executor persists tool-declared unsuccessful results as `returned_failu
 
 Added a `workspace.inspect` tool with two operations: list one directory, or read one bounded UTF-8 text file. The root is fixed when the tool is constructed and can be configured by the caller. The tool rejects absolute paths, parent traversal, symlink path components, hidden and common secret-like names, binary files, and files over 64 KiB. Directory listing is non-recursive and capped at 100 visible entries. The tool requires the explicit `workspace.read` capability; the CLI exposes this only with `--allow-workspace-read`, with an optional `--workspace-root`. Recovery inspection and restart commands reject the workspace-read flag.
 
-The tool is read-only and does not execute commands, modify files, or grant broader filesystem access. Its returned content is marked untrusted. This is a bounded first step rather than a complete adversarial filesystem sandbox: concurrent filesystem changes can still create race conditions, and external model providers must not be given access to sensitive workspaces. Tests cover path traversal, secret-like names, symlinks, binary and oversized files, explicit permission gating, and CLI opt-in. No concrete external-provider action verifier is registered, and automatic resume remains disabled.
+The tool is read-only and does not execute commands or modify files. On supported systems, it pins the configured root directory handle and traverses path components using directory-relative `O_NOFOLLOW` opens; reads open the final file without following symlinks and verify the opened descriptor is a regular file before bounded reading. This closes the previous check-then-open path-replacement race for workspace traversal. The implementation fails closed where the required OS primitives are unavailable. This remains a bounded capability, not a complete OS sandbox or a per-task workspace allowlist. Tests cover path traversal, secret-like names, symlinks, binary and oversized files, explicit permission gating, CLI opt-in, root-path replacement, and nonblocking rejection of FIFOs. No concrete external-provider action verifier is registered, and automatic resume remains disabled.
