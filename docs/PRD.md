@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.17 — Verified model-state reconstruction without resume  
-**Research / snapshot date:** 13 October 2026  
-**Implementation status snapshot:** 14 October 2026, branch `phase2/snapshot-transcript-correlation`, PR #33; encrypted snapshot content verification, transcript correlation, provider continuation compatibility, and typed verified-pair reconstruction are implemented as read-only recovery building blocks; CI evidence is tracked in PR #33 and must match the latest branch head  
+**Version:** 1.20 — Fail-closed handling of unavailable recovery storage  
+**Research / snapshot date:** 15 October 2026  
+**Implementation status snapshot:** 16 October 2026, branch `phase2/recovery-execution-inventory`, PR #34; encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. The inventory surfaces latest tool-reconciliation assertions without treating them as proof or permission to retry. CI evidence must match the latest PR head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1813,3 +1813,18 @@ Schema v7 adds an encrypted model-state snapshot table containing ciphertext, no
 ## Version 1.17 change log — verified model-state reconstruction without resume
 
 Added a bounded reconstruction API that returns the decoded provider-neutral request/response pair only after read-only recovery preflight verifies the requested run/task/attempt identity, transcript correlation, decrypted request/response hashes, and registered provider/model compatibility. The API rejects disabled snapshot storage, incomplete verification evidence, identity mismatch, and unsupported continuation state. It does not call a model, execute tools, replay events, reconstruct the full live orchestrator/task state, or authorize automatic resume. The transcript correlator also distinguishes the selected request-side adapter/model label from the provider-reported response model ID, avoiding false rejection when an adapter alias maps to a concrete provider model. A subprocess crash/reopen test exercises durable snapshot, transcript, and checkpoint evidence followed by verified typed-pair reconstruction. This still does not restore the full live task state or authorize model/tool execution; full conversation restoration and the end-to-end crash-recovery gate remain open.
+
+
+## Version 1.18 change log — fail-closed recovery execution inventory
+
+Added a read-only inventory that summarizes checkpoint boundaries, every durable tool execution, approval metadata and encrypted snapshot identity. Newly written checkpoints bind task/attempt identity at the journal boundary. The inventory blocks on running/unknown or unrecognized tool statuses, unmatched prepared/result checkpoints, stale snapshot attempts, snapshot/checkpoint identity mismatches, and unknown approval states; successful and failed tool outcomes require downstream review. Approval payloads and tool outcome contents are omitted. Neither inventory nor historical approvals authorize execution; full live conversation restoration, provider/tool continuation, and pause/cancel/resume semantics remain incomplete.
+
+
+## Version 1.19 change log — auditable tool reconciliation evidence
+
+The recovery inventory now surfaces the latest recorded reconciliation decision for each uncertain tool execution using metadata only. It omits arbitrary evidence payloads and explicitly marks each record as assertion-only. Even a `confirmed_not_applied` or `confirmed_applied` assertion does not clear the uncertain-execution blocker, authorize a retry, or rewrite the original execution outcome. Tests verify latest-record selection, evidence redaction, and fail-closed behavior.
+
+
+## Version 1.20 change log — unavailable recovery storage
+
+Recovery inventory now catches SQLite failures during both initial inspection and follow-up journal reads. It returns a minimal blocked report with execution authorization disabled rather than propagating a database exception or implying an empty run. A regression test exercises inspection against a closed journal. This does not make storage corruption recoverable; it makes the failure mode explicit and non-executable.

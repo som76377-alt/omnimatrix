@@ -895,6 +895,18 @@ class SQLiteJournal:
             events.append(item)
         return events
 
+    def list_approvals(self, run_id: str) -> list[dict[str, Any]]:
+        """List approval metadata for recovery review without exposing payloads."""
+        run_id = _required_text(run_id, "run_id")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT approval_id, run_id, fingerprint, status, created_at
+                   FROM approvals WHERE run_id = ?
+                   ORDER BY created_at, approval_id""",
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def save_approval(
         self, approval_id: str, run_id: str, fingerprint: str, status: str,
         payload: Mapping[str, Any] | None = None,
