@@ -312,7 +312,7 @@
       `--workspace-root ${shellQuote(root)}`,
     ];
     paths.forEach((path) => parts.push(`--workspace-allow ${shellQuote(path)}`));
-    byId("workspace-command").textContent = parts.join(" \\\n  ");
+    byId("workspace-command").textContent = parts.join(" ");
     byId("command-feedback").textContent = paths.length ? `Restricted to ${paths.length} configured path prefix(es).` : "No path allowlist selected — root-scoped access remains enabled.";
   }
 
@@ -351,7 +351,7 @@
     }
   }
 
-  byId("copy-command").addEventListener("click", () => copyText(byId("workspace-command").textContent.replace(/ \\\n  /g, " ")));
+  byId("copy-command").addEventListener("click", () => copyText(byId("workspace-command").textContent));
   document.querySelectorAll("[data-copy]").forEach((button) => {
     button.addEventListener("click", () => copyText(button.dataset.copy));
   });
