@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -214,9 +215,17 @@ private class GitHubClient(context: Context) {
     suspend fun listContents(path: String): List<RepoEntry> {
         if (path.isNotBlank() && !GitHubInputValidation.isSafeRepoPath(path)) throw IOException("That repository path is not available in the app.")
         val encoded = if (path.isBlank()) "" else path.split("/").joinToString("/") { encodePathPart(it) }
-        val json = getJson("/repos/" + REPOSITORY + "/contents" + if (encoded.isBlank()) "" else "/$encoded" + "?ref=main")
-        val array = if (json.has("entries")) json.optJSONArray("entries") else null
-        val entriesJson = if (json.has("type")) JSONArray().put(json) else arrayFrom(json)
+        val address = "https://api.github.com/repos/" + REPOSITORY + "/contents" +
+            (if (encoded.isBlank()) "" else "/$encoded") + "?ref=main"
+        val parsed = withContext(Dispatchers.IO) {
+            if (!ready()) throw IOException("Sign in with GitHub first.")
+            JSONTokener(requestRaw("GET", address, null, accessToken)).nextValue()
+        }
+        val entriesJson = when (parsed) {
+            is JSONArray -> parsed
+            is JSONObject -> JSONArray().put(parsed)
+            else -> JSONArray()
+        }
         return buildList {
             for (i in 0 until entriesJson.length()) {
                 val item = entriesJson.optJSONObject(i) ?: continue
@@ -283,15 +292,6 @@ private class GitHubClient(context: Context) {
         val full = if (path.startsWith("https://")) path else "https://api.github.com" + path
         val content = body?.toString()
         JSONObject(requestRaw(method, full, content, accessToken, "application/json; charset=utf-8", "application/vnd.github+json"))
-    }
-
-    private fun arrayFrom(json: JSONObject): JSONArray {
-        val array = JSONArray()
-        json.keys().forEach { key ->
-            val value = json.opt(key)
-            if (value is JSONObject) array.put(value)
-        }
-        return array
     }
 
     private fun encodePathPart(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
@@ -615,8 +615,10 @@ private fun OmnitrixApp() {
                                         username = github.username
                                         device = null
                                         authMessage = "Signed in as " + github.username
-                                        loadRuns()
-                                        loadRepo("")
+                                        try { runs = github.recentRuns(); runsMessage = "" }
+                                        catch (loadError: Exception) { runsMessage = loadError.message ?: "Could not load workflows." }
+                                        try { entries = github.listContents(""); repoPath = ""; repoMessage = "" }
+                                        catch (loadError: Exception) { repoMessage = loadError.message ?: "Could not load repository." }
                                     } catch (e: Exception) {
                                         githubError = e.message ?: "GitHub sign-in failed."
                                         device = null
@@ -716,7 +718,14 @@ private fun ChatScreen(
                 value = input, onValueChange = onInput, placeholder = "Message Omnitrix",
                 modifier = Modifier.weight(1f), singleLine = false, enabled = connected && !busy
             )
-            PrimaryButton(if (busy) "WAIT" else "SEND", onSend, enabled = connected && !busy && input.isNotBlank(), modifier = Modifier.heightIn(min = 52.dp))
+            Button(
+                onClick = onSend,
+                enabled = connected && !busy && input.isNotBlank(),
+                modifier = Modifier.height(52.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black, disabledContainerColor = SurfaceRaised, disabledContentColor = Grey),
+                contentPadding = PaddingValues(horizontal = 14.dp)
+            ) { Text(if (busy) "WAIT" else "SEND", fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
         }
     }
 }
