@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10110f">
+  <meta name="description" content="Omnitrix live project console — real GitHub build and test status, current capabilities, and workspace controls.">
+  <title>Omnitrix — Live Console</title>
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail">
+      <a class="brand" href="#overview" aria-label="Omnitrix overview">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">OMNI<span>TRIX</span><small>PERSONAL INTELLIGENCE SYSTEM</small></span>
+      </a>
+      <div class="rail-rule"></div>
+      <p class="nav-label">WORKSPACE</p>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">◈</span>Overview <span class="nav-arrow">↗</span></button>
+        <button class="nav-item" data-view="status"><span class="nav-icon">⌁</span>Build &amp; tests <span class="nav-count" id="nav-ci-state">…</span></button>
+        <button class="nav-item" data-view="capabilities"><span class="nav-icon">⌘</span>Capabilities</button>
+        <button class="nav-item" data-view="workspace"><span class="nav-icon">▤</span>Workspace access</button>
+        <button class="nav-item" data-view="recovery"><span class="nav-icon">⟲</span>Recovery journal</button>
+      </nav>
+      <div class="rail-bottom">
+        <div class="repo-chip"><span class="live-dot"></span><div><strong>GitHub source</strong><span>som76377-alt / omnimatrix</span></div><a href="https://github.com/som76377-alt/omnimatrix" target="_blank" rel="noreferrer" aria-label="Open repository">↗</a></div>
+        <p class="rail-foot">PROTOTYPE BUILD <span id="rail-version">LIVE</span></p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="crumb"><span class="crumb-root">OMNITRIX</span><span>/</span><span id="crumb-view">OVERVIEW</span></div>
+        <div class="topbar-actions">
+          <span class="connection"><span class="live-dot"></span><span id="connection-label">CONNECTING TO GITHUB</span></span>
+          <button class="icon-button" id="refresh-button" aria-label="Refresh GitHub status" title="Refresh live status">↻</button>
+          <a class="top-github" href="https://github.com/som76377-alt/omnimatrix" target="_blank" rel="noreferrer">SOURCE <span>↗</span></a>
+        </div>
+      </header>
+
+      <section class="view active" id="view-overview" aria-labelledby="overview-title">
+        <div class="page-heading">
+          <div><p class="eyebrow"><span class="eyebrow-line"></span> CONTROL SURFACE / 01</p><h1 id="overview-title">System <em>overview.</em></h1><p class="subheading">One place to inspect the prototype, verify builds, and see what is actually implemented.</p></div>
+          <div class="heading-stamp"><span>OMX / DEV</span><strong id="last-updated">SYNCING</strong><small>GITHUB-SOURCED</small></div>
+        </div>
+        <div class="hero-band">
+          <div class="hero-copy"><p class="eyebrow">CURRENT TRACK</p><h2>Build the core.<br><em>Verify every step.</em></h2><p>Connected to the repository’s public GitHub status. The Python orchestrator still runs through its CLI; this web console does not pretend to execute it remotely.</p><button class="text-link" data-goto="status">Inspect pipeline <span>↗</span></button></div>
+          <div class="hero-graphic" aria-hidden="true"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="orbit orbit-c"></div><div class="core-mark"><span>O</span><i></i></div><div class="graphic-coord coord-a">LATENCY / N.A.</div><div class="graphic-coord coord-b">CORE / 0.1</div><div class="graphic-cross cross-a">+</div><div class="graphic-cross cross-b">+</div></div>
+          <div class="hero-index"><span>01</span><span>FOUNDATION<br>PROTOTYPE</span></div>
+        </div>
+        <div class="section-title-row"><div><p class="eyebrow">LIVE TELEMETRY</p><h2>Build health</h2></div><button class="quiet-button" data-goto="status">ALL RESULTS <span>↗</span></button></div>
+        <div class="metric-grid">
+          <article class="metric metric-primary"><div class="metric-top"><span>LATEST CI RUN</span><span class="metric-symbol">⌁</span></div><div class="metric-value" id="overview-ci">Loading</div><p id="overview-ci-detail">Querying Actions API…</p><div class="metric-footer"><span id="overview-ci-date">—</span><a id="overview-ci-link" href="https://github.com/som76377-alt/omnimatrix/actions" target="_blank" rel="noreferrer">OPEN RUN ↗</a></div></article>
+          <article class="metric"><div class="metric-top"><span>TEST SNAPSHOT</span><span class="metric-symbol">✓</span></div><div class="metric-value" id="overview-tests">—</div><p id="overview-tests-detail">Waiting for a deployed build snapshot.</p><div class="metric-footer"><span id="overview-tests-sha">COMMIT —</span><button class="inline-link" data-goto="status">DETAILS ↗</button></div></article>
+          <article class="metric"><div class="metric-top"><span>OPEN CHANGES</span><span class="metric-symbol">↗</span></div><div class="metric-value" id="overview-prs">—</div><p>Pull requests still awaiting merge.</p><div class="metric-footer"><span>REPOSITORY QUEUE</span><a href="https://github.com/som76377-alt/omnimatrix/pulls" target="_blank" rel="noreferrer">VIEW ↗</a></div></article>
+        </div>
+        <div class="lower-grid">
+          <section class="panel capability-panel"><div class="panel-heading"><div><p class="eyebrow">IMPLEMENTED SURFACE</p><h2>What can be tested now</h2></div><span class="panel-code">CORE / 05</span></div>
+            <div class="capability-row"><span class="cap-index">01</span><div><strong>Model routing + provider adapters</strong><p>Configured model selection, Gemini adapter, and a clearly labelled offline demo adapter.</p></div><span class="state-tag state-existing">EXISTS</span></div>
+            <div class="capability-row"><span class="cap-index">02</span><div><strong>Plan approval boundary</strong><p>Fingerprint-bound plan approval; unsupported scopes are rejected rather than silently allowed.</p></div><span class="state-tag state-existing">EXISTS</span></div>
+            <div class="capability-row"><span class="cap-index">03</span><div><strong>Registered tools</strong><p>Calculator plus explicit, read-only workspace inspection with path restrictions.</p></div><span class="state-tag state-existing">EXISTS</span></div>
+            <div class="capability-row"><span class="cap-index">04</span><div><strong>Durable recovery journal</strong><p>SQLite execution records and read-only inspection. Automatic resume remains disabled.</p></div><span class="state-tag state-existing">EXISTS</span></div>
+            <button class="panel-action" data-goto="capabilities">BROWSE IMPLEMENTED CAPABILITIES <span>→</span></button>
+          </section>
+          <section class="panel pipeline-panel"><div class="panel-heading"><div><p class="eyebrow">AUTOMATION FEED</p><h2>Recent workflow runs</h2></div><a class="small-link" href="https://github.com/som76377-alt/omnimatrix/actions" target="_blank" rel="noreferrer">ACTIONS ↗</a></div><div id="overview-runs" class="run-list"><div class="loading-row"><span class="loader"></span>Fetching workflow history…</div></div><button class="panel-action" data-goto="status">OPEN BUILD &amp; TEST STATUS <span>→</span></button></section>
+        </div>
+        <p class="footnote"><span class="footnote-mark">i</span> This console reads public repository metadata. It does not contain a GitHub write token and cannot trigger arbitrary repository changes.</p>
+      </section>
+
+      <section class="view" id="view-status" aria-labelledby="status-title">
+        <div class="page-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> VERIFICATION / 02</p><h1 id="status-title">Build &amp; <em>test status.</em></h1><p class="subheading">Evidence from GitHub Actions, plus the test summary generated by the most recently deployed build.</p></div><a class="outline-button" href="https://github.com/som76377-alt/omnimatrix/actions" target="_blank" rel="noreferrer">OPEN GITHUB ACTIONS ↗</a></div>
+        <div class="status-banner" id="status-banner"><span class="status-mark">↻</span><div><strong>Fetching the latest workflow state</strong><p>Results will be sourced from the repository API.</p></div><span class="status-banner-code">LIVE QUERY</span></div>
+        <div class="status-snapshot-grid">
+          <section class="panel snapshot-panel"><p class="eyebrow">DEPLOYED TEST SNAPSHOT</p><div class="snapshot-number" id="status-test-count">—</div><h3 id="status-test-label">Test count not loaded</h3><p id="status-test-description" class="muted-copy">The snapshot is generated only when a build passes and is deployed.</p><div class="detail-pair"><span>Test outcome</span><strong id="status-test-outcome">UNKNOWN</strong></div><div class="detail-pair"><span>Tested commit</span><code id="status-test-sha">—</code></div><div class="detail-pair"><span>Generated</span><span id="status-generated-at">—</span></div><a class="panel-action as-link" id="snapshot-run-link" href="https://github.com/som76377-alt/omnimatrix/actions" target="_blank" rel="noreferrer">VIEW TEST RUN <span>↗</span></a></section>
+          <section class="panel history-panel"><div class="panel-heading"><div><p class="eyebrow">WORKFLOW HISTORY</p><h2>Latest runs</h2></div><span class="panel-code" id="run-count">0 RUNS</span></div><div id="status-runs" class="workflow-list"><div class="loading-row"><span class="loader"></span>Fetching Actions API…</div></div></section>
+        </div>
+        <section class="panel pull-panel"><div class="panel-heading"><div><p class="eyebrow">CHANGE CONTROL</p><h2>Open pull requests</h2></div><a class="small-link" href="https://github.com/som76377-alt/omnimatrix/pulls" target="_blank" rel="noreferrer">ALL PULL REQUESTS ↗</a></div><div id="open-pulls" class="pull-list"><div class="loading-row"><span class="loader"></span>Checking open changes…</div></div></section>
+        <div class="notice-line"><span>!</span><p><strong>How to read this page:</strong> a green workflow means that workflow succeeded for its own commit. The deployed test snapshot describes the code revision that last deployed, and may be older if a later CI run failed. Live API results can be rate-limited or temporarily unavailable.</p></div>
+      </section>
+
+      <section class="view" id="view-capabilities" aria-labelledby="capabilities-title">
+        <div class="page-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> SYSTEM MAP / 03</p><h1 id="capabilities-title">Implemented <em>capabilities.</em></h1><p class="subheading">An inventory of features already present in the repository, not a wishlist presented as working software.</p></div><span class="heading-stamp"><span>BASELINE</span><strong>PROTOTYPE</strong><small>CLI-RUN CORE</small></span></div>
+        <div class="capability-ledger">
+          <div class="ledger-head"><span>MODULE</span><span>WHAT EXISTS</span><span>BOUNDARY</span></div>
+          <article class="ledger-row"><span class="ledger-number">01</span><div class="ledger-name"><strong>Orchestrator + model routing</strong><small>CORE / MODELS</small></div><p>Task analysis, model routing, adapter contract, tool-call loop and continuation handling.</p><span class="state-tag state-existing">IMPLEMENTED</span></article>
+          <article class="ledger-row"><span class="ledger-number">02</span><div class="ledger-name"><strong>Gemini provider</strong><small>PROVIDER / GOOGLE</small></div><p>Provider adapter and function-call/result protocol, with mocked integration tests. Live access requires configured credentials.</p><span class="state-tag state-limited">CREDENTIALS</span></article>
+          <article class="ledger-row"><span class="ledger-number">03</span><div class="ledger-name"><strong>Offline demo provider</strong><small>PROVIDER / DEMO</small></div><p>Zero-spend demo path. Its output is simulated and must not be mistaken for real inference.</p><span class="state-tag state-existing">IMPLEMENTED</span></article>
+          <article class="ledger-row"><span class="ledger-number">04</span><div class="ledger-name"><strong>Calculator tool</strong><small>TOOL / CALCULATION</small></div><p>Registered calculator behind schema validation and tool capability permissions.</p><span class="state-tag state-existing">IMPLEMENTED</span></article>
+          <article class="ledger-row"><span class="ledger-number">05</span><div class="ledger-name"><strong>Read-only workspace inspection</strong><small>TOOL / WORKSPACE.READ</small></div><p>Bounded list/read operations, no-follow path opens, 64 KiB read cap and optional operator path prefixes.</p><span class="state-tag state-limited">OPT-IN</span></article>
+          <article class="ledger-row"><span class="ledger-number">06</span><div class="ledger-name"><strong>Plan approval</strong><small>POLICY / FINGERPRINT</small></div><p>Immutable plans and fingerprint binding; approval records are a core primitive, not a mobile consent UI.</p><span class="state-tag state-limited">CORE ONLY</span></article>
+          <article class="ledger-row"><span class="ledger-number">07</span><div class="ledger-name"><strong>SQLite recovery journal</strong><small>STATE / RECOVERY</small></div><p>Durable run/task/action records and read-only recovery inspection. Ambiguous actions need manual review; no automatic resume.</p><span class="state-tag state-limited">READ-ONLY</span></article>
+          <article class="ledger-row"><span class="ledger-number">08</span><div class="ledger-name"><strong>Live browser application</strong><small>INTERFACE / THIS CONSOLE</small></div><p>Repository and workflow monitoring, static documentation and workspace command helper. It does not directly invoke Python tools.</p><span class="state-tag state-new">WEB SHELL</span></article>
+        </div>
+        <div class="notice-line"><span>!</span><p>Still not implemented in this web console: a hosted Python backend, live web chat, web-based file reading, approval prompts for live tool calls, specialist bot management, or remote device control.</p></div>
+      </section>
+
+      <section class="view" id="view-workspace" aria-labelledby="workspace-title">
+        <div class="page-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> TOOL POLICY / 04</p><h1 id="workspace-title">Workspace <em>access.</em></h1><p class="subheading">Prepare a restricted CLI session using the workspace tool that already exists. This form builds a command; it does not read files from this browser.</p></div><span class="heading-stamp"><span>ACCESS</span><strong>READ ONLY</strong><small>EXPLICIT OPT-IN</small></span></div>
+        <div class="workspace-layout">
+          <section class="panel workspace-form"><div class="panel-heading"><div><p class="eyebrow">SESSION CONFIGURATION</p><h2>Scope the workspace</h2></div><span class="panel-code">CLI / LOCAL</span></div>
+            <label class="field-label" for="workspace-root">Workspace root</label><input class="text-input" id="workspace-root" value="." autocomplete="off" spellcheck="false"><p class="field-help">Relative or absolute root path on the machine where Omnitrix CLI runs, not a path on your phone/browser.</p>
+            <label class="field-label" for="workspace-allow">Allowed relative paths <span>OPTIONAL, ONE PER LINE</span></label><textarea class="text-input textarea" id="workspace-allow" rows="5" placeholder="src&#10;README.md&#10;docs/PRD.md" spellcheck="false"></textarea><p class="field-help">Omit all entries for root-scoped access (with secret-like files still blocked). Add entries to restrict inspection to those paths and descendants.</p>
+            <div class="command-preview"><div class="command-top"><span>GENERATED COMMAND</span><button id="copy-command" class="small-link">COPY ↗</button></div><code id="workspace-command">python -m interfaces.cli.main --config config/demo.models.json --allow-workspace-read --workspace-root .</code></div><p id="command-feedback" class="inline-feedback" aria-live="polite"></p>
+          </section>
+          <aside class="panel boundary-panel"><p class="eyebrow">SECURITY BOUNDARY</p><h2>What this grants — and what it doesn't.</h2><div class="boundary-item"><span class="boundary-symbol allowed">✓</span><div><strong>Read bounded text files</strong><p>UTF-8 only; maximum 64 KiB per read; one directory listing at a time.</p></div></div><div class="boundary-item"><span class="boundary-symbol allowed">✓</span><div><strong>Restrict paths explicitly</strong><p>Use the allowlist to reduce which relative paths the model can inspect.</p></div></div><div class="boundary-item"><span class="boundary-symbol denied">×</span><div><strong>No writes or shell execution</strong><p>This tool cannot change source files or run commands.</p></div></div><div class="boundary-item"><span class="boundary-symbol denied">×</span><div><strong>Not a browser file picker</strong><p>The browser has no connection to the Python process, local filesystem, or CLI session.</p></div></div><a class="text-link" href="https://github.com/som76377-alt/omnimatrix/blob/main/README.md" target="_blank" rel="noreferrer">Read CLI documentation <span>↗</span></a></aside>
+        </div>
+      </section>
+
+      <section class="view" id="view-recovery" aria-labelledby="recovery-title">
+        <div class="page-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> DURABLE STATE / 05</p><h1 id="recovery-title">Recovery <em>journal.</em></h1><p class="subheading">Inspect run records using the existing SQLite journal commands. No local database is uploaded or read by this webpage.</p></div><span class="heading-stamp"><span>POLICY</span><strong>FAIL CLOSED</strong><small>NO AUTO-RESUME</small></span></div>
+        <div class="recovery-warning"><span class="warning-symbol">!</span><div><strong>Automatic resume is disabled by design.</strong><p>Unknown execution outcomes and any run with a dispatched tool stay blocked from objective-only restart. A recorded result isn't proof that replay is safe.</p></div></div>
+        <div class="command-list">
+          <article class="command-row"><span class="command-number">01</span><div><strong>Start a journalled CLI session</strong><p>Create local SQLite records for the session and tool boundaries.</p><code>python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3</code></div><button class="copy-snippet" data-copy="python -m interfaces.cli.main --config config/demo.models.json --journal .local/omnitrix.sqlite3">COPY</button></article>
+          <article class="command-row"><span class="command-number">02</span><div><strong>List recent runs</strong><p>Lists IDs and statuses without printing stored objectives.</p><code>python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --list-runs</code></div><button class="copy-snippet" data-copy="python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --list-runs">COPY</button></article>
+          <article class="command-row"><span class="command-number">03</span><div><strong>Inspect a run</strong><p>Replace <code>RUN_ID</code> with a specific run. Inspection is read-only.</p><code>python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --inspect-run RUN_ID</code></div><button class="copy-snippet" data-copy="python -m interfaces.cli.main --journal .local/omnitrix.sqlite3 --inspect-run RUN_ID">COPY</button></article>
+        </div>
+        <a class="text-link recovery-doc" href="https://github.com/som76377-alt/omnimatrix/blob/main/docs/RECOVERY_STATE_MACHINE.md" target="_blank" rel="noreferrer">Open recovery state machine specification <span>↗</span></a>
+      </section>
+
+      <footer class="app-footer"><span>OMNITRIX / RESEARCH PROTOTYPE</span><span>PUBLIC REPO MONITOR <i>•</i> NO EMBEDDED CREDENTIALS</span></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
