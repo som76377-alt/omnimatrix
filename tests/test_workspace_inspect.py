@@ -7,9 +7,16 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
 from core.tools.request import ToolRequest
-from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
+from core.tools.implementations.workspace_inspect import (
+    WorkspaceInspectTool,
+    supports_secure_workspace_inspection,
+)
 
 
+@unittest.skipUnless(
+    supports_secure_workspace_inspection(),
+    "Secure descriptor-relative workspace access is unavailable on this OS",
+)
 class WorkspaceInspectToolTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
