@@ -184,6 +184,39 @@ class CliTests(unittest.TestCase):
                 "--confirm-restart-from-objective",
             ])
 
+    def test_workspace_root_requires_explicit_read_permission_flag(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--workspace-root", ".",
+            ])
+
+    def test_workspace_read_is_explicit_and_root_is_passed_to_registry(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            with patch("interfaces.cli.main.Omnitrix") as omnitrix_class:
+                omnitrix_class.from_config.return_value = FakeOmnitrix()
+                with patch("interfaces.cli.main.run_cli") as run_cli_mock:
+                    main([
+                        "--config", "config/demo.models.json",
+                        "--allow-workspace-read",
+                        "--workspace-root", workspace,
+                    ])
+
+            kwargs = omnitrix_class.from_config.call_args.kwargs
+            self.assertEqual(kwargs["tool_permission"].capabilities, frozenset({"workspace.read"}))
+            tool = kwargs["tool_registry"].get("workspace.inspect")
+            self.assertEqual(tool.capabilities, frozenset({"workspace.read"}))
+            self.assertEqual(tool._root, Path(workspace).resolve())
+            run_cli_mock.assert_called_once()
+
+    def test_workspace_read_flag_is_rejected_for_recovery_inspection(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--journal", "journal.sqlite3",
+                "--list-runs",
+                "--allow-workspace-read",
+            ])
+
     @patch("interfaces.cli.main.Omnitrix")
     def test_main_builds_application_and_starts_cli(self, omnitrix_class):
         fake_omnitrix = FakeOmnitrix()
