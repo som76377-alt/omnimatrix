@@ -70,7 +70,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_dashboard_reads_real_public_repository_api(self):
-        self.assertIn("https://api.github.com/repos/${OWNER}/${REPO}", self.js)
+        self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
         self.assertIn("som76377-alt", self.js)
         self.assertIn("omnimatrix", self.js)
         self.assertIn("/actions/runs?branch=main", self.js)
