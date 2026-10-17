@@ -166,6 +166,7 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
                                self.verifier.verifier_id, "applied",
                                "2026-10-17T00:00:00Z", "", evidence_digest()),
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
+                               "run-1", "task-1", "attempt-1", "action-1",
                                self.verifier.verifier_id, "applied",
                                "2026-10-17T00:00:00Z", "provider://receipt/123", "bad"),
         )
