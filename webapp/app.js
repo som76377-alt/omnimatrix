@@ -909,7 +909,6 @@
     }
   }
 
-  byId("terminal-tabs");
   byId("clear-output").addEventListener("click", () => {
     byId("test-output").textContent = "";
     byId("test-output").hidden = true;
