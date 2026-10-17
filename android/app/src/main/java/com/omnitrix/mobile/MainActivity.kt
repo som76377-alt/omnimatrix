@@ -86,8 +86,14 @@ internal object RuntimeInputValidation {
     }
 
     fun validateRuntimeToken(raw: String): String {
-        val value = raw.trim()
+        // Terminal clipboard selection may include a line break at the end of the token.
+        // Python's token_urlsafe() alphabet never contains whitespace, so remove whitespace
+        // and validate the remaining characters before using the value in an HTTP header.
+        val value = raw.filterNot { it.isWhitespace() }
         require(value.length >= 24) { "The generated runtime token looks incomplete." }
+        require(value.all {
+            it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '_'
+        }) { "The runtime token contains unsupported characters. Copy the token value only." }
         return value
     }
 }
@@ -130,7 +136,8 @@ private class RuntimeClient(context: Context) {
             connection.readTimeout = if (route == "/api/tests/run") 210000 else 25000
             connection.useCaches = false
             connection.setRequestProperty("Accept", "application/json")
-            connection.setRequestProperty("Authorization", "Bearer " + token)
+            // Also normalize previously saved credentials before adding them to an HTTP header.
+            connection.setRequestProperty("Authorization", "Bearer " + RuntimeInputValidation.validateRuntimeToken(token))
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
