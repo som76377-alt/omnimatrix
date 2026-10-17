@@ -60,7 +60,9 @@ class WebConsoleTests(unittest.TestCase):
                 self.assertTrue((WEBAPP / asset.removeprefix("./")).is_file(), asset)
 
     def test_dashboard_reads_real_public_repository_api(self):
-        self.assertIn("api.github.com/repos/som76377-alt/omnimatrix", self.js)
+        self.assertIn("https://api.github.com/repos/${OWNER}/${REPO}", self.js)
+        self.assertIn("som76377-alt", self.js)
+        self.assertIn("omnimatrix", self.js)
         self.assertIn("/actions/runs?branch=main", self.js)
         self.assertIn("/pulls?state=open", self.js)
         self.assertIn("./status.json", self.js)
