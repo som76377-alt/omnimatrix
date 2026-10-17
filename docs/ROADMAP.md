@@ -92,9 +92,14 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 
 ## Phase 7 — Android chat application
 
-- Build a phone-first chat UI and reliable API boundary to the orchestrator.
-- Add authentication, session isolation, cancel/status controls, streaming/event timelines, and accessible error states.
-- **Gate:** connectivity loss and app restarts do not lose or misrepresent task state.
+**Current status (17 October 2026): alpha implemented; phase gate remains open.** A native Jetpack Compose app is merged under `android/` with Chat, Workspace, Tests & Status, and Connect screens. GitHub Actions has compiled and packaged an installable debug APK and run the Python regression suite plus Android JVM input-validation tests. Successful trusted builds are being wired to publish a direct-download GitHub Release asset.
+
+- [x] Implement first native Compose client and authenticated Python Studio API integration.
+- [x] Build an installable debug APK in CI and upload build/test artifacts.
+- [ ] Verify install, pairing, real chat request, allowlisted workspace read/write and test-result display end-to-end on a physical Android device.
+- [ ] Add robust session isolation, cancellation, streaming/event timelines, and recovery across app restarts.
+- [ ] Replace the public Codespaces-port plus shared bearer-token development setup with a production-grade authenticated relay/backend before broader deployment.
+- **Gate:** connectivity loss and app restarts do not lose or misrepresent task state; device-level smoke tests and security review pass.
 
 ## Phase 8 — Live workspace / desktop streaming
 
