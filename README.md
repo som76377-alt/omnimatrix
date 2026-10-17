@@ -15,6 +15,7 @@ The current codebase includes:
 - A plan-approval fingerprint workflow and task lifecycle/execution observability.
 - Opt-in SQLite run journaling with append-only, digest-checked checkpoints and read-only integrity-aware recovery inspection; it does not automatically resume interrupted work. The orchestrator now records ordered checkpoints at task start, model request/response boundaries, tool-call boundaries, and result/failure observation. Fault-injection tests cover a model-call crash, a crash after a simulated side effect but before its outcome is committed, and a crash after the tool outcome is committed but before the orchestrator consumes it. An explicitly confirmed restart-from-objective path is available only for interrupted single-task runs where integrity checks pass and no tool was dispatched; chat turns and runs with any tool execution remain blocked. The CLI exposes recent-run listing, read-only recovery inspection, and the same explicitly confirmed guarded restart.
 - A typed tool-reconciliation verifier contract and registry with fail-closed validation. This is contract groundwork only: no concrete external-provider verifier is registered, and the contract does not authorize retries, replay, or automatic resume.
+- An opt-in, read-only `workspace.inspect` tool that lists one directory or reads a bounded UTF-8 text file under a configured root. Hidden/secret-like paths, symlinks, binary files, and oversized files are denied; workspace access is not granted unless the operator passes an explicit CLI flag.
 - A Python `unittest` suite covering the core, planning, providers, CLI, and tool behavior.
 
 Treat these as implemented foundations, not proof that every future capability is complete. Approval fingerprints currently cover the plan fields that exist today; an application must still obtain genuine user consent before executing an approved plan. The demo provider is simulated and must never be mistaken for live inference.
@@ -63,6 +64,16 @@ python -m interfaces.cli.main --config config/demo.models.json --journal .local/
 ```
 
 Chat turns and runs with any tool execution remain blocked from objective-only restart. Protect the journal file: run/task payloads include objectives even though the run-list command does not reveal them.
+
+### Explicit read-only workspace access
+
+Workspace inspection is off by default. To let a model that supports tool calls inspect files under the current directory, run:
+
+```bash
+python -m interfaces.cli.main --config config/demo.models.json --allow-workspace-read --workspace-root .
+```
+
+Choose the root deliberately. The tool can list one directory at a time or read a UTF-8 text file up to 64 KiB. It hides dotfiles and common secret-like filenames, refuses symlink paths, and never writes or executes files. This is a bounded first step, not a general filesystem sandbox: it does not protect against every possible concurrent filesystem race, and operators should not expose a workspace containing sensitive data to an untrusted model provider. Tool output is untrusted input. The offline demo provider remains simulated and may not invoke tools.
 
 ## Model configuration and secrets
 
