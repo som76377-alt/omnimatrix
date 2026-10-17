@@ -351,6 +351,10 @@ private class RuntimeClient(context: Context) {
         prefs.edit().putString("url", base).putString("token", token).apply()
     }
     fun ready() = base.isNotBlank() && token.isNotBlank()
+    fun disconnect() {
+        token = ""
+        prefs.edit().remove("token").apply()
+    }
     suspend fun get(route: String) = request("GET", route, null)
     suspend fun post(route: String, body: JSONObject) = request("POST", route, body)
 
@@ -456,6 +460,18 @@ private fun OmnitrixApp() {
             } catch (e: Exception) {
                 repoMessage = e.message ?: "Could not open file."
             } finally { repoBusy = false }
+        }
+    }
+
+    fun backRepo() {
+        if (selectedFile != null) {
+            selectedFile = null
+            fileDraft = ""
+            fileOriginal = ""
+            fileSha = ""
+            repoMessage = ""
+        } else {
+            loadRepo(if (repoPath.contains("/")) repoPath.substringBeforeLast("/") else "")
         }
     }
 
@@ -573,7 +589,7 @@ private fun OmnitrixApp() {
                     )
                     AppTab.REPO -> RepoScreen(
                         githubConnected, repoPath, entries, selectedFile, fileDraft, fileOriginal, repoBusy, repoMessage,
-                        { loadRepo(if (repoPath.contains("/")) repoPath.substringBeforeLast("/") else "") },
+                        { backRepo() },
                         { loadRepo(repoPath) }, { openRepoEntry(it) }, { fileDraft = it },
                         { confirmCommit = true }, { tab = AppTab.ACCOUNT }
                     )
@@ -639,6 +655,7 @@ private fun OmnitrixApp() {
                         { chatUrl = it }, { chatToken = it }, { showToken = !showToken },
                         { connectRuntime() },
                         {
+                            runtime.disconnect()
                             runtimeConnected = false
                             runtimeStatus = null
                             chatToken = ""
