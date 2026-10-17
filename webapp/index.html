@@ -55,13 +55,13 @@
     <section class="connect-panel" id="connect-panel" hidden>
       <div class="connect-panel-heading"><div><p class="eyebrow">PRIVATE RUNTIME BRIDGE</p><strong>Connect to the Python process</strong><p>Paste the runtime access token printed in the Codespaces terminal when Omnitrix Studio starts.</p></div><button id="close-connect" class="close-button" aria-label="Close connection panel">×</button></div>
       <div class="connect-fields"><label for="runtime-token">Runtime access token</label><input id="runtime-token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Paste generated token…"><button id="connect-runtime" class="primary-button">CONNECT</button><button id="disconnect-runtime" class="secondary-button">DISCONNECT</button></div>
-      <p class="connect-help" id="connect-help">For the complete Studio, open port 8000 from a private GitHub Codespace. Do not make that port public. The static GitHub Pages version cannot execute Python itself.</p>
+      <p class="connect-help" id="connect-help">For the complete Studio, open port 8000 from a private GitHub Codespace. Do not make that port public. The static GitHub Pages version cannot execute Python itself. <a href="https://codespaces.new/som76377-alt/omnimatrix" target="_blank" rel="noreferrer">Create/open a Codespace ↗</a></p>
     </section>
 
     <section class="view active" id="view-workspace">
       <div class="view-heading">
         <div><p class="eyebrow"><span class="eyebrow-dash"></span> WORKSPACE / 01</p><h1>Code <em>workspace.</em></h1><p class="view-subtitle">Read the current source, inspect files, and run the actual test suite inside the Python runtime.</p></div>
-        <div class="heading-actions"><span class="branch-chip"><span>⑂</span> <span id="revision-chip">main</span></span><span class="read-only-chip">READ ONLY EXPLORER</span></div>
+        <div class="heading-actions"><span class="branch-chip"><span>⑂</span> <span id="revision-chip">main</span></span><span class="state-pill sync-chip" id="sync-chip">GITHUB SYNC / STATIC</span><span class="read-only-chip">READ ONLY EXPLORER</span><a class="outline-button codespace-link" href="https://codespaces.new/som76377-alt/omnimatrix" target="_blank" rel="noreferrer">OPEN CODESPACE ↗</a></div>
       </div>
       <div class="workspace-frame">
         <div class="workspace-toolbar"><div class="tab-strip"><span class="tab-led"></span><span>EXPLORER</span><span class="toolbar-sep">/</span><span id="active-path-label">Select a file</span></div><div class="toolbar-actions"><span id="source-mode">GITHUB / MAIN SNAPSHOT</span><button id="refresh-tree" title="Refresh current directory" aria-label="Refresh current directory">↻</button></div></div>
