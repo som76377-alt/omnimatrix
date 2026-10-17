@@ -217,7 +217,11 @@ class StudioRuntime:
 
     def check_for_updates(self) -> bool:
         """Fast-forward a clean checkout of main only; never reset or overwrite edits."""
-        if not self.auto_sync_main or not self.sync_lock.acquire(blocking=False):
+        if not self.auto_sync_main:
+            self.sync_status = "disabled"
+            self.sync_last_result = "Automatic GitHub sync is disabled."
+            return False
+        if not self.sync_lock.acquire(blocking=False):
             return False
         try:
             self.sync_last_checked = utc_now()
