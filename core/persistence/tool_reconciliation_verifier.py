@@ -124,7 +124,7 @@ def verify_tool_reconciliation(
         return ReconciliationVerification("unknown", False, None, "invalid_registry")
 
     status = execution_record.get("status")
-    if status not in {"running", "unknown"}:
+    if not isinstance(status, str) or status not in {"running", "unknown"}:
         return ReconciliationVerification("unknown", False, None, "execution_not_uncertain")
 
     identity = _execution_identity(execution_record)
@@ -157,7 +157,7 @@ def verify_tool_reconciliation(
         return ReconciliationVerification(
             "unknown", False, verifier.verifier_id, "verification_identity_mismatch"
         )
-    if result.outcome not in _OUTCOMES:
+    if not isinstance(result.outcome, str) or result.outcome not in _OUTCOMES:
         return ReconciliationVerification(
             "unknown", False, verifier.verifier_id, "verification_outcome_invalid"
         )
