@@ -126,6 +126,7 @@ class StudioRuntime:
         self.sync_restart_pending = False
         self.stop_event = threading.Event()
         self.sync_lock = threading.Lock()
+        self.execution_lock = threading.Lock()
         self.active_chats = 0
         self.active_chats_lock = threading.Lock()
         self.app = app
@@ -272,41 +273,48 @@ class StudioRuntime:
                 self.sync_last_result = "The main checkout already matches origin/main."
                 return False
 
-            dirty_after_fetch = working_tree_dirty(self.code_root)
-            current_revision = self._git_output(["rev-parse", "HEAD"])
-            if dirty_after_fetch is not False or current_revision != old_revision:
-                self.sync_status = "deferred_dirty"
-                self.sync_last_result = "Checkout changed during the update check; no merge was attempted."
+            if not self.execution_lock.acquire(blocking=False):
+                self.sync_status = "deferred_busy"
+                self.sync_last_result = "A chat or test operation began during the fetch; update postponed."
                 return False
-
             try:
-                merged = subprocess.run(
-                    ["git", "merge", "--ff-only", "refs/remotes/origin/main"],
-                    cwd=self.code_root,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=30,
-                    check=False,
+                dirty_after_fetch = working_tree_dirty(self.code_root)
+                current_revision = self._git_output(["rev-parse", "HEAD"])
+                if dirty_after_fetch is not False or current_revision != old_revision:
+                    self.sync_status = "deferred_dirty"
+                    self.sync_last_result = "Checkout changed during the update check; no merge was attempted."
+                    return False
+
+                try:
+                    merged = subprocess.run(
+                        ["git", "merge", "--ff-only", "refs/remotes/origin/main"],
+                        cwd=self.code_root,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=30,
+                        check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    self.sync_status = "error"
+                    self.sync_last_result = "Fast-forward update failed or timed out; no reset was attempted."
+                    return False
+
+                final_revision = self._git_output(["rev-parse", "HEAD"])
+                if merged.returncode != 0 or final_revision != remote_revision:
+                    self.sync_status = "error"
+                    self.sync_last_result = "Fast-forward was refused; local history was not reset."
+                    return False
+
+                self.sync_status = "updated"
+                self.sync_last_result = (
+                    f"Updated from {old_revision[:7]} to {remote_revision[:7]}; restarting Studio to load the new code."
                 )
-            except (OSError, subprocess.TimeoutExpired):
-                self.sync_status = "error"
-                self.sync_last_result = "Fast-forward update failed or timed out; no reset was attempted."
-                return False
-
-            final_revision = self._git_output(["rev-parse", "HEAD"])
-            if merged.returncode != 0 or final_revision != remote_revision:
-                self.sync_status = "error"
-                self.sync_last_result = "Fast-forward was refused; local history was not reset."
-                return False
-
-            self.sync_status = "updated"
-            self.sync_last_result = (
-                f"Updated from {old_revision[:7]} to {remote_revision[:7]}; restarting Studio to load the new code."
-            )
-            self.sync_restart_pending = True
-            return True
+                self.sync_restart_pending = True
+                return True
+            finally:
+                self.execution_lock.release()
         finally:
             self.sync_lock.release()
 
@@ -343,6 +351,10 @@ class StudioRuntime:
         started = time.monotonic()
         with self.active_chats_lock:
             self.active_chats += 1
+        if not self.execution_lock.acquire(blocking=False):
+            with self.active_chats_lock:
+                self.active_chats -= 1
+            raise RuntimeError("Studio is busy with another chat, test, or GitHub update; retry this request.")
         try:
             reply = self.app.send_message(conversation, message.strip())
         except Exception:
@@ -352,6 +364,7 @@ class StudioRuntime:
                 "provider credentials, budget policy, and server terminal output."
             ) from None
         finally:
+            self.execution_lock.release()
             with self.active_chats_lock:
                 self.active_chats -= 1
         return {
@@ -371,6 +384,9 @@ class StudioRuntime:
             )
         if not self.test_lock.acquire(blocking=False):
             raise RuntimeError("The test suite is already running.")
+        if not self.execution_lock.acquire(blocking=False):
+            self.test_lock.release()
+            raise RuntimeError("Studio is busy with a chat or GitHub update; retry the test run.")
         started = time.monotonic()
         finished: dict[str, Any]
         try:
@@ -443,6 +459,7 @@ class StudioRuntime:
                     "finished_at": utc_now(),
                 }
         finally:
+            self.execution_lock.release()
             self.test_lock.release()
         with self.test_result_lock:
             self.last_test = finished
@@ -605,7 +622,8 @@ def make_handler(
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
             except RuntimeError as exc:
-                status = 409 if "already running" in str(exc).lower() else 502
+                error_text = str(exc).lower()
+                status = 409 if "already running" in error_text or "busy" in error_text else 502
                 self._send_json({"ok": False, "error": str(exc)}, status)
             except Exception as exc:
                 LOGGER.warning("POST API route failed: %s", type(exc).__name__)
