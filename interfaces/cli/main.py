@@ -56,6 +56,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Workspace directory to expose; requires --allow-workspace-read. Defaults to the current directory.",
     )
     parser.add_argument(
+        "--workspace-allow",
+        action="append",
+        dest="workspace_allow",
+        metavar="RELATIVE_PATH",
+        help="Restrict workspace access to this relative path prefix (repeatable); requires --allow-workspace-read. Omit to allow the configured workspace except denied paths.",
+    )
+    parser.add_argument(
         "--journal",
         help="SQLite journal path. Enables durable journaling for chat or recovery commands.",
     )
@@ -91,7 +98,9 @@ def main(argv: list[str] | None = None) -> None:
         if args.allow_workspace_read:
             workspace_root = Path(args.workspace_root).expanduser() if args.workspace_root else Path.cwd()
             try:
-                tool_registry = build_tool_registry(workspace_root)
+                tool_registry = build_tool_registry(
+                    workspace_root, allowed_paths=args.workspace_allow
+                )
             except RuntimeError as exc:
                 parser.error(str(exc))
             return Omnitrix.from_config(
@@ -112,6 +121,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     if args.workspace_root and not args.allow_workspace_read:
         parser.error("--workspace-root requires --allow-workspace-read.")
+    if args.workspace_allow and not args.allow_workspace_read:
+        parser.error("--workspace-allow requires --allow-workspace-read.")
     if args.allow_workspace_read and (args.list_runs or args.inspect_run is not None or args.restart_run is not None):
         parser.error("--allow-workspace-read cannot be combined with recovery inspection or restart commands.")
     if args.confirm_restart_from_objective and args.restart_run is None:
