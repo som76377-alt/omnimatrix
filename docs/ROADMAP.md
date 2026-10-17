@@ -154,4 +154,5 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 
 - [x] Implement a real, read-only workspace tool as the first confined-workspace vertical slice; register it without granting permission by default and require explicit CLI opt-in.
 - [x] Use pinned directory handles and directory-relative no-follow opens to prevent workspace path replacement/symlink races on supported operating systems; fail closed where the required primitives are unavailable.
+- [x] Add an operator-configurable relative-path allowlist for workspace reads and listings, with traversal validation and explicit empty-list denial. This narrows exposure but is not a per-task policy.
 - [ ] Add per-task workspace allowlists and provenance, and perform a separately authorized live-provider smoke test before treating workspace access as production-ready.
