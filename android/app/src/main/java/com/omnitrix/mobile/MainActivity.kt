@@ -440,11 +440,22 @@ private class RuntimeClient(context: Context) {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val contentType = connection.contentType.orEmpty()
+            val looksLikeHtml = text.trimStart().startsWith("<!doctype html", ignoreCase = true) ||
+                text.trimStart().startsWith("<html", ignoreCase = true) ||
+                contentType.contains("text/html", ignoreCase = true)
+            if (looksLikeHtml) {
+                throw IOException("GitHub Codespaces returned an HTML sign-in/interstitial page instead of the Omnitrix API (HTTP $code). In Codespaces → Ports, set port 8000 visibility to Public. Keep your current URL and token; then tap Connect Chat again.")
+            }
             if (code !in 200..299) {
                 val detail = try { JSONObject(text).optString("error", "") } catch (_: Exception) { "" }
                 throw IOException(if (detail.isBlank()) "Runtime returned HTTP " + code else detail)
             }
-            JSONObject(text)
+            try {
+                JSONObject(text)
+            } catch (e: Exception) {
+                throw IOException("Omnitrix Studio returned an invalid JSON response (HTTP " + code + ", content type " + contentType.ifBlank { "unknown" } + "). Restart Studio in Codespaces and retry.")
+            }
         } finally { connection.disconnect() }
     }
 }
