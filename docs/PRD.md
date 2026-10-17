@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.26 — Live GitHub-connected web console  
+**Version:** 1.27 — Omnitrix Studio workspace and safe live sync  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PRs #34–#39 are merged into `main`. The core is a Python CLI prototype with model adapters, tools, approval primitives, and read-only recovery. This branch adds a static, GitHub Pages-ready monitoring console; it does not expose a hosted Python execution backend. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1865,4 +1865,14 @@ Added a responsive browser console under `webapp/` with overview, build/test sta
 Added an installable web manifest and network-first service worker. Each push to `main` triggers a Pages workflow which runs compilation, configuration validation, JavaScript syntax checks, and the full Python test suite before uploading the static site. The app updates from the hosted repository without reinstalling; opening/reloading the hosted app loads current assets. GitHub Pages must be configured once with GitHub Actions as its publishing source.
 
 The web console is intentionally limited to monitoring and helpers. It does not host or remotely invoke the Python orchestrator, external model inference, filesystem access, tool execution, or the local SQLite journal. Those capabilities remain in the CLI until a separately designed and secured backend exists. GitHub API results can be rate-limited, and a failed build prevents the new site snapshot from deploying.
+
+## Version 1.27 change log — main Omnitrix Studio workspace
+
+Replaced the status-dashboard-first interface with the intended Studio workspace: a read-only source explorer/editor, real chat requests through `ChatApplication` and `Omnitrix`, a fixed local unittest runner, live GitHub Actions/deployed-test status, configured model/tool inventory, and recovery command documentation. The public GitHub Pages version can display GitHub-sourced repository content and CI status but cannot run Python or access a private workspace. Full chat, current working-tree browsing, and local tests run through the Python server in a private Codespaces port.
+
+Added an authenticated stdlib Python web server using a per-instance runtime token, bounded JSON request bodies, bounded chat messages and sessions, safe response headers, no arbitrary shell endpoint, opt-in workspace reads, and an opt-in fixed test command. Workspace reads remain read-only and use the existing path restrictions. Test execution uses the fixed `python -m unittest discover -s tests -v` command with a timeout and capped output; tests are disabled unless the server operator enables them. The default model config is the offline demo profile, so its chat output must remain labelled simulated.
+
+Added a Codespaces devcontainer that installs dependencies, forwards port 8000 privately, and starts a supervised Studio process. The optional auto-update worker operates only on a clean checkout already on `main`: it fetches `origin/main`, checks that the checkout and working tree did not change, performs only `git merge --ff-only`, and restarts the server through the supervisor. It never runs `reset` or discards local edits; dirty trees, feature branches, active chat/test operations, or failed fast-forward checks block the update. The running server reuses the runtime token stored in a permission-restricted temporary file outside Git. The browser checks service-worker assets more frequently so the UI can follow a successful update.
+
+Added localhost HTTP integration tests for token authorization, real demo-orchestrator chat, workspace-read permission gating, fixed-test-runner permission gating, and session validation, plus local Git-repository tests for clean-main fast-forward, dirty-tree preservation, feature-branch refusal, and disabled-by-default auto-sync. The full CI run on the exact PR head remains the required verification gate. Live Gemini use still requires valid model configuration and credentials; no real-provider claim is implied by offline tests.
 
