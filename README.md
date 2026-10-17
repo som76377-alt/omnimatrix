@@ -133,6 +133,9 @@ Repository Pages publishing must be configured once at **Settings → Pages → 
 | `core/application/` | Chat application layer |
 | `core/conversation/` | Conversation state |
 | `interfaces/cli/` | Command-line entry point |
+| `interfaces/web/` | Private Codespaces Studio backend and bounded browser API |
+| `webapp/` | Studio interface, read-only source explorer, chat, and test/status panels |
+| `.devcontainer/` | Private Codespaces setup and supervised Studio launcher |
 | `config/` | Model profiles, including the offline demo profile |
 | `tests/` | Automated regression tests |
 | `docs/ARCHITECTURE.md` | Current design boundaries and safety assumptions |
