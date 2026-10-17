@@ -47,4 +47,22 @@ class RuntimeInputValidationTest {
             RuntimeInputValidation.validateRuntimeToken("long-token-value-1234567!")
         }
     }
+    @Test
+    fun validatesGithubClientIdWithoutAcceptingWhitespaceOrSymbols() {
+        assertEquals("Iv1.abcd1234example", GitHubInputValidation.normalizeClientId(" Iv1.abcd1234example "))
+        assertThrows(IllegalArgumentException::class.java) {
+            GitHubInputValidation.normalizeClientId("not a client id")
+        }
+    }
+
+    @Test
+    fun repositoryPathAllowlistHidesInternalAndSensitivePaths() {
+        assertEquals(true, GitHubInputValidation.isSafeRepoPath("android/app/src/MainActivity.kt"))
+        assertEquals(true, GitHubInputValidation.isSafeRepoPath("README.md"))
+        assertEquals(false, GitHubInputValidation.isSafeRepoPath(".github/workflows/ci.yml"))
+        assertEquals(false, GitHubInputValidation.isSafeRepoPath("core/../README.md"))
+        assertEquals(false, GitHubInputValidation.isSafeRepoPath("config/api_key.txt"))
+        assertEquals(false, GitHubInputValidation.isSafeRepoPath("/README.md"))
+    }
+
 }
