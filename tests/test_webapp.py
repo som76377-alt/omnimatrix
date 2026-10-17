@@ -81,7 +81,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("/tests/run", self.js)
 
     def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
-        self.assertIn("The static GitHub Pages version cannot execute the Python orchestrator.", self.html)
+        self.assertIn("The static GitHub Pages version cannot execute Python itself.", self.html)
         self.assertIn("READ ONLY EXPLORER", self.html)
         self.assertIn("arbitrary command execution", self.html)
         self.assertIn("offline-demo", self.js)
