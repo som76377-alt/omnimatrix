@@ -37,6 +37,10 @@ class VerificationResult:
     idempotency_key: str
     tool_name: str
     request_sha256: str
+    run_id: str
+    task_id: str
+    attempt_id: str
+    logical_action_id: str
     verifier_id: str
     outcome: str
     observed_at: str
@@ -152,6 +156,10 @@ def verify_tool_reconciliation(
         or result.idempotency_key != identity.idempotency_key
         or result.tool_name != identity.tool_name
         or result.request_sha256 != identity.request_sha256
+        or result.run_id != identity.run_id
+        or result.task_id != identity.task_id
+        or result.attempt_id != identity.attempt_id
+        or result.logical_action_id != identity.logical_action_id
         or result.verifier_id != verifier.verifier_id
     ):
         return ReconciliationVerification(
