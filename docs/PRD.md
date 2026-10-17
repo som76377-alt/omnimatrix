@@ -1852,3 +1852,8 @@ The tool is read-only and does not execute commands, modify files, or grant broa
 ## Version 1.24 change log — race-resistant workspace file opening
 
 Replaced path-check-then-open workspace access with a pinned root directory handle and component-by-component directory-relative opens using `O_NOFOLLOW`. Directory listings use the opened directory handle; reads open the final file relative to its pinned parent, reject symlinks, verify the opened descriptor is a regular file, and read no more than the configured size limit plus one byte. FIFO reads are opened non-blocking and rejected. Root directory replacement after tool construction cannot redirect the tool to a different directory. The tool fails closed on operating systems lacking the required descriptor-relative primitives. Tests cover root-path replacement and FIFO handling. This is stronger path confinement, but still not a complete OS sandbox, workspace allowlist, or live-provider verification.
+
+
+## Version 1.25 change log — operator-configurable workspace path allowlist
+
+Added an optional repeatable CLI `--workspace-allow RELATIVE_PATH` argument. When supplied, the workspace tool permits reads and directory listings only for paths matching one of the configured relative prefixes. Prefixes are validated using the same traversal and sensitive-path rules as tool requests. An explicitly empty programmatic allowlist denies every path; omitting the allowlist preserves the existing root-scoped behavior. Tests verify allowed directory descendants, denied paths outside the prefixes, empty-list denial, and traversal rejection. This is an operator-level allowlist, not a per-task policy; per-task authorization and artifact provenance remain future work.
