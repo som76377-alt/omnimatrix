@@ -91,10 +91,13 @@ class StudioServerTests(unittest.TestCase):
     def test_static_studio_shell_is_available_without_runtime_token(self):
         with urlopen(self.base_url + "/", timeout=3) as response:
             body = response.read().decode("utf-8")
+            csp = response.headers.get("Content-Security-Policy", "")
         self.assertEqual(response.status, 200)
         self.assertIn("Omnitrix Studio", body)
         self.assertIn('id="chat-form"', body)
         self.assertIn('id="file-tree"', body)
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
 
     def test_api_rejects_missing_or_wrong_token(self):
         status, body = self.request("/api/health", authorized=False)
