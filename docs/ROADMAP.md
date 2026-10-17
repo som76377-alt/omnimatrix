@@ -92,7 +92,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 
 ## Phase 7 — Android chat application
 
-**Current status (17 October 2026): alpha implemented; phase gate remains open.** A native Jetpack Compose app is merged under `android/` with Chat, Workspace, Tests & Status, and Connect screens. GitHub Actions has compiled and packaged an installable debug APK and run the Python regression suite plus Android JVM input-validation tests. Successful trusted builds are being wired to publish a direct-download GitHub Release asset.
+**Current status (17 October 2026): alpha implemented; phase gate remains open.** A native Jetpack Compose app is merged under `android/` with Chat, Workspace, Tests & Status, and Connect screens. GitHub Actions has compiled and packaged an installable debug APK and run the Python regression suite plus Android JVM input-validation tests. Successful trusted builds now publish a direct-download GitHub Release asset and checksum.
 
 - [x] Implement first native Compose client and authenticated Python Studio API integration.
 - [x] Build an installable debug APK in CI and upload build/test artifacts.
