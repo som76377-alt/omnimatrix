@@ -99,23 +99,23 @@ The main Studio interface lives in `webapp/`; the Python backend is `interfaces/
 
 ### Start the full Studio in GitHub Codespaces
 
-Open [Create/open an Omnitrix Codespace](https://codespaces.new/som76377-alt/omnimatrix). The checked-in devcontainer installs the existing Python dependencies, keeps forwarded port 8000 private, and starts the Studio supervisor automatically. Open the forwarded **Omnitrix Studio** port from the Codespaces Ports panel.
+Open [Create/open an Omnitrix Codespace](https://codespaces.new/som76377-alt/omnimatrix). The checked-in devcontainer installs the Python dependencies and starts the Studio supervisor automatically. Port 8000 is configured for **public forwarding** so the native Android app can reach it without browser session cookies. Treat this as a deliberate security trade-off: all API calls require the generated bearer token over HTTPS, but a public endpoint is not the same as a private Codespaces port.
 
-The startup script generates a runtime access token outside the repository. In the Codespaces terminal, print it and paste it into **Connect runtime** in the app:
+The startup script generates a random runtime access token outside the repository and prints it to the Codespaces terminal. In the app's **Connect** screen, enter the forwarded HTTPS URL for port 8000 and that token. To print the token again in the Codespaces terminal:
 
 ```bash
 cat /tmp/omnitrix-studio-runtime-token
 ```
 
-The private port must remain private. The token is kept in that browser tab's session storage, not committed to Git. The startup profile grants the existing calculator tool, enables bounded read-only workspace inspection for selected source/documentation directories, and enables only the fixed test command `python -m unittest discover -s tests -v`. It does **not** expose a general shell, file writes, or arbitrary command execution.
+Never commit or share the token; the Android app stores its URL and token in AndroidX encrypted preferences. The API exposes no arbitrary shell or arbitrary command execution. The Codespaces startup profile grants bounded workspace access and a fixed test command. The Android client can save changes only to existing allowlisted UTF-8 files using a stale-write check; it does not automatically commit or push those edits to GitHub.
 
-The chat sends messages through `ChatApplication` and the existing `Omnitrix` orchestrator. The default `config/demo.models.json` profile deliberately uses the simulated offline provider, so replies are marked **OFFLINE DEMO** rather than presented as real inference. The workspace editor is read-only; it shows the active Codespace files when allowed and falls back to public `main` snapshots where the runtime denies access.
+The chat sends requests through `ChatApplication` and the existing `Omnitrix` orchestrator in the running Python backend. The default `config/demo.models.json` profile deliberately uses a simulated offline provider, so the connection is live but model replies are **not** live AI inference until a real provider and credential are explicitly configured. The browser's source viewer is read-only; the native Android workspace can edit existing allowlisted files through the guarded API.
 
 ### GitHub-connected updates
 
 On the normal, clean `main` checkout, the Codespaces supervisor checks `origin/main` about once per minute. It only uses `git fetch` followed by `git merge --ff-only` if the working tree is clean and the checkout is already on `main`. On a successful fast-forward it restarts the Python server with the same private runtime token; the browser's service worker checks for the new interface assets. **Local edits are never reset or discarded.** If the tree is dirty, Studio reports that auto-sync is paused until those changes are committed or otherwise handled. It deliberately does not auto-sync feature branches.
 
-The GitHub Pages URL, `https://som76377-alt.github.io/omnimatrix/`, is a public static preview for the interface and GitHub-sourced CI status; it cannot run Python, read a private Codespace filesystem, or perform actual chat/tool actions. To use the **full main app**, use the private Codespaces port.
+The GitHub Pages URL, `https://som76377-alt.github.io/omnimatrix/`, is a public static preview for the interface and GitHub-sourced CI status; it cannot run Python, read the Codespaces filesystem, or perform actual chat/tool actions. To use live backend features in the APK, keep the Codespace running and connect to its forwarded HTTPS port.
 
 ### Build and test status
 
@@ -169,8 +169,8 @@ The android/ project is the native Android client; it is not the browser Studio 
 
 ### APK build and download
 
-The Android APK GitHub Actions workflow compiles the Android project, runs the Python regression suite plus Android JVM input-validation tests, assembles a debug APK, and uploads it as the omnitrix-android-debug-apk artifact. Download the artifact ZIP from a successful workflow run and install the included APK on Android. Debug APKs are not release-signed for Play Store distribution; Android may require allowing installation from the download source.
+The Android APK GitHub Actions workflow compiles the Android project, runs the Python regression suite and Android JVM input-validation tests, assembles a debug APK, and publishes the APK plus a SHA-256 checksum as a GitHub Release on successful main-branch/manual builds. [Download the latest Omnitrix APK](https://github.com/som76377-alt/omnimatrix/releases/latest/download/Omnitrix.apk) or [view the releases](https://github.com/som76377-alt/omnimatrix/releases). Debug APKs are installable for testing but are not Play-Store-signed.
 
-The Studio port is configured for public forwarding because the native app cannot use the browser's signed-in Codespaces cookies. Its /api/* operations require a 256-bit random bearer token; keep that token private and store it only in the app's encrypted preferences. The exposed API has no arbitrary-shell route. Workspace writing is limited to existing, allowlisted UTF-8 files, uses an expected SHA-256 to prevent stale overwrites, and atomically replaces the file; new files, deletes, hidden/secret-like paths, and paths outside the allowlist are refused. This public-port arrangement is a security tradeoff; review it before production use.
+The Studio port uses public forwarding because the native app cannot reuse the browser's signed-in Codespaces cookies. Its /api/* operations require a random bearer token; keep that token private and store it only in the app's encrypted preferences. The exposed API has no arbitrary-shell route. Workspace writing is limited to existing allowlisted UTF-8 files, uses an expected SHA-256 to prevent stale overwrites, and refuses new files, deletes, hidden/secret-like paths, and paths outside the allowlist. This public-port arrangement is a security trade-off and is not yet a production-grade hosted backend.
 
-The bundled profile is still offline-demo: it simulates model replies and is not live inference. A configured provider and its secret must be set up separately to use actual model inference. Workspace saves update the Codespaces checkout only; they do not silently commit or push changes to GitHub. The existing auto-sync only fast-forwards a clean main checkout and pauses on local modifications.
+The bundled profile is still offline-demo: it simulates model replies and is not live inference. Configure a supported provider and provide its secret through the Codespaces environment to use genuine model inference. Workspace saves update the active Codespaces checkout only; they do not silently commit or push changes to GitHub. The existing auto-sync only fast-forwards a clean `main` checkout from GitHub and pauses on local modifications.
