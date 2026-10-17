@@ -1,3 +1,4 @@
+import hashlib
 import json
 import threading
 import tempfile
@@ -39,7 +40,7 @@ class StudioServerTests(unittest.TestCase):
         self.workspace_tool.close()
         self.temp.cleanup()
 
-    def build_runtime(self, workspace_read_enabled, tests_enabled):
+    def build_runtime(self, workspace_read_enabled, tests_enabled, workspace_write_enabled=False, allowed_paths=None):
         registry = build_tool_registry(self.workspace)
         permission = {"calculation"}
         if workspace_read_enabled:
@@ -57,7 +58,8 @@ class StudioServerTests(unittest.TestCase):
             workspace_tool=registry.get("workspace.inspect"),
             access_token=self.token,
             workspace_read_enabled=workspace_read_enabled,
-            allowed_paths=None,
+            allowed_paths=allowed_paths,
+            workspace_write_enabled=workspace_write_enabled,
             tests_enabled=tests_enabled,
             test_timeout_seconds=5,
         )
@@ -118,6 +120,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(body["provider_mode"], "offline-demo")
         self.assertIn("calculator", {item["name"] for item in body["tools"]})
         self.assertFalse(body["workspace_read_enabled"])
+        self.assertFalse(body["workspace_write_enabled"])
         encoded = json.dumps(body)
         self.assertNotIn(self.token, encoded)
         self.assertNotIn(str(self.workspace), encoded)
@@ -139,10 +142,44 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertIn("disabled", body["error"].lower())
 
+    def test_workspace_write_is_disabled_by_default(self):
+        status, body = self.request(
+            "/api/workspace/write",
+            method="POST",
+            body={"path": "notes.txt", "content": "changed", "expected_sha256": "0" * 64},
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("disabled", body["error"].lower())
+
     def test_fixed_local_test_runner_is_disabled_by_default(self):
         status, body = self.request("/api/tests/run", method="POST", body={})
         self.assertEqual(status, 403)
         self.assertIn("--allow-test-run", body["error"])
+
+    def test_guarded_workspace_write_succeeds_with_matching_hash(self):
+        self.workspace_tool.close()
+        self.runtime, self.workspace_tool = self.build_runtime(
+            workspace_read_enabled=True,
+            tests_enabled=False,
+            workspace_write_enabled=True,
+            allowed_paths=["notes.txt"],
+        )
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=3)
+        self.httpd = self.start_server(self.runtime)
+        self.base_url = "http://127.0.0.1:" + str(self.httpd.server_port)
+        original_hash = hashlib.sha256(b"safe local note").hexdigest()
+        status, body = self.request(
+            "/api/workspace/write",
+            method="POST",
+            body={"path": "notes.txt", "content": "updated by app", "expected_sha256": original_hash},
+        )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["result"]["previous_sha256"], original_hash)
+        self.assertEqual(body["result"]["sha256"], hashlib.sha256(b"updated by app").hexdigest())
+        self.assertEqual((self.workspace / "notes.txt").read_text(encoding="utf-8"), "updated by app")
 
     def test_workspace_browser_reads_bounded_file_when_explicitly_enabled(self):
         self.workspace_tool.close()
@@ -160,6 +197,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertTrue(body["ok"])
         self.assertEqual(body["output"]["content"], "safe local note")
+        self.assertEqual(body["output"]["sha256"], hashlib.sha256(b"safe local note").hexdigest())
         self.assertTrue(body["output"]["untrusted_content"])
 
     def test_session_id_and_message_are_validated(self):

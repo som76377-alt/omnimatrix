@@ -4,9 +4,9 @@
   "forwardPorts": [8000],
   "portsAttributes": {
     "8000": {
-      "label": "Omnitrix Studio",
+      "label": "Omnitrix Studio / Android API",
       "onAutoForward": "openBrowser",
-      "visibility": "private"
+      "visibility": "public"
     }
   },
   "postCreateCommand": "python -m pip install -r requirements.txt",

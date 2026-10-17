@@ -8,12 +8,14 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 from datetime import datetime, timezone
+import hashlib
 import hmac
 import json
 import logging
 import mimetypes
 import os
-from pathlib import Path
+import stat
+from pathlib import Path, PurePosixPath
 import re
 import secrets
 import signal
@@ -38,6 +40,7 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_CHAT_CHARS = 8_000
 MAX_SESSIONS = 32
 MAX_TEST_OUTPUT_BYTES = 64 * 1024
+MAX_WORKSPACE_WRITE_BYTES = 64 * 1024
 TEST_TIMEOUT_SECONDS = 180
 SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{16,128}$")
 SECRET_NAME_PATTERN = re.compile(
@@ -96,6 +99,169 @@ def safe_test_environment() -> dict[str, str]:
     }
 
 
+def write_workspace_file(
+    root: Path,
+    relative_path: Any,
+    content: Any,
+    expected_sha256: Any,
+    allowed_paths: list[str] | None,
+) -> dict[str, Any]:
+    """Atomically replace one existing allowlisted UTF-8 text file after a hash check."""
+    if not isinstance(relative_path, str) or not relative_path.strip() or len(relative_path) > 512:
+        raise ValueError("path must be a non-empty relative path of at most 512 characters.")
+    if "\\" in relative_path or relative_path.startswith("/") or "\x00" in relative_path:
+        raise ValueError("Absolute paths, backslashes, and NUL bytes are not accepted.")
+    if any(part in {"", ".", ".."} for part in relative_path.split("/")):
+        raise ValueError("Path traversal and explicit dot components are not accepted.")
+    parts = PurePosixPath(relative_path).parts
+    if not parts or any(part.startswith(".") or SECRET_NAME_PATTERN.search(part) for part in parts):
+        raise PermissionError("Hidden and sensitive paths are not writable.")
+    if allowed_paths is not None:
+        allowed = []
+        for prefix in allowed_paths:
+            if not isinstance(prefix, str) or not prefix.strip():
+                continue
+            if prefix == ".":
+                allowed.append(())
+                continue
+            if prefix.startswith("/") or "\\" in prefix or any(p in {"", ".", ".."} for p in prefix.split("/")):
+                continue
+            allowed.append(PurePosixPath(prefix).parts)
+        if not any(parts[:len(prefix)] == prefix for prefix in allowed):
+            raise PermissionError("The requested file is outside the configured workspace allowlist.")
+    if not isinstance(content, str):
+        raise ValueError("content must be a UTF-8 string.")
+    encoded = content.encode("utf-8")
+    if len(encoded) > MAX_WORKSPACE_WRITE_BYTES:
+        raise ValueError(f"content exceeds the {MAX_WORKSPACE_WRITE_BYTES}-byte write limit.")
+    if b"\x00" in encoded:
+        raise ValueError("Binary content is not writable.")
+    if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        raise ValueError("expected_sha256 must contain the original 64-character SHA-256 digest.")
+    if not (
+        getattr(os, "O_DIRECTORY", 0)
+        and getattr(os, "O_NOFOLLOW", 0)
+        and os.open in os.supports_dir_fd
+        and os.stat in os.supports_dir_fd
+    ):
+        raise RuntimeError("Secure descriptor-relative file writes are not supported on this operating system.")
+
+    canonical_root = root.expanduser().resolve(strict=True)
+    directory_flag = os.O_DIRECTORY
+    nofollow_flag = os.O_NOFOLLOW
+    parent_fd = os.open(os.path.sep, os.O_RDONLY | directory_flag | nofollow_flag)
+    temp_name = None
+    temp_fd = None
+    target_fd = None
+    try:
+        for component in canonical_root.parts[1:]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_flag | nofollow_flag,
+                dir_fd=parent_fd,
+            )
+            os.close(parent_fd)
+            parent_fd = next_fd
+
+        for component in parts[:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_flag | nofollow_flag,
+                dir_fd=parent_fd,
+            )
+            os.close(parent_fd)
+            parent_fd = next_fd
+
+        target_name = parts[-1]
+        try:
+            info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError("Only an existing file can be edited; new-file creation is disabled.") from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise PermissionError("Only an existing regular file can be edited.")
+        target_fd = os.open(
+            target_name,
+            os.O_RDONLY | nofollow_flag | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=parent_fd,
+        )
+        opened_info = os.fstat(target_fd)
+        if not stat.S_ISREG(opened_info.st_mode):
+            raise PermissionError("Only an existing regular file can be edited.")
+        if opened_info.st_size > MAX_WORKSPACE_WRITE_BYTES:
+            raise ValueError("The existing file is larger than the guarded write limit.")
+        old_chunks = []
+        remaining = MAX_WORKSPACE_WRITE_BYTES + 1
+        while remaining:
+            chunk = os.read(target_fd, min(8192, remaining))
+            if not chunk:
+                break
+            old_chunks.append(chunk)
+            remaining -= len(chunk)
+        old_bytes = b"".join(old_chunks)
+        if len(old_bytes) > MAX_WORKSPACE_WRITE_BYTES or b"\x00" in old_bytes:
+            raise PermissionError("The existing file is binary or exceeds the guarded write limit.")
+        old_bytes.decode("utf-8")
+        previous_hash = hashlib.sha256(old_bytes).hexdigest()
+        if not hmac.compare_digest(previous_hash, expected_sha256.lower()):
+            raise RuntimeError("The file changed since it was opened. Reload it before saving.")
+        if not hmac.compare_digest(
+            f"{opened_info.st_dev}:{opened_info.st_ino}",
+            f"{info.st_dev}:{info.st_ino}",
+        ):
+            raise RuntimeError("The file changed while it was being checked. Reload it before saving.")
+
+        temp_name = ".omnitrix-write-" + secrets.token_hex(12)
+        temp_fd = os.open(
+            temp_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow_flag,
+            stat.S_IMODE(opened_info.st_mode),
+            dir_fd=parent_fd,
+        )
+        os.fchmod(temp_fd, stat.S_IMODE(opened_info.st_mode))
+        view = memoryview(encoded)
+        while view:
+            written = os.write(temp_fd, view)
+            if written <= 0:
+                raise OSError("Short write while saving workspace file.")
+            view = view[written:]
+        os.fsync(temp_fd)
+        os.close(temp_fd)
+        temp_fd = None
+
+        latest = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(latest.st_mode)
+            or latest.st_dev != opened_info.st_dev
+            or latest.st_ino != opened_info.st_ino
+            or latest.st_size != opened_info.st_size
+            or latest.st_mtime_ns != opened_info.st_mtime_ns
+        ):
+            raise RuntimeError("The file changed during save; no replacement was made.")
+
+        os.rename(temp_name, target_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        temp_name = None
+        os.fsync(parent_fd)
+        return {
+            "path": relative_path,
+            "previous_sha256": previous_hash,
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "size_bytes": len(encoded),
+            "written_at": utc_now(),
+            "write_mode": "atomic_existing_file_only",
+        }
+    finally:
+        if temp_fd is not None:
+            os.close(temp_fd)
+        if temp_name is not None:
+            try:
+                os.unlink(temp_name, dir_fd=parent_fd)
+            except OSError:
+                pass
+        if target_fd is not None:
+            os.close(target_fd)
+        os.close(parent_fd)
+
+
 class StudioRuntime:
     """Own the configured orchestrator, per-browser conversations, and evidence."""
 
@@ -110,6 +276,7 @@ class StudioRuntime:
         access_token: str,
         workspace_read_enabled: bool,
         allowed_paths: list[str] | None,
+        workspace_write_enabled: bool = False,
         tests_enabled: bool,
         test_timeout_seconds: int = TEST_TIMEOUT_SECONDS,
         code_root: Path | None = None,
@@ -135,6 +302,7 @@ class StudioRuntime:
         self.workspace_tool = workspace_tool
         self.access_token = access_token
         self.workspace_read_enabled = workspace_read_enabled
+        self.workspace_write_enabled = bool(workspace_write_enabled and workspace_read_enabled)
         self.allowed_paths = allowed_paths
         self.tests_enabled = tests_enabled
         self.test_timeout_seconds = test_timeout_seconds
@@ -181,6 +349,7 @@ class StudioRuntime:
             "sync_restart_pending": self.sync_restart_pending,
             "workspace_name": self.root.name,
             "workspace_read_enabled": self.workspace_read_enabled,
+            "workspace_write_enabled": self.workspace_write_enabled,
             "workspace_allowlist": self.allowed_paths,
             "tests_enabled": self.tests_enabled,
             "test_timeout_seconds": self.test_timeout_seconds,
@@ -625,6 +794,8 @@ def make_handler(
             try:
                 if route == "/api/chat":
                     self._send_json(runtime.chat(payload))
+                elif route == "/api/workspace/write":
+                    self._workspace_write(payload)
                 elif route == "/api/tests/run":
                     self._send_json(runtime.run_tests())
                 else:
@@ -676,6 +847,10 @@ def make_handler(
                 operation="read",
                 path=raw_path,
             )
+            if result.success and isinstance(result.output, dict):
+                file_content = result.output.get("content")
+                if isinstance(file_content, str):
+                    result.output["sha256"] = hashlib.sha256(file_content.encode("utf-8")).hexdigest()
             self._send_json(
                 {
                     "ok": result.success,
@@ -684,6 +859,26 @@ def make_handler(
                 },
                 200 if result.success else 400,
             )
+
+        def _workspace_write(self, payload: Any) -> None:
+            if not runtime.workspace_write_enabled:
+                raise PermissionError("Workspace writing is disabled by the runtime.")
+            if not isinstance(payload, dict):
+                raise ValueError("Request body must be a JSON object.")
+            if not runtime.execution_lock.acquire(blocking=False):
+                raise RuntimeError("Studio is busy with another chat, test, or GitHub update; retry this request.")
+            try:
+                result = write_workspace_file(
+                    runtime.root,
+                    payload.get("path"),
+                    payload.get("content"),
+                    payload.get("expected_sha256"),
+                    runtime.allowed_paths,
+                )
+                result["working_tree_dirty"] = working_tree_dirty(runtime.code_root)
+                self._send_json({"ok": True, "result": result})
+            finally:
+                runtime.execution_lock.release()
 
         def _serve_static(self, route: str) -> None:
             decoded = unquote(route)
@@ -739,6 +934,7 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
         access_token=access_token,
         workspace_read_enabled=args.allow_workspace_read,
         allowed_paths=args.workspace_allow,
+        workspace_write_enabled=args.allow_workspace_write,
         tests_enabled=args.allow_test_run,
         test_timeout_seconds=args.test_timeout,
         code_root=Path(__file__).resolve().parents[2],
@@ -764,6 +960,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-workspace-read",
         action="store_true",
         help="Explicitly enable read-only workspace browsing and model tool access.",
+    )
+    parser.add_argument(
+        "--allow-workspace-write",
+        action="store_true",
+        help="Enable guarded atomic writes to existing text files inside the configured workspace allowlist.",
     )
     parser.add_argument(
         "--allow-test-run",
@@ -800,12 +1001,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--port must be between 1 and 65535.")
     if args.workspace_allow and not args.allow_workspace_read:
         parser.error("--workspace-allow requires --allow-workspace-read.")
+    if args.allow_workspace_write and not args.allow_workspace_read:
+        parser.error("--allow-workspace-write requires --allow-workspace-read.")
     if args.host not in {"127.0.0.1", "::1", "0.0.0.0"}:
         parser.error("--host must be a loopback address or 0.0.0.0.")
     if args.host == "0.0.0.0":
         print(
-            "SECURITY: keep the GitHub Codespaces forwarded port PRIVATE. "
-            "Do not publish this server origin.",
+            "SECURITY: this port may be reachable from the public internet. "
+            "Every /api route requires the generated bearer token; keep that token private. "
+            "The server exposes bounded workspace operations and one fixed test command, not a general shell.",
             file=sys.stderr,
         )
 

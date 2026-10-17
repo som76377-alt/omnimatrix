@@ -161,3 +161,16 @@ python -m json.tool config/demo.models.json
 ```
 
 The project is still establishing a reproducible baseline. See [Architecture](docs/ARCHITECTURE.md) for current boundaries and [Roadmap](docs/ROADMAP.md) for the intended staged sequence.
+
+
+## Native Android app (first build)
+
+The android/ project is the native Android client; it is not the browser Studio wrapped in a WebView. Its four bottom-navigation screens are Chat, Workspace, Tests & Status, and Connect. The app talks to the existing Python Studio API for chat, bounded workspace file access, and the fixed automated test suite. The runtime URL and bearer token are stored using AndroidX encrypted preferences.
+
+### APK build and download
+
+The Android APK GitHub Actions workflow compiles the Android project, runs the Python regression suite plus Android JVM input-validation tests, assembles a debug APK, and uploads it as the omnitrix-android-debug-apk artifact. Download the artifact ZIP from a successful workflow run and install the included APK on Android. Debug APKs are not release-signed for Play Store distribution; Android may require allowing installation from the download source.
+
+The Studio port is configured for public forwarding because the native app cannot use the browser's signed-in Codespaces cookies. Its /api/* operations require a 256-bit random bearer token; keep that token private and store it only in the app's encrypted preferences. The exposed API has no arbitrary-shell route. Workspace writing is limited to existing, allowlisted UTF-8 files, uses an expected SHA-256 to prevent stale overwrites, and atomically replaces the file; new files, deletes, hidden/secret-like paths, and paths outside the allowlist are refused. This public-port arrangement is a security tradeoff; review it before production use.
+
+The bundled profile is still offline-demo: it simulates model replies and is not live inference. A configured provider and its secret must be set up separately to use actual model inference. Workspace saves update the Codespaces checkout only; they do not silently commit or push changes to GitHub. The existing auto-sync only fast-forwards a clean main checkout and pauses on local modifications.

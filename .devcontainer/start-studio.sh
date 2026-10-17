@@ -10,7 +10,7 @@ if [[ -s "$PID_FILE" ]]; then
   existing_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [[ "$existing_pid" =~ ^[0-9]+$ ]] && kill -0 "$existing_pid" 2>/dev/null; then
     echo "Omnitrix Studio supervisor is already running (PID $existing_pid)."
-    echo "Access token: cat $TOKEN_FILE"
+    echo "Runtime access token (keep private; paste into the Omnitrix Android app): $(cat "$TOKEN_FILE")"
     echo "Logs: tail -f $LOG_FILE"
     exit 0
   fi
@@ -35,12 +35,14 @@ nohup bash -c '
       --config config/demo.models.json \
       --workspace-root . \
       --allow-workspace-read \
+      --allow-workspace-write \
       --workspace-allow core \
       --workspace-allow interfaces \
       --workspace-allow tests \
       --workspace-allow docs \
       --workspace-allow config \
       --workspace-allow webapp \
+      --workspace-allow android \
       --workspace-allow README.md \
       --allow-test-run \
       --auto-sync-main \
@@ -57,6 +59,6 @@ echo "$!" > "$PID_FILE"
 chmod 600 "$PID_FILE" "$LOG_FILE" 2>/dev/null || true
 
 echo "OMNITRIX STUDIO STARTING on private Codespaces port 8000."
-echo "Access token: cat $TOKEN_FILE"
+echo "Runtime access token (keep private; paste into the Omnitrix Android app): $TOKEN"
 echo "Server log: tail -f $LOG_FILE"
 echo "The app will fast-forward a clean checkout of main when GitHub changes arrive."
