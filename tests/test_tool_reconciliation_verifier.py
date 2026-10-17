@@ -50,6 +50,10 @@ class FakeVerifier:
             idempotency_key=identity.idempotency_key,
             tool_name=identity.tool_name,
             request_sha256=identity.request_sha256,
+            run_id=identity.run_id,
+            task_id=identity.task_id,
+            attempt_id=identity.attempt_id,
+            logical_action_id=identity.logical_action_id,
             verifier_id=self.verifier_id,
             outcome="applied",
             observed_at="2026-10-17T00:00:00Z",
@@ -76,8 +80,9 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
     def test_not_applied_is_a_valid_verified_outcome_but_not_authority(self):
         self.verifier.result = lambda identity, evidence: VerificationResult(
             identity.execution_id, identity.idempotency_key, identity.tool_name,
-            identity.request_sha256, self.verifier.verifier_id, "not_applied",
-            "2026-10-17T00:00:00Z", "provider://receipt/none", evidence_digest(),
+            identity.request_sha256, identity.run_id, identity.task_id,
+            identity.attempt_id, identity.logical_action_id, self.verifier.verifier_id,
+            "not_applied", "2026-10-17T00:00:00Z", "provider://receipt/none", evidence_digest(),
         )
         result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
         self.assertEqual(result.outcome, "not_applied")
@@ -127,8 +132,9 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
     def test_mismatched_execution_or_verifier_identity_fails_closed(self):
         self.verifier.result = lambda identity, evidence: VerificationResult(
             "different-exec", identity.idempotency_key, identity.tool_name,
-            identity.request_sha256, self.verifier.verifier_id, "applied",
-            "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
+            identity.request_sha256, identity.run_id, identity.task_id,
+            identity.attempt_id, identity.logical_action_id, self.verifier.verifier_id,
+            "applied", "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
         )
         result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
         self.assertEqual(result.reason, "verification_identity_mismatch")
@@ -137,9 +143,11 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
     def test_invalid_outcome_or_evidence_metadata_fails_closed(self):
         invalid_results = (
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
+                               "run-1", "task-1", "attempt-1", "action-1",
                                self.verifier.verifier_id, "confirmed_applied",
                                "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest()),
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
+                               "run-1", "task-1", "attempt-1", "action-1",
                                self.verifier.verifier_id, "applied",
                                "", "provider://receipt/123", evidence_digest()),
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
@@ -161,8 +169,9 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
     def test_unknown_outcome_never_counts_as_verified(self):
         self.verifier.result = lambda identity, evidence: VerificationResult(
             identity.execution_id, identity.idempotency_key, identity.tool_name,
-            identity.request_sha256, self.verifier.verifier_id, "unknown",
-            "2026-10-17T00:00:00Z", "provider://receipt/unclear", evidence_digest(),
+            identity.request_sha256, identity.run_id, identity.task_id,
+            identity.attempt_id, identity.logical_action_id, self.verifier.verifier_id,
+            "unknown", "2026-10-17T00:00:00Z", "provider://receipt/unclear", evidence_digest(),
         )
         result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
         self.assertEqual(result.reason, "outcome_unknown")
@@ -177,8 +186,9 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
 
         self.verifier.result = lambda identity, evidence: VerificationResult(
             identity.execution_id, identity.idempotency_key, identity.tool_name,
-            identity.request_sha256, self.verifier.verifier_id, ["applied"],
-            "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
+            identity.request_sha256, identity.run_id, identity.task_id,
+            identity.attempt_id, identity.logical_action_id, self.verifier.verifier_id,
+            ["applied"], "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
         )
         result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
         self.assertEqual(result.reason, "verification_outcome_invalid")
