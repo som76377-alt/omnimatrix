@@ -1,11 +1,14 @@
 import argparse
 import json
+from pathlib import Path
 
 from core.application import ChatApplication
 from core.conversation import Conversation
 from core.orchestrator.omnitrix import Omnitrix
 from core.persistence.recovery_service import RecoveryService
 from core.persistence.sqlite_journal import SQLiteJournal
+from core.tools.bootstrap import build_tool_registry
+from core.tools.permissions import ToolPermission
 
 
 def run_cli(
@@ -44,6 +47,15 @@ def main(argv: list[str] | None = None) -> None:
         help="Path to the Omnitrix model configuration file (required for chat/restart).",
     )
     parser.add_argument(
+        "--allow-workspace-read",
+        action="store_true",
+        help="Explicitly grant read-only access to a confined workspace (hidden/secret-like files remain denied).",
+    )
+    parser.add_argument(
+        "--workspace-root",
+        help="Workspace directory to expose; requires --allow-workspace-read. Defaults to the current directory.",
+    )
+    parser.add_argument(
         "--journal",
         help="SQLite journal path. Enables durable journaling for chat or recovery commands.",
     )
@@ -75,12 +87,29 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    def create_omnitrix(config_path: str, journal: SQLiteJournal | None = None) -> Omnitrix:
+        if args.allow_workspace_read:
+            workspace_root = Path(args.workspace_root).expanduser() if args.workspace_root else Path.cwd()
+            return Omnitrix.from_config(
+                config_path,
+                journal=journal,
+                tool_registry=build_tool_registry(workspace_root),
+                tool_permission=ToolPermission.from_capabilities({"workspace.read"}),
+            )
+        if journal is not None:
+            return Omnitrix.from_config(config_path, journal=journal)
+        return Omnitrix.from_config(config_path)
+
     has_recovery_command = (
         args.run_objective is not None
         or args.list_runs
         or args.inspect_run is not None
         or args.restart_run is not None
     )
+    if args.workspace_root and not args.allow_workspace_read:
+        parser.error("--workspace-root requires --allow-workspace-read.")
+    if args.allow_workspace_read and (args.list_runs or args.inspect_run is not None or args.restart_run is not None):
+        parser.error("--allow-workspace-read cannot be combined with recovery inspection or restart commands.")
     if args.confirm_restart_from_objective and args.restart_run is None:
         parser.error("--confirm-restart-from-objective is only valid with --restart-run.")
     if has_recovery_command and not args.journal:
@@ -101,7 +130,7 @@ def main(argv: list[str] | None = None) -> None:
                 existing_ids = {
                     item["run_id"] for item in journal.list_runs(limit=999)
                 }
-                omnitrix = Omnitrix.from_config(args.config, journal=journal)
+                omnitrix = create_omnitrix(args.config, journal=journal)
                 result = omnitrix.run(args.run_objective)
                 new_runs = [
                     item for item in journal.list_runs(limit=1000)
@@ -151,7 +180,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         return
 
-    omnitrix = Omnitrix.from_config(args.config)
+    omnitrix = create_omnitrix(args.config)
     run_cli(
         application=ChatApplication(omnitrix),
         conversation=Conversation(),
