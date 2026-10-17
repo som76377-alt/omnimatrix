@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -58,6 +59,7 @@ private val White = Color(0xFFF1F3EC)
 private val Grey = Color(0xFF9A9E94)
 private val Red = Color(0xFFFF6B6B)
 private val Mono = FontFamily.Monospace
+private val Pixel = FontFamily(Font(R.font.pixelify_sans, weight = FontWeight.Normal))
 private const val REPOSITORY = "som76377-alt/omnimatrix"
 
 private enum class AppTab(val title: String) {
@@ -621,7 +623,7 @@ private fun OmnitrixApp() {
                                 .clickable { tab = destination }.padding(vertical = 13.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(destination.title, fontSize = 14.sp, color = if (tab == destination) Green else Grey, fontWeight = if (tab == destination) FontWeight.Bold else FontWeight.Medium)
+                            Text(destination.title, fontSize = 14.sp, color = if (tab == destination) Green else Grey, fontWeight = if (tab == destination) FontWeight.Bold else FontWeight.Medium, fontFamily = Pixel)
                         }
                     }
                 }
@@ -751,12 +753,12 @@ private fun OmnitrixApp() {
 private fun AppHeader(title: String, detail: String? = null, state: String? = null) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 22.dp, bottom = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("OMNITRIX", color = Green, fontSize = 14.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Black)
+            Text("OMNITRIX", color = Green, fontSize = 16.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
             Spacer(Modifier.weight(1f))
             if (!state.isNullOrBlank()) Text(state, color = if (state == "ONLINE" || state == "LINKED") Green else Grey, fontSize = 12.sp)
         }
         Spacer(Modifier.height(20.dp))
-        Text(title, color = White, fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = White, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
         if (!detail.isNullOrBlank()) {
             Spacer(Modifier.height(5.dp))
             Text(detail, color = Grey, fontSize = 14.sp, lineHeight = 20.sp)
@@ -918,7 +920,7 @@ private fun AccountScreen(
                 QuietButton("SIGN OUT", onSignOut)
             } else if (device != null) {
                 Text("AUTHORIZE THIS DEVICE", color = Green, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(device.userCode, color = Green, fontSize = 34.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Black)
+                Text(device.userCode, color = Green, fontSize = 34.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Black, fontFamily = Pixel)
                 Text("Open GitHub, enter this code, and approve Omnitrix. Return here after approval.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp)
                 PrimaryButton(if (busy) "WAITING FOR GITHUB…" else "OPEN GITHUB & CONTINUE", onAuthorize, enabled = !busy)
             } else {
@@ -1001,14 +1003,14 @@ private fun PrimaryButton(
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 15.dp)
     ) {
-        Text(label, fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = .4.sp)
+        Text(label, fontFamily = Pixel, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = .4.sp)
     }
 }
 
 @Composable
 private fun QuietButton(label: String, onClick: () -> Unit) {
     Text(
-        label, color = Green, fontSize = 13.sp, fontFamily = Mono, fontWeight = FontWeight.Bold,
+        label, color = Green, fontSize = 13.sp, fontFamily = Pixel, fontWeight = FontWeight.Bold,
         modifier = Modifier.clickable { onClick() }.padding(horizontal = 7.dp, vertical = 10.dp)
     )
 }
