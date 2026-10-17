@@ -140,6 +140,17 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
         self.assertEqual(result.reason, "verification_identity_mismatch")
         self.assertFalse(result.verified)
 
+    def test_task_attempt_identity_mismatch_fails_closed(self):
+        self.verifier.result = lambda identity, evidence: VerificationResult(
+            identity.execution_id, identity.idempotency_key, identity.tool_name,
+            identity.request_sha256, identity.run_id, "different-task",
+            identity.attempt_id, identity.logical_action_id, self.verifier.verifier_id,
+            "applied", "2026-10-17T00:00:00Z", "provider://receipt/123", evidence_digest(),
+        )
+        result = verify_tool_reconciliation(execution(), self.evidence, self.registry)
+        self.assertEqual(result.reason, "verification_identity_mismatch")
+        self.assertFalse(result.verified)
+
     def test_invalid_outcome_or_evidence_metadata_fails_closed(self):
         invalid_results = (
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
@@ -151,6 +162,7 @@ class ToolReconciliationVerifierTests(unittest.TestCase):
                                self.verifier.verifier_id, "applied",
                                "", "provider://receipt/123", evidence_digest()),
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
+                               "run-1", "task-1", "attempt-1", "action-1",
                                self.verifier.verifier_id, "applied",
                                "2026-10-17T00:00:00Z", "", evidence_digest()),
             VerificationResult("exec-1", "idem-1", "mail.send", "a" * 64,
