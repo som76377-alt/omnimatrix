@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import threading
@@ -110,9 +111,23 @@ class StudioRuntime:
         allowed_paths: list[str] | None,
         tests_enabled: bool,
         test_timeout_seconds: int = TEST_TIMEOUT_SECONDS,
+        code_root: Path | None = None,
+        auto_sync_main: bool = False,
+        auto_sync_interval_seconds: int = 60,
     ) -> None:
         self.root = root
+        self.code_root = (code_root or Path(__file__).resolve().parents[2]).resolve()
         self.config_path = config_path
+        self.auto_sync_main = auto_sync_main
+        self.auto_sync_interval_seconds = auto_sync_interval_seconds
+        self.sync_status = "waiting" if auto_sync_main else "disabled"
+        self.sync_last_checked: str | None = None
+        self.sync_last_result = "Automatic GitHub sync is disabled."
+        self.sync_restart_pending = False
+        self.stop_event = threading.Event()
+        self.sync_lock = threading.Lock()
+        self.active_chats = 0
+        self.active_chats_lock = threading.Lock()
         self.app = app
         self.omnitrix = omnitrix
         self.workspace_tool = workspace_tool
@@ -154,8 +169,14 @@ class StudioRuntime:
             "ok": True,
             "service": "omnitrix-studio",
             "backend": "python",
-            "revision": short_git_revision(self.root),
-            "working_tree_dirty": working_tree_dirty(self.root),
+            "revision": short_git_revision(self.code_root),
+            "working_tree_dirty": working_tree_dirty(self.code_root),
+            "code_branch": self._git_output(["branch", "--show-current"]) or "unknown",
+            "auto_sync_main_enabled": self.auto_sync_main,
+            "sync_status": self.sync_status,
+            "sync_last_checked": self.sync_last_checked,
+            "sync_last_result": self.sync_last_result,
+            "sync_restart_pending": self.sync_restart_pending,
             "workspace_name": self.root.name,
             "workspace_read_enabled": self.workspace_read_enabled,
             "workspace_allowlist": self.allowed_paths,
@@ -171,6 +192,123 @@ class StudioRuntime:
             "tools": tool_details,
             "checked_at": utc_now(),
         }
+
+    def _git_output(self, arguments: list[str], timeout: int = 8) -> str | None:
+        """Run a fixed git metadata command without a shell; return stdout only."""
+        try:
+            result = subprocess.run(
+                ["git", *arguments],
+                cwd=self.code_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def check_for_updates(self) -> bool:
+        """Fast-forward a clean checkout of main only; never reset or overwrite edits."""
+        if not self.auto_sync_main or not self.sync_lock.acquire(blocking=False):
+            return False
+        try:
+            self.sync_last_checked = utc_now()
+            if self.test_lock.locked():
+                self.sync_status = "deferred_busy"
+                self.sync_last_result = "A test run is active; update postponed."
+                return False
+            with self.active_chats_lock:
+                if self.active_chats:
+                    self.sync_status = "deferred_busy"
+                    self.sync_last_result = "A chat turn is active; update postponed."
+                    return False
+
+            branch = self._git_output(["branch", "--show-current"])
+            if branch != "main":
+                self.sync_status = "deferred_not_main"
+                self.sync_last_result = "Auto-sync only updates the main branch checkout."
+                return False
+
+            dirty = working_tree_dirty(self.code_root)
+            if dirty is not False:
+                self.sync_status = "deferred_dirty"
+                self.sync_last_result = "Local changes exist or Git status is unavailable; nothing was changed."
+                return False
+
+            old_revision = self._git_output(["rev-parse", "HEAD"])
+            try:
+                fetched = subprocess.run(
+                    ["git", "fetch", "--quiet", "origin", "main"],
+                    cwd=self.code_root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=45,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                self.sync_status = "error"
+                self.sync_last_result = "GitHub fetch failed or timed out; current checkout was left unchanged."
+                return False
+            if fetched.returncode != 0:
+                self.sync_status = "error"
+                self.sync_last_result = "GitHub fetch failed; current checkout was left unchanged."
+                return False
+
+            remote_revision = self._git_output(["rev-parse", "refs/remotes/origin/main"])
+            if not remote_revision or not old_revision:
+                self.sync_status = "error"
+                self.sync_last_result = "Could not verify the local and remote revisions."
+                return False
+            if remote_revision == old_revision:
+                self.sync_status = "up_to_date"
+                self.sync_last_result = "The main checkout already matches origin/main."
+                return False
+
+            dirty_after_fetch = working_tree_dirty(self.code_root)
+            current_revision = self._git_output(["rev-parse", "HEAD"])
+            if dirty_after_fetch is not False or current_revision != old_revision:
+                self.sync_status = "deferred_dirty"
+                self.sync_last_result = "Checkout changed during the update check; no merge was attempted."
+                return False
+
+            try:
+                merged = subprocess.run(
+                    ["git", "merge", "--ff-only", "refs/remotes/origin/main"],
+                    cwd=self.code_root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                self.sync_status = "error"
+                self.sync_last_result = "Fast-forward update failed or timed out; no reset was attempted."
+                return False
+
+            final_revision = self._git_output(["rev-parse", "HEAD"])
+            if merged.returncode != 0 or final_revision != remote_revision:
+                self.sync_status = "error"
+                self.sync_last_result = "Fast-forward was refused; local history was not reset."
+                return False
+
+            self.sync_status = "updated"
+            self.sync_last_result = (
+                f"Updated from {old_revision[:7]} to {remote_revision[:7]}; restarting Studio to load the new code."
+            )
+            self.sync_restart_pending = True
+            return True
+        finally:
+            self.sync_lock.release()
 
     def conversation_for(self, session_id: str) -> Conversation:
         """Return/create a bounded in-memory conversation for a browser session."""
@@ -203,14 +341,19 @@ class StudioRuntime:
             raise ValueError("session_id is required.")
         conversation = self.conversation_for(session_id)
         started = time.monotonic()
+        with self.active_chats_lock:
+            self.active_chats += 1
         try:
             reply = self.app.send_message(conversation, message.strip())
-        except Exception as exc:
-            LOGGER.warning("chat turn failed: %s", type(exc).__name__)
+        except Exception:
+            LOGGER.warning("chat turn failed; provider exception type withheld from client")
             raise RuntimeError(
                 "Omnitrix could not complete this turn. Check the configured model, "
                 "provider credentials, budget policy, and server terminal output."
             ) from None
+        finally:
+            with self.active_chats_lock:
+                self.active_chats -= 1
         return {
             "ok": True,
             "reply": reply,
@@ -243,7 +386,7 @@ class StudioRuntime:
             try:
                 completed = subprocess.run(
                     command,
-                    cwd=self.root,
+                    cwd=self.code_root,
                     env=safe_test_environment(),
                     capture_output=True,
                     text=True,
@@ -273,7 +416,7 @@ class StudioRuntime:
                     "output": output,
                     "output_truncated": truncated,
                     "command": "python -m unittest discover -s tests -v",
-                    "revision": short_git_revision(self.root),
+                    "revision": short_git_revision(self.code_root),
                     "finished_at": utc_now(),
                 }
             except subprocess.TimeoutExpired as exc:
@@ -296,7 +439,7 @@ class StudioRuntime:
                     + f"\nTimed out after {self.test_timeout_seconds} seconds.",
                     "output_truncated": False,
                     "command": "python -m unittest discover -s tests -v",
-                    "revision": short_git_revision(self.root),
+                    "revision": short_git_revision(self.code_root),
                     "finished_at": utc_now(),
                 }
         finally:
@@ -566,6 +709,9 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
         allowed_paths=args.workspace_allow,
         tests_enabled=args.allow_test_run,
         test_timeout_seconds=args.test_timeout,
+        code_root=Path(__file__).resolve().parents[2],
+        auto_sync_main=args.auto_sync_main,
+        auto_sync_interval_seconds=args.auto_sync_interval,
     )
 
 
@@ -593,6 +739,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable the fixed Python unittest discovery command.",
     )
     parser.add_argument("--test-timeout", type=int, default=TEST_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--auto-sync-main",
+        action="store_true",
+        help="Poll origin/main and fast-forward only when the checkout is clean and already on main. Intended for a supervised private Codespace.",
+    )
+    parser.add_argument(
+        "--auto-sync-interval",
+        type=int,
+        default=60,
+        help="Seconds between safe origin/main checks (30–1800).",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
@@ -603,6 +760,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.test_timeout < 1 or args.test_timeout > 600:
         parser.error("--test-timeout must be between 1 and 600 seconds.")
+    if args.auto_sync_interval < 30 or args.auto_sync_interval > 1800:
+        parser.error("--auto-sync-interval must be between 30 and 1800 seconds.")
+    if args.auto_sync_main and args.host != "0.0.0.0":
+        parser.error("--auto-sync-main is intended for the supervised Codespaces server.")
     if args.port < 1 or args.port > 65535:
         parser.error("--port must be between 1 and 65535.")
     if args.workspace_allow and not args.allow_workspace_read:
@@ -629,6 +790,25 @@ def main(argv: list[str] | None = None) -> int:
     handler = make_handler(runtime, web_root)
     server = ThreadingHTTPServer((args.host, args.port), handler)
     server.daemon_threads = True
+
+    if runtime.auto_sync_main:
+        def update_watcher() -> None:
+            while not runtime.stop_event.wait(runtime.auto_sync_interval_seconds):
+                try:
+                    if runtime.check_for_updates():
+                        LOGGER.info("origin/main fast-forward complete; restarting supervised Studio.")
+                        time.sleep(1.2)
+                        os.kill(os.getpid(), signal.SIGTERM)
+                        return
+                except Exception:
+                    LOGGER.exception("safe auto-sync check failed")
+
+        threading.Thread(
+            target=update_watcher,
+            name="omnitrix-main-sync",
+            daemon=True,
+        ).start()
+
     print("OMNITRIX STUDIO READY")
     print(f"Web interface: http://127.0.0.1:{args.port}/")
     print(f"Workspace: {runtime.root.name}")
@@ -636,6 +816,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Model mode: {runtime.status()['provider_mode']}")
     print(f"Workspace read: {'ENABLED' if args.allow_workspace_read else 'DISABLED'}")
     print(f"Local test runner: {'ENABLED' if args.allow_test_run else 'DISABLED'}")
+    print(f"Auto-sync origin/main: {'ENABLED' if args.auto_sync_main else 'DISABLED'}")
+    if args.auto_sync_main:
+        print(
+            f"Auto-sync interval: {args.auto_sync_interval}s; fast-forward only on a clean main checkout."
+        )
     print("Keep any forwarded Codespaces port private. Ctrl+C stops the server.")
     try:
         server.serve_forever(poll_interval=0.4)
