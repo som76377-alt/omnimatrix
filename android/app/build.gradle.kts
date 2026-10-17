@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,8 +12,8 @@ android {
         applicationId = "com.omnitrix.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -38,3 +40,24 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
+
+
+val pixelFontBase64 = layout.projectDirectory.file("../fonts/PixelifySans.ttf.b64")
+val pixelFontOutput = layout.buildDirectory.file("generated/res/pixelFont/font/pixelify_sans.ttf")
+
+val decodePixelFont by tasks.registering {
+    inputs.file(pixelFontBase64)
+    outputs.file(pixelFontOutput)
+    doLast {
+        val inputFile = pixelFontBase64.asFile
+        if (!inputFile.isFile) {
+            throw GradleException("Pixelify Sans source file is missing: " + inputFile.path)
+        }
+        val outputFile = pixelFontOutput.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeBytes(Base64.getMimeDecoder().decode(inputFile.readText(Charsets.UTF_8)))
+    }
+}
+
+android.sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/res/pixelFont"))
+tasks.named("preBuild").configure { dependsOn(decodePixelFont) }
