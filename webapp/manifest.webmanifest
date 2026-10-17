@@ -1,0 +1,19 @@
+{
+  "name": "Omnitrix Live Console",
+  "short_name": "Omnitrix",
+  "description": "Live status console for the Omnitrix prototype.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#10110f",
+  "theme_color": "#10110f",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
