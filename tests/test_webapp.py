@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import unittest
@@ -60,6 +61,13 @@ class WebConsoleTests(unittest.TestCase):
         for asset in parser.local_assets:
             with self.subTest(asset=asset):
                 self.assertTrue((WEBAPP / asset.removeprefix("./")).is_file(), asset)
+
+    def test_all_javascript_element_lookups_resolve_in_html(self):
+        parser = ConsoleHTMLParser()
+        parser.feed(self.html)
+        ids = set(re.findall(r'byId\("([^"]+)"\)', self.js))
+        missing = sorted(ids - parser.ids)
+        self.assertEqual(missing, [])
 
     def test_dashboard_reads_real_public_repository_api(self):
         self.assertIn("https://api.github.com/repos/${OWNER}/${REPO}", self.js)
