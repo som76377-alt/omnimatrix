@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -542,9 +543,10 @@ private fun OmnitrixApp() {
             primary = Green, onPrimary = Black, secondary = Green, background = Black,
             surface = Surface, onSurface = White, error = Red
         ),
-        typography = Typography(defaultFontFamily = Mono)
+        typography = Typography()
     ) {
-        Scaffold(
+        CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Mono, color = White)) {
+            Scaffold(
             containerColor = Black,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
@@ -679,6 +681,7 @@ private fun OmnitrixApp() {
                     TextButton(onClick = { confirmCommit = false }) { Text("CANCEL", color = White, fontSize = 14.sp) }
                 }
             )
+        }
         }
     }
 }
