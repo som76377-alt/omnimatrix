@@ -76,9 +76,9 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("/actions/runs?branch=main", self.js)
         self.assertIn("./status.json", self.js)
         self.assertIn("rate limit", self.js.lower())
-        self.assertIn("/api/chat", self.js)
-        self.assertIn("/api/workspace/list", self.js)
-        self.assertIn("/tests/run", self.js)
+        self.assertIn('apiRequest("/chat"', self.js)
+        self.assertIn('apiRequest("/workspace/list?path="', self.js)
+        self.assertIn('apiRequest("/tests/run"', self.js)
 
     def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
         self.assertIn("The static GitHub Pages version cannot execute Python itself.", self.html)
