@@ -146,3 +146,6 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 - [x] Define a typed tool-specific reconciliation verifier contract and explicit registry. Bind results to exact execution/idempotency/tool/request-digest/run/task/attempt/logical-action identity; reject unknown tools, invalid identity, mismatched or malformed results, invalid evidence metadata, and verifier errors. Contract tests cover applied/not-applied/unknown and fail-closed paths.
 - [ ] Register at least one concrete provider verifier that checks authoritative external evidence without performing the action; add integration tests against that provider's evidence format. Until this exists, no independent external verification is claimed and uncertain actions remain blocked.
 - [ ] Only after concrete verifier evidence and policy are independently reviewed, design any future action-state transition. This verifier contract does not authorize retries, replay, or automatic resume.
+
+
+- [x] Align recovery inventory terminal-state classification with the executor's actual `returned_failure` status. Preserve manual review for possible partial side effects and keep execution authorization and automatic resume disabled. Regression test verifies that the known terminal status is not misclassified as an unknown in-progress action.
