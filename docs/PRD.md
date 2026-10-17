@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.25 — Operator-configurable workspace path allowlist  
+**Version:** 1.26 — Live GitHub-connected web console  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PRs #34–#38 are merged into `main`. Workspace inspection is opt-in, read-only, and uses pinned directory handles plus no-follow opens on supported systems. An optional operator-configured relative-path allowlist narrows what the model can inspect; it is not yet a per-task policy. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PRs #34–#39 are merged into `main`. The core is a Python CLI prototype with model adapters, tools, approval primitives, and read-only recovery. This branch adds a static, GitHub Pages-ready monitoring console; it does not expose a hosted Python execution backend. CI evidence must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1857,3 +1857,12 @@ Replaced path-check-then-open workspace access with a pinned root directory hand
 ## Version 1.25 change log — operator-configurable workspace path allowlist
 
 Added an optional repeatable CLI `--workspace-allow RELATIVE_PATH` argument. When supplied, the workspace tool permits reads and directory listings only for paths matching one of the configured relative prefixes. Prefixes are validated using the same traversal and sensitive-path rules as tool requests. An explicitly empty programmatic allowlist denies every path; omitting the allowlist preserves the existing root-scoped behavior. Tests verify allowed directory descendants, denied paths outside the prefixes, empty-list denial, and traversal rejection. This is an operator-level allowlist, not a per-task policy; per-task authorization and artifact provenance remain future work.
+
+## Version 1.26 change log — live GitHub-connected web console
+
+Added a responsive browser console under `webapp/` with overview, build/test status, implemented-capabilities inventory, workspace CLI command helper, and recovery-journal documentation. The status view reads public GitHub Actions run history and open pull requests via the GitHub REST API; the static deployment also publishes a test snapshot containing the exact commit SHA, test count, test status, Python version, and workflow run URL from the deployment's passing test suite. No credential or write token is embedded in client assets.
+
+Added an installable web manifest and network-first service worker. Each push to `main` triggers a Pages workflow which runs compilation, configuration validation, JavaScript syntax checks, and the full Python test suite before uploading the static site. The app updates from the hosted repository without reinstalling; opening/reloading the hosted app loads current assets. GitHub Pages must be configured once with GitHub Actions as its publishing source.
+
+The web console is intentionally limited to monitoring and helpers. It does not host or remotely invoke the Python orchestrator, external model inference, filesystem access, tool execution, or the local SQLite journal. Those capabilities remain in the CLI until a separately designed and secured backend exists. GitHub API results can be rate-limited, and a failed build prevents the new site snapshot from deploying.
+
