@@ -5,7 +5,7 @@
   const REPO = "omnimatrix";
   const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
   const REFRESH_MS = 10 * 60 * 1000;
-  const state = { runs: [], pulls: [], snapshot: null, refreshedAt: null, apiError: null };
+  const state = { runs: [], pulls: [], snapshot: null, refreshedAt: null, apiError: null, runsAvailable: false, pullsAvailable: false };
   const byId = (id) => document.getElementById(id);
 
   function element(tag, className, text) {
@@ -156,10 +156,25 @@
       banner.append(mark, textGroup, element("span", "status-banner-code", "GITHUB ACTIONS"));
     } else {
       navState.textContent = "—";
-      byId("overview-ci").textContent = "NO RUN";
-      byId("overview-ci-detail").textContent = "No CI run returned for main.";
-      connection.textContent = state.apiError ? "GITHUB UNAVAILABLE" : "NO RUN DATA";
+      byId("overview-ci").textContent = state.runsAvailable ? "NO RUN" : "UNAVAILABLE";
+      byId("overview-ci-detail").textContent = state.runsAvailable ? "No CI run returned for main." : "Workflow history could not be loaded.";
+      connection.textContent = state.runsAvailable ? "NO RUN DATA" : "GITHUB UNAVAILABLE";
       connectionWrap.classList.add("is-error");
+      const banner = byId("status-banner");
+      banner.classList.add("is-failed");
+      banner.replaceChildren();
+      banner.append(
+        element("span", "status-mark", "!"),
+        (() => {
+          const group = element("div");
+          group.append(
+            element("strong", "", state.runsAvailable ? "No CI workflow was returned" : "GitHub workflow data is unavailable"),
+            element("p", "", state.apiError || "No CI workflow run was found on main.")
+          );
+          return group;
+        })(),
+        element("span", "status-banner-code", "API STATUS")
+      );
     }
 
     const compact = byId("overview-runs");
@@ -200,11 +215,14 @@
   }
 
   function renderPulls() {
-    byId("overview-prs").textContent = state.pulls.length ? String(state.pulls.length) : "0";
+    byId("overview-prs").textContent = state.pullsAvailable ? String(state.pulls.length) : "—";
     const list = byId("open-pulls");
     list.replaceChildren();
     if (!state.pulls.length) {
-      list.append(element("div", "empty-state", state.apiError ? "Pull requests could not be loaded." : "No open pull requests returned."));
+      const emptyText = state.pullsAvailable
+        ? "No open pull requests returned."
+        : "Open pull-request data could not be loaded.";
+      list.append(element("div", "empty-state", emptyText));
       return;
     }
     state.pulls.slice(0, 5).forEach((pull) => {
@@ -262,14 +280,18 @@
         fetch(`./status.json?refresh=${Date.now()}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : null),
       ]);
       if (runsResponse.status === "fulfilled") {
+        state.runsAvailable = true;
         state.runs = Array.isArray(runsResponse.value.workflow_runs) ? runsResponse.value.workflow_runs : [];
         state.runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       } else {
+        state.runsAvailable = false;
         state.apiError = runsResponse.reason instanceof Error ? runsResponse.reason.message : "Workflow data is unavailable.";
       }
       if (pullsResponse.status === "fulfilled") {
+        state.pullsAvailable = true;
         state.pulls = Array.isArray(pullsResponse.value) ? pullsResponse.value : [];
       } else {
+        state.pullsAvailable = false;
         state.apiError = state.apiError || (pullsResponse.reason instanceof Error ? pullsResponse.reason.message : "Pull request data is unavailable.");
       }
       if (snapshotResponse.status === "fulfilled" && snapshotResponse.value) state.snapshot = snapshotResponse.value;
