@@ -32,7 +32,7 @@ class RuntimeInputValidationTest {
 
     @Test
     fun validatesTokenAndTrimsWhitespace() {
-        assertEquals("long-token-value-123456", RuntimeInputValidation.validateRuntimeToken(" long-token-value-123456 "))
+        assertEquals("long-token-value-1234567", RuntimeInputValidation.validateRuntimeToken(" long-token-value-1234567 "))
         assertThrows(IllegalArgumentException::class.java) {
             RuntimeInputValidation.validateRuntimeToken("short")
         }
