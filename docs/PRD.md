@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.21 — Tool-specific reconciliation verifier contract  
+**Version:** 1.22 — Recovery inventory terminal tool-status alignment  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PR #34 is merged into `main`. Encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. A tool-specific reconciliation verifier contract is being added, but no concrete external-provider verifier is registered. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PR #34 is merged into `main`. Encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. The tool-specific reconciliation verifier contract is present, but no concrete external-provider verifier is registered. CI evidence must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1835,3 +1835,8 @@ Recovery inventory now catches SQLite failures during both initial inspection an
 Added a typed, read-only contract and explicit registry for tool-specific reconciliation verifiers. A verifier result must bind to the exact durable execution ID, idempotency key, tool name, request digest, run, task, attempt, logical action, and registered verifier identity, and provide bounded evidence metadata including a digest and reference. Missing verifiers, invalid execution identity, terminal executions, verifier exceptions, malformed results, mismatched identity, invalid outcomes, and invalid evidence metadata all fail closed to `unknown`. Exceptions are redacted.
 
 This is contract groundwork only: no concrete provider verifier is registered, no claim of independent external verification is made, and the contract is not connected to retry, replay, journal mutation, or resume. A valid `applied` or `not_applied` result is evidence for review, not execution authority. Automatic resume remains disabled.
+
+
+## Version 1.22 change log — recovery inventory terminal tool-status alignment
+
+The tool executor persists tool-declared unsuccessful results as `returned_failure`, while the recovery inventory previously recognized only `failed` and `succeeded` as terminal states. The inventory now recognizes `returned_failure` as a terminal recorded outcome, classifies it for manual review because partial side effects cannot be excluded, and still blocks automatic resume. A regression test covers the exact executor status. Unknown or unrecognized statuses continue to fail closed.

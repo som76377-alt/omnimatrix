@@ -12,7 +12,7 @@ from core.persistence.recovery_service import RecoveryService
 from core.persistence.sqlite_journal import SQLiteJournal
 
 
-_TERMINAL_TOOL_STATUSES = {"succeeded", "failed"}
+_TERMINAL_TOOL_STATUSES = {"succeeded", "failed", "returned_failure"}
 _UNCERTAIN_TOOL_STATUSES = {"running", "unknown"}
 _TERMINAL_APPROVAL_STATUSES = {
     "approved", "rejected", "denied", "cancelled", "expired", "revoked",
@@ -193,10 +193,10 @@ def inspect_recovery_inventory(
                 "tool_effect_requires_verification", "review",
                 f"Successful tool execution {record.get('execution_id')} needs downstream verification.",
             )
-        elif status == "failed":
+        elif status in {"failed", "returned_failure"}:
             finding(
                 "tool_failure_requires_review", "review",
-                f"Failed tool execution {record.get('execution_id')} may have partial side effects.",
+                f"Tool execution {record.get('execution_id')} ended with a failure status and may have partial side effects.",
             )
         result_checkpoints = result_received.get(action_id, []) if action_id else []
         if status in _TERMINAL_TOOL_STATUSES and action_id:
