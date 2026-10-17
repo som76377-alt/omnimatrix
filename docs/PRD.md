@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.22 — Recovery inventory terminal tool-status alignment  
+**Version:** 1.23 — Explicit read-only workspace inspection  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PR #34 is merged into `main`. Encrypted snapshot verification, typed-pair reconstruction, and fail-closed recovery inventory are read-only foundations. The tool-specific reconciliation verifier contract is present, but no concrete external-provider verifier is registered. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PRs #34–#36 are merged into `main`. Recovery inspection and the reconciliation-verifier contract are read-only foundations; no concrete external-provider verifier is registered. This branch adds opt-in, root-confined workspace inspection, pending CI and review. CI evidence must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1840,3 +1840,10 @@ This is contract groundwork only: no concrete provider verifier is registered, n
 ## Version 1.22 change log — recovery inventory terminal tool-status alignment
 
 The tool executor persists tool-declared unsuccessful results as `returned_failure`, while the recovery inventory previously recognized only `failed` and `succeeded` as terminal states. The inventory now recognizes `returned_failure` as a terminal recorded outcome, classifies it for manual review because partial side effects cannot be excluded, and still blocks automatic resume. A regression test covers the exact executor status. Unknown or unrecognized statuses continue to fail closed.
+
+
+## Version 1.23 change log — explicit read-only workspace inspection
+
+Added a `workspace.inspect` tool with two operations: list one directory, or read one bounded UTF-8 text file. The root is fixed when the tool is constructed and can be configured by the caller. The tool rejects absolute paths, parent traversal, symlink path components, hidden and common secret-like names, binary files, and files over 64 KiB. Directory listing is non-recursive and capped at 100 visible entries. The tool requires the explicit `workspace.read` capability; the CLI exposes this only with `--allow-workspace-read`, with an optional `--workspace-root`. Recovery inspection and restart commands reject the workspace-read flag.
+
+The tool is read-only and does not execute commands, modify files, or grant broader filesystem access. Its returned content is marked untrusted. This is a bounded first step rather than a complete adversarial filesystem sandbox: concurrent filesystem changes can still create race conditions, and external model providers must not be given access to sensitive workspaces. Tests cover path traversal, secret-like names, symlinks, binary and oversized files, explicit permission gating, and CLI opt-in. No concrete external-provider action verifier is registered, and automatic resume remains disabled.
