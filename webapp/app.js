@@ -7,6 +7,8 @@
   const TOKEN_KEY = "omnitrix-studio-runtime-token";
   const SESSION_KEY = "omnitrix-studio-session-id";
   const SESSION_REFRESH_MS = 10 * 60 * 1000;
+  const RUNTIME_REFRESH_MS = 60 * 1000;
+  const SERVICE_WORKER_REFRESH_MS = 60 * 1000;
   const state = {
     token: sessionStorage.getItem(TOKEN_KEY) || "",
     runtime: null,
@@ -209,8 +211,31 @@
     byId("revision-chip").textContent = connected && state.runtime.revision
       ? state.runtime.revision : "main";
     byId("sidebar-revision").textContent = (connected && state.runtime.revision ? state.runtime.revision : "main") + " · read only";
+    const syncChip = byId("sync-chip");
+    if (!connected) {
+      syncChip.textContent = "GITHUB / STATIC";
+      syncChip.className = "state-pill sync-chip";
+    } else if (!state.runtime.auto_sync_main_enabled) {
+      syncChip.textContent = "AUTO-SYNC OFF";
+      syncChip.className = "state-pill sync-chip amber-pill";
+    } else {
+      const syncLabels = {
+        waiting: "SYNC CHECK STARTING",
+        up_to_date: "SYNCED WITH MAIN",
+        deferred_busy: "SYNC PAUSED / BUSY",
+        deferred_dirty: "LOCAL CHANGES / PAUSED",
+        deferred_not_main: "MAIN BRANCH ONLY",
+        error: "SYNC ERROR",
+        updated: "RESTARTING STUDIO",
+      };
+      syncChip.textContent = syncLabels[state.runtime.sync_status] || "AUTO-SYNC ACTIVE";
+      syncChip.className = "state-pill sync-chip" +
+        (["error", "deferred_dirty", "deferred_not_main"].includes(state.runtime.sync_status) ? " amber-pill" : "");
+    }
     byId("workspace-footer-right").textContent = connected
-      ? "Runtime revision " + (state.runtime.revision || "unknown") + (state.runtime.working_tree_dirty ? " · local changes present" : "")
+      ? "Runtime revision " + (state.runtime.revision || "unknown") +
+        (state.runtime.working_tree_dirty ? " · local changes present" : "") +
+        (state.runtime.auto_sync_main_enabled ? " · GitHub sync " + (state.runtime.sync_status || "waiting") : " · auto-sync disabled")
       : "GitHub snapshot reads main; connect Python to browse the live workspace.";
     byId("chat-provider-chip").textContent = connected
       ? (state.runtime.provider_mode === "offline-demo" ? "OFFLINE DEMO / SIMULATED" : "CONFIGURED MODEL")
@@ -901,17 +926,17 @@
   loadGitHubStatus();
   refreshBackend();
 
+  window.setInterval(loadGitHubStatus, SESSION_REFRESH_MS);
   window.setInterval(() => {
-    loadGitHubStatus();
     if (state.token) refreshBackend();
-  }, SESSION_REFRESH_MS);
+  }, RUNTIME_REFRESH_MS);
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", async () => {
       try {
         const registration = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
         registration.update().catch(() => {});
-        window.setInterval(() => registration.update().catch(() => {}), SESSION_REFRESH_MS);
+        window.setInterval(() => registration.update().catch(() => {}), SERVICE_WORKER_REFRESH_MS);
       } catch {
         // The app remains usable online without service-worker support.
       }
