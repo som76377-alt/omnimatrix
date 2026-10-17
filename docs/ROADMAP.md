@@ -156,3 +156,13 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 - [x] Use pinned directory handles and directory-relative no-follow opens to prevent workspace path replacement/symlink races on supported operating systems; fail closed where the required primitives are unavailable.
 - [x] Add an operator-configurable relative-path allowlist for workspace reads and listings, with traversal validation and explicit empty-list denial. This narrows exposure but is not a per-task policy.
 - [ ] Add per-task workspace allowlists and provenance, and perform a separately authorized live-provider smoke test before treating workspace access as production-ready.
+
+## Live monitoring console increment — prototype boundary preserved
+
+- [x] Add a responsive static web console with overview, CI/test status, current-capability inventory, workspace command helper, and journal/recovery documentation.
+- [x] Read public workflow-run and open-PR data from GitHub; publish a test snapshot generated only by a passing test/build workflow.
+- [x] Add network-first app-shell caching, hosted updates without reinstalling, and JavaScript/HTML regression checks.
+- [x] Add a main-branch Pages build/deploy workflow that runs the Python suite and browser-script syntax checks before publish.
+- [ ] Configure repository Pages source to GitHub Actions and verify the first public deployment URL loads.
+- [ ] Design and implement a separate authenticated, permissioned backend before claiming remote chat, tool execution, local filesystem access, or journal access from the browser.
+
