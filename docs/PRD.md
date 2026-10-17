@@ -2,8 +2,8 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.27 — Omnitrix Studio workspace and safe live sync  
-**Research / snapshot date:** 15 October 2026  
+**Version:** 1.28 — Native Android client and guarded workspace writes  
+**Research / snapshot date:** 17 October 2026  
 **Implementation status snapshot:** 17 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
@@ -1876,3 +1876,14 @@ Added a Codespaces devcontainer that installs dependencies, forwards port 8000 p
 
 Added localhost HTTP integration tests for token authorization, real demo-orchestrator chat, workspace-read permission gating, fixed-test-runner permission gating, and session validation, plus local Git-repository tests for clean-main fast-forward, dirty-tree preservation, feature-branch refusal, and disabled-by-default auto-sync. The full CI run on the exact PR head remains the required verification gate. Live Gemini use still requires valid model configuration and credentials; no real-provider claim is implied by offline tests.
 
+
+
+## Native Android client and workspace write boundary
+
+**Implementation status:** the first native client under android/ is being introduced on feat/native-android-omnitrix. Treat it as alpha until GitHub Actions passes the Android compile/package job. Its native Compose UI provides Chat, Workspace, Tests & Status, and Connect screens; it is a client for the existing Python runtime, not an on-device implementation of the Python orchestrator.
+
+**Workspace contract:** the initial editor may list/read only operator-allowlisted workspace paths and edit existing UTF-8 text files only. A write request must include the SHA-256 digest returned when the file was read. The server rejects stale hashes, absolute/traversal paths, symlinks, hidden/sensitive paths, non-regular files, binary content, oversize files, and paths outside the allowlist. Writes use a same-directory temporary file, fsync, and atomic replacement; they do not create files, delete files, run arbitrary shell commands, commit, or push to GitHub. API writes are serialized against chats, tests, and auto-sync operations.
+
+**Network boundary:** a native Android client cannot generally reuse the signed-in web session cookies for a private Codespaces forwarded port. The development configuration therefore uses public port forwarding while every API operation requires a generated, high-entropy bearer token. The token must never be committed, sent to a model, or shared in bug reports. This is a real security tradeoff, not equivalent to GitHub account authentication. Keep token storage encrypted on the device, keep all /api/* endpoints authenticated, expose no shell endpoint, and review whether this public-port arrangement is acceptable before production use. A future production architecture should prefer a dedicated authenticated relay/backend with scoped identities or GitHub OAuth rather than treating a shared bearer token as long-term account authentication.
+
+**Acceptance criteria for this increment:** Android CI compiles the Kotlin source, runs JVM input-validation tests, builds an installable debug APK, runs the Python regression suite, uploads the APK/report artifacts, verifies runtime connection and token protection, verifies workspace read/write hash behavior, and confirms a real runtime test result is distinguishable from missing evidence. Default offline-demo replies must remain explicitly labelled simulation, never live inference.
