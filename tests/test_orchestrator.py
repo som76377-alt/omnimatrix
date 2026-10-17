@@ -132,6 +132,105 @@ class OmnitrixOrchestratorTests(unittest.TestCase):
         )
 
 
+    def test_workspace_inspection_tool_call_round_trip(self):
+        class WorkspaceToolCallingAdapter(ModelAdapter):
+            def __init__(self):
+                self.requests = []
+
+            @property
+            def name(self):
+                return "workspace-tool-model"
+
+            @property
+            def provider(self):
+                return "test"
+
+            def generate(self, request: ModelRequest):
+                self.requests.append(request)
+                if len(self.requests) == 1:
+                    self.asserted_tool_names = [tool.name for tool in request.tools]
+                    return ModelResponse(
+                        content="",
+                        model=self.name,
+                        provider=self.provider,
+                        tool_calls=(
+                            ModelToolCall(
+                                id="workspace-call-1",
+                                tool_name="workspace.inspect",
+                                arguments={"operation": "read", "path": "notes.txt"},
+                            ),
+                        ),
+                        continuation=ModelContinuation(
+                            provider=self.provider,
+                            state={"turn": 1},
+                        ),
+                    )
+
+                tool_messages = [
+                    message for message in request.messages
+                    if message.role == MessageRole.TOOL
+                ]
+                if len(tool_messages) != 1 or tool_messages[0].tool_result is None:
+                    raise RuntimeError("Expected the workspace tool result.")
+                result = tool_messages[0].tool_result
+                if not result.success:
+                    raise RuntimeError(f"Workspace tool failed: {result.error}")
+                if result.output.get("content") != "The causal chain starts with induction.":
+                    raise RuntimeError("Workspace content was not returned to the model.")
+                if result.output.get("untrusted_content") is not True:
+                    raise RuntimeError("Workspace output must remain marked untrusted.")
+                return ModelResponse(
+                    content="The note says the causal chain starts with induction.",
+                    model=self.name,
+                    provider=self.provider,
+                )
+
+        model = ModelDefinition(
+            name="workspace-tool-model",
+            provider="test",
+            model_id="workspace-tool-model-v1",
+            capabilities=frozenset({"reasoning"}),
+            context_window=32000,
+            enabled=True,
+            metadata={"cost_class": "demo", "estimated_cost_usd": 0},
+        )
+        model_registry = ModelRegistry()
+        model_registry.register(model)
+        adapter = WorkspaceToolCallingAdapter()
+        adapter_registry = AdapterRegistry()
+        adapter_registry.register(adapter)
+
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "notes.txt").write_text(
+                "The causal chain starts with induction.", encoding="utf-8"
+            )
+            omnitrix = Omnitrix(
+                registry=model_registry,
+                adapter_registry=adapter_registry,
+                tool_registry=build_tool_registry(workspace_root=directory),
+                tool_permission=ToolPermission.from_capabilities({"workspace.read"}),
+            )
+            result = omnitrix.run("Read notes.txt and summarize its main point.")
+
+        self.assertEqual(
+            result, "The note says the causal chain starts with induction."
+        )
+        self.assertEqual(len(adapter.requests), 2)
+        self.assertEqual(adapter.asserted_tool_names, ["workspace.inspect"])
+        tool_messages = [
+            message for message in adapter.requests[1].messages
+            if message.role == MessageRole.TOOL
+        ]
+        self.assertEqual(len(tool_messages), 1)
+        self.assertEqual(
+            tool_messages[0].tool_result.output["content"],
+            "The causal chain starts with induction.",
+        )
+        self.assertTrue(
+            tool_messages[0].tool_result.output["untrusted_content"]
+        )
+
+
     def test_run_persists_task_lifecycle_to_sqlite(self):
         model = ModelDefinition(
             name="fake-tool-model",
