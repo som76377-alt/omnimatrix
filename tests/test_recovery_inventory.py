@@ -216,6 +216,31 @@ class RecoveryInventoryTests(unittest.TestCase):
         )
         self.assertNotIn("private", repr(result["tool_executions"]))
 
+    def test_executor_returned_failure_is_terminal_but_requires_manual_review(self):
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-0", 0, "tool_call_prepared",
+            {"logical_action_id": "action-1", "task_id": "task-1", "attempt_id": "attempt-1"},
+        )
+        self.journal.begin_tool_execution(
+            "execution-1", "idempotency-1", "external_tool", "a" * 64,
+            run_id="run-1", task_id="task-1", attempt_id="attempt-1",
+            logical_action_id="action-1",
+        )
+        # ToolExecutor records a ToolResult with success=False as returned_failure.
+        self.journal.finish_tool_execution(
+            "execution-1", "returned_failure", {"success": False}
+        )
+        self.journal.save_checkpoint(
+            "run-1", "checkpoint-1", 1, "tool_call_result_received",
+            {"logical_action_id": "action-1", "task_id": "task-1", "attempt_id": "attempt-1"},
+        )
+        result = self.inventory()
+        self.assertEqual(result["disposition"], "manual_revalidation_required")
+        codes = {item["code"] for item in result["findings"]}
+        self.assertIn("tool_failure_requires_review", codes)
+        self.assertNotIn("tool_execution_uncertain", codes)
+        self.assertFalse(result["execution_authorized"])
+
     def test_snapshot_from_older_attempt_is_blocked(self):
         self.journal.save_encrypted_model_state_snapshot(
             run_id="run-1", task_id="task-1", attempt_id="attempt-1",
