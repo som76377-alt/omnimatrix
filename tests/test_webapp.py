@@ -67,6 +67,9 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("/pulls?state=open", self.js)
         self.assertIn("./status.json", self.js)
         self.assertIn("rate limit", self.js.lower())
+        self.assertIn("state.pullsAvailable", self.js)
+        self.assertIn("Open pull-request data could not be loaded.", self.js)
+        self.assertIn("Workflow history could not be loaded.", self.js)
 
     def test_browser_ui_does_not_claim_remote_python_execution(self):
         self.assertIn("does not pretend to execute it remotely", self.html)
@@ -83,6 +86,7 @@ class WebConsoleTests(unittest.TestCase):
 
     def test_styles_include_mobile_layout_and_reduced_motion(self):
         self.assertIn("@media(max-width:600px)", self.css)
+        self.assertIn("@media(max-width:850px){\n  .mobile-nav", self.css)
         self.assertIn(".mobile-nav", self.css)
         self.assertIn("prefers-reduced-motion", self.css)
 
