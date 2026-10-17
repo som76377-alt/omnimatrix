@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import unittest
@@ -43,14 +44,16 @@ class WebConsoleTests(unittest.TestCase):
     def test_all_views_and_primary_navigation_exist(self):
         parser = ConsoleHTMLParser()
         parser.feed(self.html)
-        expected = {"overview", "status", "capabilities", "workspace", "recovery"}
+        expected = {"workspace", "chat", "status", "capabilities", "recovery"}
         self.assertTrue(expected.issubset(parser.views))
         for view in expected:
             self.assertIn(f"view-{view}", parser.ids)
-        self.assertIn("status-test-count", parser.ids)
-        self.assertIn("status-runs", parser.ids)
-        self.assertIn("open-pulls", parser.ids)
-        self.assertIn("workspace-command", parser.ids)
+        self.assertIn("chat-form", parser.ids)
+        self.assertIn("file-tree", parser.ids)
+        self.assertIn("editor-body", parser.ids)
+        self.assertIn("run-tests", parser.ids)
+        self.assertIn("workflow-list", parser.ids)
+        self.assertIn("local-test-count", parser.ids)
 
     def test_every_local_html_asset_exists(self):
         parser = ConsoleHTMLParser()
@@ -59,22 +62,29 @@ class WebConsoleTests(unittest.TestCase):
             with self.subTest(asset=asset):
                 self.assertTrue((WEBAPP / asset.removeprefix("./")).is_file(), asset)
 
+    def test_all_javascript_element_lookups_resolve_in_html(self):
+        parser = ConsoleHTMLParser()
+        parser.feed(self.html)
+        ids = set(re.findall(r'byId\("([^"]+)"\)', self.js))
+        missing = sorted(ids - parser.ids)
+        self.assertEqual(missing, [])
+
     def test_dashboard_reads_real_public_repository_api(self):
-        self.assertIn("https://api.github.com/repos/${OWNER}/${REPO}", self.js)
+        self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
         self.assertIn("som76377-alt", self.js)
         self.assertIn("omnimatrix", self.js)
         self.assertIn("/actions/runs?branch=main", self.js)
-        self.assertIn("/pulls?state=open", self.js)
         self.assertIn("./status.json", self.js)
         self.assertIn("rate limit", self.js.lower())
-        self.assertIn("state.pullsAvailable", self.js)
-        self.assertIn("Open pull-request data could not be loaded.", self.js)
-        self.assertIn("Workflow history could not be loaded.", self.js)
+        self.assertIn('apiRequest("/chat"', self.js)
+        self.assertIn('apiRequest("/workspace/list?path="', self.js)
+        self.assertIn('apiRequest("/tests/run"', self.js)
 
-    def test_browser_ui_does_not_claim_remote_python_execution(self):
-        self.assertIn("does not pretend to execute it remotely", self.html)
-        self.assertIn("does not directly invoke Python tools", self.html)
-        self.assertIn("The browser has no connection to the Python process", self.html)
+    def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
+        self.assertIn("The static GitHub Pages version cannot execute Python itself.", self.html)
+        self.assertIn("READ ONLY EXPLORER", self.html)
+        self.assertIn("arbitrary command execution", self.html)
+        self.assertIn("offline-demo", self.js)
         self.assertNotIn("GEMINI_API_KEY=", self.html + self.js)
 
     def test_hosted_shell_is_network_first_and_refreshes_service_worker(self):
@@ -85,8 +95,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertLess(self.worker.index("fetch(request)"), self.worker.index(".catch(async () =>"))
 
     def test_styles_include_mobile_layout_and_reduced_motion(self):
-        self.assertIn("@media(max-width:600px)", self.css)
-        self.assertIn("@media(max-width:850px){\n  .mobile-nav", self.css)
+        self.assertIn("@media(max-width:620px)", self.css)
         self.assertIn(".mobile-nav", self.css)
         self.assertIn("prefers-reduced-motion", self.css)
 
@@ -97,6 +106,17 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("actions/deploy-pages@v4", self.workflow)
         self.assertIn("needs: build", self.workflow)
         self.assertIn("GITHUB_SHA", self.workflow)
+
+    def test_python_backend_requires_token_and_uses_fixed_test_command(self):
+        server = (ROOT / "interfaces/web/server.py").read_text(encoding="utf-8")
+        self.assertIn('self.headers.get("Authorization"', server)
+        self.assertIn("hmac.compare_digest", server)
+        self.assertIn('"unittest"', server)
+        self.assertIn('"discover"', server)
+        self.assertIn('"tests"', server)
+        self.assertIn("MAX_TEST_OUTPUT_BYTES", server)
+        self.assertIn("TEST_TIMEOUT_SECONDS", server)
+        self.assertNotIn("shell=True", server)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js not installed in this test environment")
     def test_browser_javascript_parses(self):

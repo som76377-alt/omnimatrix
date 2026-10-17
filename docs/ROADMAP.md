@@ -163,6 +163,18 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 - [x] Read public workflow-run and open-PR data from GitHub; publish a test snapshot generated only by a passing test/build workflow.
 - [x] Add network-first app-shell caching, hosted updates without reinstalling, and JavaScript/HTML regression checks.
 - [x] Add a main-branch Pages build/deploy workflow that runs the Python suite and browser-script syntax checks before publish.
-- [ ] Configure repository Pages source to GitHub Actions and verify the first public deployment URL loads.
-- [ ] Design and implement a separate authenticated, permissioned backend before claiming remote chat, tool execution, local filesystem access, or journal access from the browser.
+- [ ] Verify the first public Pages deployment URL after the latest main-branch merge; a green pull-request CI run alone is not deployment evidence.
+- [x] Add a private, bearer-token-protected Python Studio backend for actual core chat, bounded read-only workspace browsing, runtime model/tool status, and the fixed local test runner. The public Pages preview must not be treated as the runtime.
+- [ ] Add a web API for the local recovery journal only after defining suitable per-session authorization and sensitive-data handling.
+
+## Main Omnitrix Studio workspace increment
+
+- [x] Replace the dashboard-only UI with a workspace-first Studio interface: file explorer, read-only source display, core-backed chat surface, local test output panel, runtime model/tool inventory, CI evidence, and recovery command guide.
+- [x] Add an authenticated Python API and localhost integration tests; all browser API calls require the runtime token, and no arbitrary shell or source-write endpoint is exposed.
+- [x] Add a Codespaces devcontainer that keeps port 8000 private and starts a supervised Studio process.
+- [x] Add a guarded auto-sync loop for a clean `main` checkout only. It uses a fetch plus `--ff-only` merge and supervisor restart, pauses for dirty trees/other branches/active operations, and never resets local work.
+- [x] Add integration tests for backend token enforcement, real offline-demo chat wiring, permission-gated workspace reads and test execution, and session validation; add isolated Git tests for update safety.
+- [ ] Pass CI on the exact PR head and inspect logs for all new test classes before merging.
+- [ ] Verify that main-branch merge triggers a successful Pages deploy and that the Pages preview URL no longer returns 404.
+- [ ] Separately run an authorized live-provider smoke test before describing any response as genuine Gemini inference.
 
