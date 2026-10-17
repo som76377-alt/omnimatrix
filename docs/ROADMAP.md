@@ -77,7 +77,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 
 ## Phase 5 — Artifacts and confined workspace
 
-- [x] Add the first bounded workspace capability: explicit opt-in, root-confined directory listing and small UTF-8 text reads; deny traversal, symlinks, hidden/secret-like paths, binary files, and oversized reads. CLI opt-in and regression tests are included. This does not complete the phase gate or claim protection against concurrent filesystem races.
+- [x] Add the first bounded workspace capability: explicit opt-in, root-confined directory listing and small UTF-8 text reads; deny traversal, symlinks, hidden/secret-like paths, binary files, and oversized reads. CLI opt-in and regression tests are included. This does not complete the phase gate or claim to be a general OS sandbox.
 - Introduce durable artifacts, provenance, hashes, and per-task workspace boundaries.
 - Make filesystem operations scoped and auditable.
 - Add cleanup, quota, and path-traversal tests.
@@ -153,4 +153,5 @@ Do not skip foundational safety and recovery work to make a demo look more auton
 
 
 - [x] Implement a real, read-only workspace tool as the first confined-workspace vertical slice; register it without granting permission by default and require explicit CLI opt-in.
-- [ ] Add stronger OS-level path-opening guarantees against concurrent symlink/path replacement, a policy for workspace allowlists and provenance, and integration tests with an actual tool-calling provider before treating workspace access as production-ready.
+- [x] Use pinned directory handles and directory-relative no-follow opens to prevent workspace path replacement/symlink races on supported operating systems; fail closed where the required primitives are unavailable.
+- [ ] Add per-task workspace allowlists and provenance, and perform a separately authorized live-provider smoke test before treating workspace access as production-ready.

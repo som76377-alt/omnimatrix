@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,9 +7,16 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.executor import ToolExecutor
 from core.tools.permissions import ToolPermission
 from core.tools.request import ToolRequest
-from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
+from core.tools.implementations.workspace_inspect import (
+    WorkspaceInspectTool,
+    supports_secure_workspace_inspection,
+)
 
 
+@unittest.skipUnless(
+    supports_secure_workspace_inspection(),
+    "Secure descriptor-relative workspace access is unavailable on this OS",
+)
 class WorkspaceInspectToolTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -17,6 +25,7 @@ class WorkspaceInspectToolTests(unittest.TestCase):
         self.tool = WorkspaceInspectTool(self.root)
 
     def tearDown(self):
+        self.tool.close()
         self.temp.cleanup()
 
     def execute(self, operation, path):
@@ -75,6 +84,33 @@ class WorkspaceInspectToolTests(unittest.TestCase):
             self.skipTest("Symlinks are unavailable in this environment")
         result = self.execute("read", "escape.txt")
         self.assertFalse(result.success)
+
+
+    def test_pinned_root_handle_resists_workspace_path_replacement(self):
+        (self.root / "inside.txt").write_text("pinned workspace", encoding="utf-8")
+        attacker_root = Path(self.temp.name) / "attacker"
+        attacker_root.mkdir()
+        (attacker_root / "outside.txt").write_text("outside secret", encoding="utf-8")
+        moved_root = Path(self.temp.name) / "workspace-original"
+        self.root.rename(moved_root)
+        try:
+            self.root.symlink_to(attacker_root, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            moved_root.rename(self.root)
+            self.skipTest("Directory symlinks are unavailable in this environment")
+
+        inside = self.execute("read", "inside.txt")
+        outside = self.execute("read", "outside.txt")
+        self.assertTrue(inside.success)
+        self.assertEqual(inside.output["content"], "pinned workspace")
+        self.assertFalse(outside.success)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO files are unavailable")
+    def test_read_does_not_block_on_fifo(self):
+        os.mkfifo(self.root / "pipe.txt")
+        result = self.execute("read", "pipe.txt")
+        self.assertFalse(result.success)
+
 
     def test_denies_binary_and_oversized_files(self):
         (self.root / "binary.bin").write_bytes(b"hello\x00world")

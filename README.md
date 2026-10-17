@@ -73,7 +73,7 @@ Workspace inspection is off by default. To let a model that supports tool calls 
 python -m interfaces.cli.main --config config/demo.models.json --allow-workspace-read --workspace-root .
 ```
 
-Choose the root deliberately. The tool can list one directory at a time or read a UTF-8 text file up to 64 KiB. It hides dotfiles and common secret-like filenames, refuses symlink paths, and never writes or executes files. This is a bounded first step, not a general filesystem sandbox: it does not protect against every possible concurrent filesystem race, and operators should not expose a workspace containing sensitive data to an untrusted model provider. Tool output is untrusted input. The offline demo provider remains simulated and may not invoke tools.
+Choose the root deliberately. The tool can list one directory at a time or read a UTF-8 text file up to 64 KiB. It hides dotfiles and common secret-like filenames, refuses symlink paths, and never writes or executes files. On operating systems that support directory-relative opens and `O_NOFOLLOW`, it pins the workspace root and opens each path component relative to a directory handle, avoiding the earlier check-then-open symlink race; it fails closed on unsupported systems. This is still not a complete OS sandbox or a workspace allowlist, so do not expose sensitive workspaces to an untrusted model provider. Tool output is untrusted input. The offline demo provider remains simulated and may not invoke tools.
 
 ## Model configuration and secrets
 
@@ -83,7 +83,7 @@ The core application uses the Python standard library, with one explicit runtime
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.23; implementation status snapshot dated 17 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.24; implementation status snapshot dated 17 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 
