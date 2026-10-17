@@ -6,7 +6,7 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 
 - [x] Document CLI startup, current capabilities, and implementation boundaries.
 - [x] Document architecture and staged roadmap.
-- [x] Record the environment/dependency baseline: CI uses Python 3.14; the current application/tests use the standard library, with no third-party dependency manifest or lockfile.
+- [x] Record the environment/dependency baseline: CI uses Python 3.14; application code primarily uses the standard library plus the explicitly declared `cryptography` runtime dependency in `requirements.txt`; a fully pinned lockfile is not yet present.
 - [x] Add CI for compilation, demo JSON validation, unit tests, and offline CLI smoke test.
 - [x] Ignore local environments, secrets, and generated development artifacts; remove tracked Python bytecode.
 - [x] Preserve an explicit zero-spend demo profile with clearly simulated output.
