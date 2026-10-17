@@ -5,7 +5,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any
+from typing import Any, Iterable
 
 from core.tools.base import Tool, ToolResult
 
@@ -52,11 +52,23 @@ class WorkspaceInspectTool(Tool):
     path-check-then-open sequence that is vulnerable to symlink races.
     """
 
-    def __init__(self, workspace_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        workspace_root: str | Path | None = None,
+        allowed_paths: Iterable[str] | None = None,
+    ) -> None:
         root = Path.cwd() if workspace_root is None else Path(workspace_root)
         self._root = root.expanduser().resolve(strict=True)
         if not self._root.is_dir():
             raise ValueError("Workspace root must be an existing directory.")
+
+        if isinstance(allowed_paths, (str, bytes)):
+            raise TypeError("allowed_paths must be an iterable of relative path strings.")
+        self._allowed_path_prefixes = (
+            None
+            if allowed_paths is None
+            else frozenset(self._path_parts(path) for path in allowed_paths)
+        )
 
         directory_flag = getattr(os, "O_DIRECTORY", 0)
         nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
@@ -152,6 +164,11 @@ class WorkspaceInspectTool(Tool):
         raw_path = kwargs.get("path")
         try:
             parts = self._path_parts(raw_path)
+            if not self._is_path_allowed(parts):
+                return ToolResult(
+                    success=False,
+                    error="Requested path is outside the configured workspace allowlist.",
+                )
             if operation == "list":
                 return self._list_directory(parts, raw_path)
             if operation == "read":
@@ -178,6 +195,15 @@ class WorkspaceInspectTool(Tool):
         if any(_is_sensitive_name(part) for part in relative.parts):
             raise ValueError("Sensitive paths are not available.")
         return relative.parts
+
+    def _is_path_allowed(self, parts: tuple[str, ...]) -> bool:
+        """Allow a path only when it is within one operator-configured prefix."""
+        if self._allowed_path_prefixes is None:
+            return True
+        return any(
+            parts[:len(prefix)] == prefix
+            for prefix in self._allowed_path_prefixes
+        )
 
     def _open_directory(self, parts: tuple[str, ...]) -> int:
         """Open each directory relative to the previous pinned handle."""
