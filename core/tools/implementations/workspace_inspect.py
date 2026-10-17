@@ -22,6 +22,17 @@ _CREDENTIAL_PATTERN = re.compile(
 )
 
 
+def supports_secure_workspace_inspection() -> bool:
+    """Return whether this OS exposes descriptor-relative no-follow primitives."""
+    return bool(
+        getattr(os, "O_DIRECTORY", 0)
+        and getattr(os, "O_NOFOLLOW", 0)
+        and os.open in os.supports_dir_fd
+        and os.stat in os.supports_dir_fd
+        and os.listdir in os.supports_fd
+    )
+
+
 def _is_sensitive_name(name: str) -> bool:
     lowered = name.lower()
     return (
@@ -49,13 +60,7 @@ class WorkspaceInspectTool(Tool):
 
         directory_flag = getattr(os, "O_DIRECTORY", 0)
         nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
-        if (
-            not directory_flag
-            or not nofollow_flag
-            or os.open not in os.supports_dir_fd
-            or os.stat not in os.supports_dir_fd
-            or os.listdir not in os.supports_fd
-        ):
+        if not supports_secure_workspace_inspection():
             raise RuntimeError(
                 "Secure workspace inspection requires directory-relative "
                 "open/stat/listdir support and O_NOFOLLOW on this operating system."
