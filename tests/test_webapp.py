@@ -75,7 +75,7 @@ class WebConsoleTests(unittest.TestCase):
     def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
         self.assertIn("The static GitHub Pages version cannot execute the Python orchestrator.", self.html)
         self.assertIn("READ ONLY EXPLORER", self.html)
-        self.assertIn("No arbitrary shell", self.html)
+        self.assertIn("arbitrary command execution", self.html)
         self.assertIn("offline-demo", self.js)
         self.assertNotIn("GEMINI_API_KEY=", self.html + self.js)
 
@@ -89,7 +89,6 @@ class WebConsoleTests(unittest.TestCase):
     def test_styles_include_mobile_layout_and_reduced_motion(self):
         self.assertIn("@media(max-width:620px)", self.css)
         self.assertIn(".mobile-nav", self.css)
-        self.assertIn("prefers-reduced-motion", self.css)
         self.assertIn("prefers-reduced-motion", self.css)
 
     def test_pages_workflow_runs_tests_before_upload_and_publish(self):
