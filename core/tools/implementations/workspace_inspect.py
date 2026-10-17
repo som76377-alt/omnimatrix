@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
+import re
 import stat
 from typing import Any
 
@@ -19,13 +20,14 @@ _DENIED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".sqlite", ".sqlite3", ".db"
 
 def _is_sensitive_name(name: str) -> bool:
     lowered = name.lower()
+    credential_pattern = re.compile(
+        r"(^|[._-])(secrets?|credentials?|tokens?|api[-_]?keys?|private[-_]?keys?)([._-]|$)"
+    )
     return (
         lowered.startswith(".")
         or lowered in _DENIED_NAMES
-        or lowered.startswith(".env")
-        or "secret" in lowered
-        or "credential" in lowered
-        or "token" in lowered
+        or lowered.startswith((".env", "id_rsa", "id_ed25519"))
+        or credential_pattern.search(lowered) is not None
         or lowered.endswith(tuple(_DENIED_SUFFIXES))
     )
 
