@@ -88,10 +88,11 @@ def working_tree_dirty(root: Path) -> bool | None:
 
 def safe_test_environment() -> dict[str, str]:
     """Remove likely credentials before launching the fixed test command."""
+    blocked = {"PYTHONPATH", "PYTHONHOME"}
     return {
         key: value
         for key, value in os.environ.items()
-        if not SECRET_NAME_PATTERN.search(key)
+        if key not in blocked and not SECRET_NAME_PATTERN.search(key)
     }
 
 
@@ -483,6 +484,15 @@ def make_handler(
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "same-origin")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "connect-src 'self' https://api.github.com; "
+                "img-src 'self' data:; base-uri 'self'; form-action 'self'; "
+                "frame-ancestors 'none'",
+            )
             self.send_header("Cache-Control", "no-store")
             if api:
                 self.send_header("Vary", "Authorization")
@@ -845,6 +855,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        runtime.stop_event.set()
         server.server_close()
         runtime.workspace_tool.close()
     return 0
