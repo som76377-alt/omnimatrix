@@ -73,7 +73,13 @@ Workspace inspection is off by default. To let a model that supports tool calls 
 python -m interfaces.cli.main --config config/demo.models.json --allow-workspace-read --workspace-root .
 ```
 
-Choose the root deliberately. The tool can list one directory at a time or read a UTF-8 text file up to 64 KiB. It hides dotfiles and common secret-like filenames, refuses symlink paths, and never writes or executes files. On operating systems that support directory-relative opens and `O_NOFOLLOW`, it pins the workspace root and opens each path component relative to a directory handle, avoiding the earlier check-then-open symlink race; it fails closed on unsupported systems. This is still not a complete OS sandbox or a workspace allowlist, so do not expose sensitive workspaces to an untrusted model provider. Tool output is untrusted input. The offline demo provider remains simulated and may not invoke tools.
+Choose the root deliberately. The tool can list one directory at a time or read a UTF-8 text file up to 64 KiB. It hides dotfiles and common secret-like filenames, refuses symlink paths, and never writes or executes files. On operating systems that support directory-relative opens and `O_NOFOLLOW`, it pins the workspace root and opens each path component relative to a directory handle; unsupported systems fail closed when workspace access is explicitly enabled. To reduce exposure further, repeat `--workspace-allow` with relative path prefixes such as `src` or `README.md`; only those prefixes and their descendants can be inspected. An empty explicit allowlist denies all paths. Omitting the allowlist permits all otherwise-eligible paths under the configured root. This is not a complete OS sandbox or a per-task allowlist, so do not expose sensitive workspaces to an untrusted model provider. Tool output is untrusted input. The offline demo provider remains simulated and may not invoke tools.
+
+Example restricted session:
+
+```bash
+python -m interfaces.cli.main --config config/demo.models.json --allow-workspace-read --workspace-root . --workspace-allow src --workspace-allow README.md
+```
 
 ## Model configuration and secrets
 
@@ -83,7 +89,7 @@ The core application uses the Python standard library, with one explicit runtime
 
 ## Project specifications
 
-- [Product Requirements Document](docs/PRD.md) — version 1.24; implementation status snapshot dated 17 October 2026.
+- [Product Requirements Document](docs/PRD.md) — version 1.25; implementation status snapshot dated 17 October 2026.
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 

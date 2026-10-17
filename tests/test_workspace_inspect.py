@@ -112,6 +112,33 @@ class WorkspaceInspectToolTests(unittest.TestCase):
         self.assertFalse(result.success)
 
 
+    def test_operator_allowlist_limits_reads_and_directory_listing(self):
+        source = self.root / "src"
+        source.mkdir()
+        (source / "notes.txt").write_text("allowed note", encoding="utf-8")
+        (self.root / "README.md").write_text("not allowed", encoding="utf-8")
+        scoped = WorkspaceInspectTool(self.root, allowed_paths=["src"])
+        try:
+            self.assertTrue(scoped.execute(operation="read", path="src/notes.txt").success)
+            self.assertFalse(scoped.execute(operation="read", path="README.md").success)
+            self.assertFalse(scoped.execute(operation="list", path=".").success)
+            self.assertTrue(scoped.execute(operation="list", path="src").success)
+        finally:
+            scoped.close()
+
+    def test_empty_allowlist_denies_every_path(self):
+        (self.root / "notes.txt").write_text("content", encoding="utf-8")
+        scoped = WorkspaceInspectTool(self.root, allowed_paths=[])
+        try:
+            self.assertFalse(scoped.execute(operation="read", path="notes.txt").success)
+            self.assertFalse(scoped.execute(operation="list", path=".").success)
+        finally:
+            scoped.close()
+
+    def test_allowlist_rejects_traversal(self):
+        with self.assertRaises(ValueError):
+            WorkspaceInspectTool(self.root, allowed_paths=["../outside"])
+
     def test_denies_binary_and_oversized_files(self):
         (self.root / "binary.bin").write_bytes(b"hello\x00world")
         (self.root / "large.txt").write_bytes(b"x" * (64 * 1024 + 1))

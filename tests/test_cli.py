@@ -191,6 +191,13 @@ class CliTests(unittest.TestCase):
                 "--workspace-root", ".",
             ])
 
+    def test_workspace_allowlist_requires_explicit_read_permission_flag(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--workspace-allow", "src",
+            ])
+
     def test_workspace_read_is_explicit_and_root_is_passed_to_registry(self):
         with tempfile.TemporaryDirectory() as workspace:
             with patch("interfaces.cli.main.Omnitrix") as omnitrix_class:
@@ -200,6 +207,8 @@ class CliTests(unittest.TestCase):
                         "--config", "config/demo.models.json",
                         "--allow-workspace-read",
                         "--workspace-root", workspace,
+                        "--workspace-allow", "src",
+                        "--workspace-allow", "README.md",
                     ])
 
             kwargs = omnitrix_class.from_config.call_args.kwargs
@@ -207,6 +216,11 @@ class CliTests(unittest.TestCase):
             tool = kwargs["tool_registry"].get("workspace.inspect")
             self.assertEqual(tool.capabilities, frozenset({"workspace.read"}))
             self.assertEqual(tool._root, Path(workspace).resolve())
+            self.assertEqual(
+                tool._allowed_path_prefixes,
+                frozenset({("src",), ("README.md",)}),
+            )
+            tool.close()
             run_cli_mock.assert_called_once()
 
     def test_workspace_read_flag_is_rejected_for_recovery_inspection(self):
