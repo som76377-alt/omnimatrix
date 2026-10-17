@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.24 — Race-resistant workspace file opening  
+**Version:** 1.25 — Operator-configurable workspace path allowlist  
 **Research / snapshot date:** 15 October 2026  
-**Implementation status snapshot:** 17 October 2026; PRs #34–#37 are merged into `main`. Workspace inspection is opt-in and read-only, and now uses pinned directory handles plus no-follow opens on supported systems; unsupported systems fail closed. CI evidence must match the latest branch head  
+**Implementation status snapshot:** 17 October 2026; PRs #34–#38 are merged into `main`. Workspace inspection is opt-in, read-only, and uses pinned directory handles plus no-follow opens on supported systems. An optional operator-configured relative-path allowlist narrows what the model can inspect; it is not yet a per-task policy. CI evidence must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
