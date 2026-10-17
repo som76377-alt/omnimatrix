@@ -77,7 +77,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn('caches.match(request)', self.worker)
         self.assertIn('url.pathname.endsWith("/status.json")', self.worker)
         self.assertIn("registration.update()", self.js)
-        self.assertIn("network-first", self.html.lower())
+        self.assertLess(self.worker.index("fetch(request)"), self.worker.index(".catch(async () =>"))
 
     def test_styles_include_mobile_layout_and_reduced_motion(self):
         self.assertIn("@media(max-width:600px)", self.css)
