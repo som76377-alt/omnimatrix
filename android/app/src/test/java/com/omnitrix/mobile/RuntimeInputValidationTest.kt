@@ -31,10 +31,20 @@ class RuntimeInputValidationTest {
     }
 
     @Test
-    fun validatesTokenAndTrimsWhitespace() {
-        assertEquals("long-token-value-1234567", RuntimeInputValidation.validateRuntimeToken(" long-token-value-1234567 "))
+    fun validatesTokenAndRemovesClipboardWhitespaceIncludingNewlines() {
+        assertEquals(
+            "long-token-value-1234567",
+            RuntimeInputValidation.validateRuntimeToken("  long-token-\nvalue-1234567\n")
+        )
         assertThrows(IllegalArgumentException::class.java) {
             RuntimeInputValidation.validateRuntimeToken("short")
+        }
+    }
+
+    @Test
+    fun rejectsCharactersOutsideUrlSafeTokenAlphabet() {
+        assertThrows(IllegalArgumentException::class.java) {
+            RuntimeInputValidation.validateRuntimeToken("long-token-value-1234567!")
         }
     }
 }
