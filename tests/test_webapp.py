@@ -80,6 +80,23 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn('apiRequest("/workspace/list?path="', self.js)
         self.assertIn('apiRequest("/tests/run"', self.js)
 
+    def test_chat_has_sanitized_markdown_math_code_and_diagram_rendering(self):
+        self.assertIn("marked@18.1.1", self.html)
+        self.assertIn("dompurify@3.4.16", self.html)
+        self.assertIn("katex@0.18.7", self.html)
+        self.assertIn("highlight.js@11.12.0", self.html)
+        self.assertIn("window.DOMPurify.sanitize(parsed", self.js)
+        self.assertLess(self.js.index("window.DOMPurify.sanitize(parsed"), self.js.index("target.innerHTML = window.DOMPurify.sanitize(parsed"))
+        self.assertIn("renderMathInElement(target", self.js)
+        self.assertIn('left: "$", right: "$", display: true', self.js)
+        self.assertIn("highlightElement(code)", self.js)
+        self.assertIn("renderMermaidBlocks(target)", self.js)
+        self.assertIn('securityLevel: "strict"', self.js)
+        self.assertIn('const bubble = node("div", "message-bubble");', self.js)
+        self.assertIn("renderRichContent(bubble, content)", self.js)
+        self.assertIn(".message-bubble .katex-display", self.css)
+        self.assertIn(".message-bubble table", self.css)
+
     def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
         self.assertIn("The static GitHub Pages version cannot execute Python itself.", self.html)
         self.assertIn("READ ONLY EXPLORER", self.html)
