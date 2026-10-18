@@ -4,7 +4,7 @@
 
 ## Model output guidance
 
-User-facing chat requests receive the versioned `OMNI-RENDER-1.0` formatting contract from `core/policy/response_formatting.py`. It tells the model when and how to use supported TeX, chemistry, Mermaid diagrams, the data-only `chart` block, and semantic callouts. It is a prompt contract, not a guarantee that a probabilistic model will obey every instruction.
+User-facing chat requests receive the versioned `OMNI-RENDER-1.1` formatting contract from `core/policy/response_formatting.py`. It tells the model when and how to use supported TeX, chemistry, Mermaid diagrams, the data-only `chart` block, and semantic callouts. It is a prompt contract, not a guarantee that a probabilistic model will obey every instruction.
 
 The task planner's strict JSON-only prompt deliberately does **not** receive this user-facing formatting contract, so machine-readable plans are not contaminated with presentation instructions.
 ## Browser Studio
@@ -45,6 +45,21 @@ A chart is opt-in and data-only: put JSON in a `chart` fenced block. It renders 
 ```
 
 Multiple line/bar series use `"series": [{"name":"A","data":[{"x":0,"y":1}]}, ...]`. Pie charts use `"data": [{"label":"A","value":3}, ...]`. The renderer accepts only explicit local data and known chart types.
+### Display math blocks and media previews
+
+Browser Studio recognizes fenced math, latex, tex, katex, and equation blocks as display math. It also attempts top-level KaTeX environments such as equation, align, gather, alignat, and CD when they occur in normal text. Unsupported or malformed input is preserved as source instead of breaking the rest of the message.
+
+Direct media previews can use a fenced audio, video, or media JSON block. The audio and video fence names imply the type; a media fence requires a type field:
+
+```media
+{
+  "type": "audio",
+  "title": "Audio preview",
+  "src": "https://example.org/audio.mp3"
+}
+```
+
+Only direct HTTPS URLs without embedded credentials are accepted. Players have user-controlled playback, never autoplay, use preload=none, suppress referrer transmission, include a source link, and surface playback failures. URLs must point to direct browser-compatible media files; watch pages and iframe embeds are not supported. These blocks are currently browser-only; Android preserves the source text.
 ## Native Android
 
 The native renderer uses Markwon with tables, strikethrough, task-list syntax, HTML formatting and JLatexMath. Standard `\(...\)` and `\[...\]` math delimiters are normalized into syntax supported by the installed LaTeX extension, while fenced/inline code is protected. Markdown links use Android's link movement method.
