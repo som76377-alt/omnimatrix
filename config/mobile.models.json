@@ -17,6 +17,30 @@
         "cost_class": "user_provided_free_quota",
         "estimated_cost_usd": 0
       }
+    },
+    {
+      "name": "reasoning-nemotron-super-free",
+      "provider": "openrouter",
+      "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 262144,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY",
+        "max_output_tokens": 8192,
+        "timeout_seconds": 60,
+        "candidate_ids": [
+          "nvidia/nemotron-3-super-120b-a12b:free"
+        ],
+        "data_policy": "no_confidential_or_personal_data",
+        "profile_note": "Role-preferred zero-price reasoning candidate. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free route availability/terms may change; do not send confidential, personal, or sensitive content."
+      }
     }
   ]
 }
