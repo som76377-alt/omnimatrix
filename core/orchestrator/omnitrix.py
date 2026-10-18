@@ -1062,6 +1062,24 @@ class Omnitrix:
             return original_answer, "revision_rejected"
         return corrected, "revised"
 
+    @staticmethod
+    def _bounded_agent_context(
+        messages: tuple[ModelMessage, ...],
+    ) -> tuple[ModelMessage, ...]:
+        """Keep intent preflight bounded and omit tool transcripts."""
+        selected: list[ModelMessage] = []
+        remaining = 24_000
+        for message in reversed(messages[-8:]):
+            if message.role not in {MessageRole.USER, MessageRole.ASSISTANT}:
+                continue
+            if not message.content.strip() or remaining <= 0:
+                continue
+            content = message.content[: min(6_000, remaining)]
+            selected.append(ModelMessage(role=message.role, content=content))
+            remaining -= len(content)
+        selected.reverse()
+        return tuple(selected)
+
     def _run_agent_stage(
         self,
         *,
@@ -1195,7 +1213,7 @@ class Omnitrix:
                 )
                 intent_adapter = self.adapter_registry.get(intent_model.name)
                 # The intent stage sees recent conversation context but cannot call tools.
-                preflight_messages = tuple(messages[-8:])
+                preflight_messages = self._bounded_agent_context(messages)
                 if not preflight_messages:
                     preflight_messages = (
                         ModelMessage(role=MessageRole.USER, content=task.objective),
