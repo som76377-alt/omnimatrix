@@ -1,0 +1,97 @@
+{
+  "models": [
+    {
+      "name": "omnitrix-primary",
+      "provider": "google",
+      "model_id": "gemini-3.8-flash",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "browser",
+        "testing"
+      ],
+      "context_window": 1048576,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "user_provided_free_quota",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "GEMINI_API_KEY",
+        "profile_note": "Existing baseline. Usage is still subject to Google's current quota, rate limits, and data terms."
+      }
+    },
+    {
+      "name": "nemotron-super-free",
+      "provider": "openrouter",
+      "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 262144,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY",
+        "max_output_tokens": 8192,
+        "timeout_seconds": 60,
+        "candidate_ids": [
+          "nvidia/nemotron-3-super-120b-a12b:free"
+        ],
+        "data_policy": "no_confidential_or_personal_data",
+        "profile_note": "OpenRouter free endpoint. Confirm current provider route, terms, limits, and availability before use."
+      }
+    },
+    {
+      "name": "cohere-north-mini-code-free",
+      "provider": "openrouter",
+      "model_id": "cohere/north-mini-code:free",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 256000,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY",
+        "max_output_tokens": 8192,
+        "timeout_seconds": 60,
+        "candidate_ids": [
+          "cohere/north-mini-code:free"
+        ],
+        "data_policy": "review_provider_terms",
+        "profile_note": "Free coding-focused candidate. Benchmark repository tasks before relying on it."
+      }
+    },
+    {
+      "name": "nemotron-ultra-free-experimental",
+      "provider": "openrouter",
+      "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 1048576,
+      "enabled": false,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY",
+        "max_output_tokens": 8192,
+        "timeout_seconds": 60,
+        "candidate_ids": [
+          "nvidia/nemotron-3-ultra-550b-a55b:free"
+        ],
+        "data_policy": "no_confidential_or_personal_data",
+        "profile_note": "Experimental and disabled by default due to uneven observed endpoint availability. Enable only after testing."
+      }
+    }
+  ]
+}
