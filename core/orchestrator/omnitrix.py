@@ -871,6 +871,7 @@ class Omnitrix:
             "provider": configured_model.provider,
             "configured_model": configured_model.model_id or configured_model.name,
             "configured_name": configured_model.name,
+            "reasoning_effort_requested": configured_model.metadata.get("reasoning_effort"),
             "identity_source": "configured_id_pending_provider_response",
         }
 
@@ -896,6 +897,7 @@ class Omnitrix:
             "model": response.model,
             "configured_model": configured_model.model_id or configured_model.name,
             "configured_name": configured_model.name,
+            "reasoning_effort_requested": configured_model.metadata.get("reasoning_effort"),
             "identity_source": getattr(response, "model_identity_source", "adapter_metadata"),
             "latency_seconds": round(max(0.0, duration_seconds), 3),
         }
@@ -907,6 +909,7 @@ class Omnitrix:
             "provider": response.provider,
             "model": response.model,
             "configured_model": configured_model.model_id or configured_model.name,
+            "reasoning_effort_requested": configured_model.metadata.get("reasoning_effort"),
             "identity_source": getattr(response, "model_identity_source", "adapter_metadata"),
         }
 
