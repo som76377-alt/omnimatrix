@@ -135,6 +135,21 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertIn("not enabled", body["error"].lower())
 
+    def test_public_mobile_chat_rate_limit_is_returned_as_http_429(self):
+        from unittest.mock import patch
+
+        self.runtime.public_chat_enabled = True
+        self.runtime.public_chat_per_minute_limit = 0
+        with patch.object(self.runtime, "mobile_health", return_value={"chat_available": True}):
+            status, body = self.request(
+                "/api/mobile/chat",
+                method="POST",
+                body={"session_id": "test-session-12345678", "message": "Hello"},
+                authorized=False,
+            )
+        self.assertEqual(status, 429)
+        self.assertEqual(body["code"], "rate_limited")
+
     def test_public_mobile_chat_rate_limit_is_enforced(self):
         from unittest.mock import patch
 
