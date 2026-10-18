@@ -1483,45 +1483,188 @@ private fun ChatScreen(
 
 @Composable
 private fun RepoScreen(
-    connected: Boolean, folder: String, entries: List<RepoEntry>, selected: RepoEntry?, draft: String, original: String,
-    busy: Boolean, message: String, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (RepoEntry) -> Unit,
-    onDraft: (String) -> Unit, onCommit: () -> Unit, onSignIn: () -> Unit
+    connected: Boolean,
+    accountName: String,
+    repositories: List<GitHubRepository>,
+    selectedRepository: GitHubRepository?,
+    folder: String,
+    entries: List<RepoEntry>,
+    selected: RepoEntry?,
+    draft: String,
+    original: String,
+    busy: Boolean,
+    message: String,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpen: (RepoEntry) -> Unit,
+    onDraft: (String) -> Unit,
+    onCommit: () -> Unit,
+    onSignIn: () -> Unit,
+    onSelectRepository: (GitHubRepository?) -> Unit,
+    onNavigate: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Repository", if (selected != null) selected.path else "som76377-alt/omnimatrix")
+        AppHeader(
+            "Repository",
+            if (selectedRepository == null) "Public repositories · @$accountName" else selectedRepository.fullName
+        )
         when {
+            selectedRepository == null -> {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Repositories", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    QuietButton("REFRESH", onRefresh)
+                }
+                if (message.isNotBlank()) {
+                    Text(
+                        message,
+                        color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp)
+                    )
+                }
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(bottom = 18.dp)
+                ) {
+                    if (busy) item { Text("Loading repositories…", color = Green, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
+                    items(repositories, key = { it.fullName }) { repository ->
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .clickable(enabled = !busy) { onSelectRepository(repository) }
+                                .padding(horizontal = 8.dp, vertical = 13.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(repository.name, color = White, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                if (repository.isPrivate) Text("PRIVATE", color = Grey, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(repository.fullName, color = Green, fontSize = 12.sp, lineHeight = 17.sp)
+                            if (repository.description.isNotBlank()) {
+                                Text(repository.description, color = Grey, fontSize = 13.sp, lineHeight = 18.sp)
+                            }
+                            Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(1.dp).background(SurfaceRaised))
+                        }
+                    }
+                    if (repositories.isEmpty() && !busy && message.isBlank()) {
+                        item { Text("No public repositories found.", color = Grey, fontSize = 14.sp, modifier = Modifier.padding(12.dp)) }
+                    }
+                }
+            }
             selected != null -> {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    QuietButton("BACK") { onBack() }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    QuietButton("BACK TO FOLDER", onBack)
                     Spacer(Modifier.weight(1f))
-                    if (draft != original) Text("UNSAVED", color = Green, fontSize = 13.sp)
+                    if (draft != original) Text("UNSAVED", color = Green, fontSize = 12.sp)
+                }
+                if (message.isNotBlank()) {
+                    Text(message, color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp))
                 }
                 TerminalField(
-                    value = draft, onValueChange = onDraft, placeholder = "",
+                    value = draft,
+                    onValueChange = onDraft,
+                    placeholder = "",
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp).background(Surface, RoundedCornerShape(2.dp)),
-                    singleLine = false, enabled = !busy && connected, large = false
+                    singleLine = false,
+                    enabled = !busy && connected && selectedRepository.fullName == REPOSITORY,
+                    large = false
                 )
-                if (connected) {
-                    PrimaryButton(if (busy) "SAVING…" else "COMMIT TO MAIN", onCommit, enabled = !busy && draft != original, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
-                } else {
-                    QuietButton("SIGN IN TO EDIT", onSignIn)
+                when {
+                    selectedRepository.fullName != REPOSITORY -> {
+                        Text(
+                            "Read-only here. Direct commits are restricted to the Omnitrix repository.",
+                            color = Grey, fontSize = 12.sp, lineHeight = 17.sp,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                    connected -> {
+                        PrimaryButton(
+                            if (busy) "SAVING…" else "COMMIT TO MAIN",
+                            onCommit,
+                            enabled = !busy && draft != original,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                    else -> QuietButton("SIGN IN TO EDIT", onSignIn)
                 }
             }
             else -> {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (folder.isBlank()) "/ main" else "/ main / " + folder, color = Grey, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    QuietButton("REFRESH", onRefresh)
-                    if (folder.isNotBlank()) QuietButton("UP", onBack)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "ALL REPOS",
+                        color = Green,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onSelectRepository(null) }.padding(vertical = 8.dp)
+                    )
+                    Text("  /  ", color = Grey, fontSize = 12.sp)
+                    Text(
+                        selectedRepository.name,
+                        color = if (folder.isBlank()) White else Green,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onNavigate("") }.padding(vertical = 8.dp)
+                    )
+                    var accumulated = ""
+                    folder.split("/").filter { it.isNotBlank() }.forEach { segment ->
+                        accumulated = if (accumulated.isBlank()) segment else accumulated + "/" + segment
+                        Text("  /  ", color = Grey, fontSize = 12.sp)
+                        val destination = accumulated
+                        Text(
+                            segment,
+                            color = if (destination == folder) White else Green,
+                            fontSize = 12.sp,
+                            modifier = Modifier.clickable { onNavigate(destination) }.padding(vertical = 8.dp)
+                        )
+                    }
                 }
-                if (message.isNotBlank()) Text(message, color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                    if (busy) item { Text("Loading…", color = Green, fontSize = 15.sp, modifier = Modifier.padding(14.dp)) }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 14.dp, top = 2.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(if (busy) "Loading…" else if (folder.isBlank()) "Root folder" else "Folder contents", color = Grey, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    if (folder.isNotBlank()) QuietButton("UP", onBack)
+                    QuietButton("REFRESH", onRefresh)
+                }
+                if (message.isNotBlank()) {
+                    Text(
+                        message,
+                        color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp)
+                    )
+                }
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                    contentPadding = PaddingValues(bottom = 18.dp)
+                ) {
                     items(entries, key = { it.path }) { entry ->
                         Column(
-                            Modifier.fillMaxWidth().clickable(enabled = !busy) { onOpen(entry) }.padding(horizontal = 8.dp, vertical = 14.dp)
+                            Modifier.fillMaxWidth()
+                                .clickable(enabled = !busy) { onOpen(entry) }
+                                .padding(horizontal = 8.dp, vertical = 13.dp)
                         ) {
-                            Text(entry.name + if (entry.type == "dir") "/" else "", color = if (entry.type == "dir") Green else White, fontSize = 16.sp, lineHeight = 22.sp)
+                            Text(
+                                entry.name + if (entry.type == "dir") "/" else "",
+                                color = if (entry.type == "dir") Green else White,
+                                fontSize = 15.sp,
+                                lineHeight = 21.sp
+                            )
+                            Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(1.dp).background(SurfaceRaised))
                         }
+                    }
+                    if (entries.isEmpty() && !busy && message.isBlank()) {
+                        item { Text("No visible files in this folder.", color = Grey, fontSize = 13.sp, modifier = Modifier.padding(12.dp)) }
                     }
                 }
             }
