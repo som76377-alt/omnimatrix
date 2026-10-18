@@ -70,7 +70,12 @@ jobs:
           python -m unittest discover -s tests -v
 
       - name: Compile Kotlin, run JVM tests, and assemble APK
-        run: gradle -p android testDebugUnitTest assembleDebug --stacktrace
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle -p android testDebugUnitTest assembleDebug --stacktrace -PomnitrixVersionCode=${GITHUB_RUN_NUMBER}
 
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v6
@@ -83,22 +88,27 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
           cp android/app/build/outputs/apk/debug/app-debug.apk Omnitrix.apk
           sha256sum Omnitrix.apk > Omnitrix.apk.sha256
           tag="omnitrix-android-build-${GITHUB_RUN_NUMBER}-attempt-${GITHUB_RUN_ATTEMPT}"
-          cat > RELEASE_NOTES.md <<'NOTES'
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            signing_note="Persistent Android signing is configured; in-app update checking and verified APK downloads are enabled."
+          else
+            signing_note="Persistent Android signing is not configured. In-app updates are disabled until the four ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD repository Actions secrets are set. Never commit the keystore to this public repository."
+          fi
+          cat > RELEASE_NOTES.md <<NOTES
           ## Omnitrix Android alpha
 
-          This is an installable **debug APK** built from the source commit attached to this release.
-          It is not Play-Store-signed. The app is configured to discover the hosted Omnitrix mobile
-          API at https://omnitrix-studio.onrender.com. The public chat route is intentionally narrow;
-          workspace and other privileged runtime operations still require authorization.
+          This is an installable debug APK built from the source commit attached to this release.
+          It is not Play-Store-signed. Chat uses the hosted Omnitrix mobile API at https://omnitrix-studio.onrender.com.
 
-          The hosted backend uses the configured Google model provider and a key stored only in the
-          server environment. Never place provider keys in the APK or commit them to the repository.
-          Render's free service may sleep when idle. See the repository README for setup and security notes.
+          $signing_note
+
+          The hosted model key stays on the server. Never place provider keys in the APK or commit them to the repository.
+          Render's free service may sleep when idle. The native Android installer still requires user confirmation when an update is installed.
           NOTES
           gh release create "$tag" Omnitrix.apk Omnitrix.apk.sha256 \
             --title "Omnitrix Android build ${GITHUB_RUN_NUMBER}" \
