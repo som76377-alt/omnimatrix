@@ -244,6 +244,8 @@ class StudioServerTests(unittest.TestCase):
             },
         )
         self.assertIn("openrouter_key_detected", body)
+        self.assertIn("active_execution", body)
+        self.assertIsNone(body["active_execution"])
         encoded = json.dumps(body)
         self.assertNotIn(self.token, encoded)
         self.assertNotIn(str(self.workspace), encoded)
@@ -259,6 +261,13 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("OFFLINE DEMO", body["reply"])
         self.assertEqual(body["provider_mode"], "offline-demo")
         self.assertEqual(body["message_count"], 2)
+        trace = body["execution_trace"]
+        self.assertIsInstance(trace, dict)
+        self.assertEqual(len(trace["activity"]), 1)
+        activity = trace["activity"][0]
+        self.assertEqual(activity["provider"], "demo")
+        self.assertEqual(activity["stage"], "answer_generation")
+        self.assertEqual(activity["identity_source"], "adapter_metadata")
 
     def test_workspace_browser_fails_closed_without_explicit_opt_in(self):
         status, body = self.request("/api/workspace/read?path=notes.txt")
