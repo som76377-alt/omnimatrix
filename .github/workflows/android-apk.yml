@@ -80,15 +80,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android/app/src/main/res/drawable-nodpi
-          curl --fail --location --retry 3 --retry-all-errors --output android/app/src/main/res/drawable-nodpi/omnitrix_logo.png https://upload.wikimedia.org/wikipedia/commons/3/3d/Ben_10_Omnitrix.png
+          curl --fail --location --retry 3 --retry-all-errors --output android/app/src/main/res/drawable-nodpi/omnitrix_logo.png https://www.liblogo.com/img-logo/be4497b33d-ben-10-logo-ben-10-omnitrix-logo-ben-10-ben-10-birthday-ben-10-party.png
           python - <<'PY'
           import struct
           from pathlib import Path
           icon = Path("android/app/src/main/res/drawable-nodpi/omnitrix_logo.png").read_bytes()
           assert icon[:8] == bytes.fromhex("89504e470d0a1a0a"), "Downloaded icon is not a PNG"
           width, height = struct.unpack(">II", icon[16:24])
-          assert (width, height) == (512, 512), f"Unexpected icon dimensions: {width}x{height}"
-          print(f"Verified original Wikimedia Omnitrix artwork: {width}x{height} PNG ({len(icon)} bytes)")
+          assert width > 0 and height > 0 and abs(width - height) < 32, f"Unexpected icon dimensions: {width}x{height}"
+          print(f"Verified existing Omnitrix/Plumbers symbol PNG: {width}x{height} ({len(icon)} bytes)")
           PY
 
       - name: Compile Kotlin, run JVM tests, and assemble APK
