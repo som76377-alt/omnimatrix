@@ -7,6 +7,9 @@ on:
       - "interfaces/web/server.py"
       - ".devcontainer/**"
       - "tests/**"
+      - "config/mobile.models.json"
+      - "config/mobile-backend.json"
+      - "render.yaml"
       - ".github/workflows/android-apk.yml"
   push:
     branches: [main]
@@ -15,6 +18,9 @@ on:
       - "interfaces/web/server.py"
       - ".devcontainer/**"
       - "tests/**"
+      - "config/mobile.models.json"
+      - "config/mobile-backend.json"
+      - "render.yaml"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
@@ -50,6 +56,12 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.14"
+
+      - name: Validate hosted mobile model and deployment configuration
+        run: |
+          python -m json.tool config/mobile.models.json > /dev/null
+          python -m json.tool config/mobile-backend.json > /dev/null
+          ruby -e 'require "yaml"; YAML.safe_load_file("render.yaml", aliases: true); puts "Render Blueprint YAML is valid"'
 
       - name: Test Python backend
         run: |
