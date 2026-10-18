@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "omnitrix-primary",
+      "provider": "google",
+      "model_id": "gemini-3.8-flash",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "browser",
+        "testing"
+      ],
+      "context_window": 32000,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "user_provided_free_quota",
+        "estimated_cost_usd": 0
+      }
+    }
+  ]
+}
