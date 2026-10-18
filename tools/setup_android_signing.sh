@@ -157,8 +157,24 @@ else
     echo "Creating the Android PKCS#12 signing keystore with Python (no Java runtime required)..."
     CRYPTO_DIR="$HOME/.local/opt/omnitrix-python-packages"
     if ! PYTHONPATH="$CRYPTO_DIR" python3 -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
+      echo "Python pip is missing; bootstrapping it locally without sudo..."
+      if python3 -m ensurepip --user >/dev/null 2>&1; then
+        export PATH="$(python3 -m site --user-base 2>/dev/null)/bin:$PATH"
+      fi
+      if ! python3 -m pip --version >/dev/null 2>&1; then
+        PIP_BOOTSTRAP="$(mktemp)"
+        trap 'rm -f "$PIP_BOOTSTRAP"' EXIT
+        curl -fsSL --retry 3 https://bootstrap.pypa.io/get-pip.py -o "$PIP_BOOTSTRAP" || {
+          echo "Could not download the official pip bootstrap. No signing key was generated."
+          exit 1
+        }
+        python3 "$PIP_BOOTSTRAP" --user --disable-pip-version-check
+        rm -f "$PIP_BOOTSTRAP"
+        trap - EXIT
+        export PATH="$(python3 -m site --user-base 2>/dev/null)/bin:$PATH"
+      fi
       python3 -m pip --version >/dev/null 2>&1 || {
-        echo "Python pip is unavailable; no signing key was generated."
+        echo "Could not bootstrap pip. No signing key was generated."
         exit 1
       }
       mkdir -p "$CRYPTO_DIR"
