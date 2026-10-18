@@ -16,20 +16,20 @@ _SUBJECT_TERMS = re.compile(
     re.IGNORECASE,
 )
 _RESEARCH_TERMS = re.compile(
-    r"\\b(research|look up|search the web|browse|find sources|find references|"
+    r"\b(research|look up|search the web|browse|find sources|find references|"
     r"cite sources|literature review|latest studies|scientific papers|"
-    r"peer-reviewed|official documentation|current documentation|fact-check)\\b",
+    r"peer-reviewed|official documentation|current documentation|fact-check)\b",
     re.IGNORECASE,
 )
 _COMPUTATION_TERMS = re.compile(
-    r"\\b(arithmetic|calculator|unit conversion|evaluate (?:the )?(?:expression|formula)|"
+    r"\b(arithmetic|calculator|unit conversion|evaluate (?:the )?(?:expression|formula)|"
     r"simplify (?:the )?expression|compute (?:the )?(?:result|value|product|sum)|"
-    r"calculate (?:the )?(?:product|sum|quotient|remainder|average|mean|percentage|factorial))\\b",
+    r"calculate (?:the )?(?:product|sum|quotient|remainder|average|mean|percentage|factorial))\b",
     re.IGNORECASE,
 )
 _NUMERIC_EXPRESSION_REQUEST = re.compile(
-    r"\\b(?:calculate|compute|evaluate)\\s+(?:the\\s+)?"
-    r"(?:value\\s+of\\s+)?[-+()]?\\d[\\d\\s.+*/()^%-]*(?=$|[?.!,])",
+    r"\b(?:calculate|compute|evaluate)\s+(?:the\s+)?"
+    r"(?:value\s+of\s+)?[-+()]?\d[\d\s.+*/()^%-]*(?=$|[?.!,])",
     re.IGNORECASE,
 )
 _CODING_TERMS = re.compile(
@@ -165,11 +165,6 @@ class AgentRouter:
 
         intent = self.registry.get("intent_engineer") if needs_preflight else None
         critic = self.registry.get("critic") if needs_critique else None
-
-        support: list[AgentDefinition] = []
-        # Combined work can benefit from a coding lens and a scientific lens.
-        if subject and coding:
-            support.append(self.registry.get("coding"))
 
         return AgentPlan(
             primary=primary,
