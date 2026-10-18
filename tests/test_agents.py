@@ -70,6 +70,14 @@ class AgentRouterTests(unittest.TestCase):
         self.assertEqual(plan.primary.role, "reasoning")
         self.assertTrue(plan.needs_intent_preflight)
 
+    def test_short_action_request_gets_intent_engineering(self):
+        plan = self.router.route(
+            "Build a simple calculator app.",
+            frozenset({"reasoning", "coding"}),
+        )
+        self.assertEqual(plan.primary.role, "coding")
+        self.assertTrue(plan.needs_intent_preflight)
+
     def test_standard_fact_does_not_trigger_extra_critic(self):
         plan = self.router.route(
             "What is the boiling point of water?",
