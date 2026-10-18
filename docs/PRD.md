@@ -2,7 +2,7 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.30 — Minimal native client and public repository browsing  
+**Version:** 1.31 — Truthfulness and capability calibration contract  
 **Research / snapshot date:** 18 October 2026  
 **Implementation status snapshot:** 18 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
@@ -37,7 +37,7 @@ This blueprint distinguishes decisions supported by the available conversation h
 
 Before modifying Omnitrix, an AI coding assistant must:
 
-1. Read this PRD’s current approved version, `BLUEPRINT.md`/architecture decisions if present, the repository README, relevant source modules, current Git status, recent commits and open PRs.
+1. Read this PRD’s current approved version, `BLUEPRINT.md`/architecture decisions if present, the repository README, `docs/TRUTHFULNESS_AND_CALIBRATION.md`, relevant source modules, current Git status, recent commits and open PRs.
 2. Check whether the capability already exists in code, in the tool registry, in a provider SDK, as a maintained library, or through an existing protocol integration. Search before building.
 3. Write a small change plan stating files/components to touch, invariant to preserve, risk, tests, and rollback route. For material tasks, show the plan and obtain owner approval before mutations.
 4. Make the smallest modular change that solves the accepted requirement. Never replace a subsystem merely because a new framework looks attractive.
@@ -74,7 +74,7 @@ The system should not be designed around a permanent roster of shallow role-base
 ## 2.3 Non-negotiable product principles
 
 - **User intent remains sovereign.** The system proposes and explains; the model does not grant itself permissions.
-- **Truth over performance theatre.** Never claim a command ran, file changed, source was verified, image was rendered, test passed or artifact was delivered without evidence.
+- **Truth over performance theatre and sycophancy.** The versioned runtime contract in `core/policy/truthfulness.py` must be injected into every model request and checked fail-closed before provider execution. Never falsely agree, label a materially wrong answer “close,” reverse a conclusion because the user repeats a claim, invent evidence, or describe an untested capability as reliable. Correct errors plainly, distinguish fact from inference and uncertainty, and report execution status only from observed evidence. See `docs/TRUTHFULNESS_AND_CALIBRATION.md` for adversarial cases and the behavioral release gate. The contract's presence is enforceable in code; obedience by a probabilistic model must be evaluated and must never be described as guaranteed.
 - **Quality floor across all enabled modalities.** A capability used once a month is not allowed to produce knowingly substandard output. Prioritize features by demand and feasibility, not by lowering their quality requirements.
 - **Modular and replaceable.** Models, tools, skills, storage, UI clients and workspace runtimes sit behind typed interfaces and versioned registries.
 - **$0 means a hard default.** No paid API, managed sandbox, cloud GPU, paid account, unexpected token purchase or background deployment unless the owner explicitly switches it on. Free tiers are volatile and must never be treated as guaranteed infrastructure.

@@ -69,6 +69,8 @@ This roadmap distinguishes shipped foundations from target capabilities. A phase
 
 ## Phase 4 — Model routing and evaluations
 
+- [x] Add a versioned truthfulness/capability-calibration contract that is injected into normal task and plan model requests; add a fail-closed runtime presence check and offline tests proving it is re-injected on every chat turn and does not depend on conversation history. This enforces policy presence, not semantic obedience by the model.
+- [ ] Run the adversarial evaluation set in `docs/TRUTHFULNESS_AND_CALIBRATION.md` against every enabled model route and require zero critical failures before a provider/prompt/routing release is accepted.
 - Separate planner, implementer, researcher, and verifier *capabilities* without assuming separate named agents always improve results.
 - Route using task fit, quality evidence, privacy, latency, availability, and an explicit budget.
 - Track provider calls and enforce zero-spend mode in code.

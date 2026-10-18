@@ -33,6 +33,10 @@ from core.orchestrator.planning import (
 )
 from core.orchestrator.analyzer import BasicTaskAnalyzer, TaskAnalyzer
 from core.orchestrator.task import Task, TaskStatus
+from core.policy.truthfulness import (
+    require_truthfulness_contract,
+    with_truthfulness_contract,
+)
 from core.router import ModelRouter, RoutingRequirements
 from core.tools.bootstrap import build_tool_registry
 from core.tools.executor import ToolExecutor
@@ -84,7 +88,7 @@ class Omnitrix:
     and controls access to registered tools.
     """
 
-    DEFAULT_INSTRUCTIONS = (
+    DEFAULT_INSTRUCTIONS = with_truthfulness_contract(
         "You are Omnitrix, an AI assistant and orchestration system. "
         "Help the user accomplish their stated objective accurately. "
         "Be direct, analytical, and honest about uncertainty and limitations. "
@@ -355,7 +359,7 @@ class Omnitrix:
                 ),
             ),
             tools=(),
-            instructions=(
+            instructions=with_truthfulness_contract(
                 "You are the Omnitrix task planner. Propose a clear, "
                 "achievable sequence of tasks for the user's objective. "
                 "Return only a valid JSON object with exactly one key, "
@@ -369,10 +373,15 @@ class Omnitrix:
                 "dependencies, or dependency cycles. Use an empty array "
                 "when a task has no dependencies. Do not include Markdown, "
                 "commentary, or tool calls. The plan is a proposal only; "
-                "no tasks are to be executed."
+                "no tasks are to be executed. "
+                "Do not assume tools, credentials, APIs, files, or environments "
+                "exist unless configured evidence establishes them. If feasibility "
+                "is unknown, include a verification task before dependent work. "
+                "Do not promise the plan will succeed."
             ),
         )
 
+        require_truthfulness_contract(request.instructions)
         guard = BudgetGuard(self.budget_limits)
         self._reserve_model_call(guard, selected_model.name)
         response = adapter.generate(request)
@@ -927,6 +936,8 @@ class Omnitrix:
         tool_iterations = 0
 
         while True:
+            # Fail closed if a future refactor drops the persistent behavioral contract.
+            require_truthfulness_contract(request.instructions)
             self._journal_checkpoint(
                 task,
                 "model_request_started",
