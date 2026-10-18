@@ -13,6 +13,8 @@ _ALLOWED_ROLES = {
     "reasoning",
     "coding",
     "subject_solver",
+    "research",
+    "computation",
     "critic",
 }
 _ALLOWED_STAGES = {"context", "preflight", "review"}
