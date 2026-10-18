@@ -1,7 +1,10 @@
 import unittest
 
 from core.models.providers.bootstrap import build_adapter_registry
+from pathlib import Path
+
 from core.models.providers.gemini import GeminiAdapter
+from core.models.providers.openrouter import OpenRouterAdapter
 from core.models.registry import ModelDefinition, ModelRegistry
 
 
@@ -68,6 +71,20 @@ class BootstrapTests(unittest.TestCase):
 
         self.assertFalse(adapters.has("disabled-gemini"))
         self.assertEqual(len(adapters.list()), 0)
+
+    def test_builds_optional_openrouter_models_from_example_profile(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        registry = __import__(
+            "core.models.loader", fromlist=["ModelConfigLoader"]
+        ).ModelConfigLoader().load(
+            root / "config" / "mobile.models.openrouter-free.example.json"
+        )
+
+        adapters = build_adapter_registry(registry)
+
+        self.assertIsInstance(adapters.get("nemotron-super-free"), OpenRouterAdapter)
+        self.assertIsInstance(adapters.get("cohere-north-mini-code-free"), OpenRouterAdapter)
+        self.assertFalse(adapters.has("nemotron-ultra-free-experimental"))
 
     def test_unsupported_provider_fails_clearly(self) -> None:
         registry = ModelRegistry()
