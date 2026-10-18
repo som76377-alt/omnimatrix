@@ -60,7 +60,11 @@ printf '%s' "$store_password" | gh secret set ANDROID_KEYSTORE_PASSWORD --repo "
 printf '%s' "$KEY_ALIAS" | gh secret set ANDROID_KEY_ALIAS --repo "$REPOSITORY"
 printf '%s' "$store_password" | gh secret set ANDROID_KEY_PASSWORD --repo "$REPOSITORY"
 
+# Start a new build now that the encrypted signing secrets are available.
+gh workflow run android-apk.yml --repo "$REPOSITORY"
+
 echo
 echo "Persistent Omnitrix signing is configured in GitHub Actions."
+echo "A new Android build was dispatched; follow it at https://github.com/$REPOSITORY/actions/workflows/android-apk.yml"
 echo "The private key stays out of the public repository; keep $KEY_DIR private."
-echo "The next successful Android APK build will enable automatic update checks."
+echo "After installing the first permanently signed release once, future updates can be installed in place."
