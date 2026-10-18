@@ -140,6 +140,34 @@ class SpecialistPipelineTests(unittest.TestCase):
 
         self.assertEqual(selected.name, "cohere-north-mini-code-free")
 
+    def test_reasoning_role_prefers_registered_openrouter_model_when_key_is_available(self):
+        config_path = ROOT / "config" / "mobile.models.json"
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+            },
+        ):
+            models = ModelConfigLoader().load(config_path)
+            adapters = build_adapter_registry(models)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=AgentRegistry.load(AGENT_CONFIG),
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+
+            selected = omnitrix._select_agent_model(
+                omnitrix.agent_registry.get("reasoning"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"reasoning"}),
+            )
+
+        self.assertEqual(selected.name, "reasoning-nemotron-super-free")
+        self.assertEqual(selected.provider, "openrouter")
+        self.assertEqual(selected.model_id, "nvidia/nemotron-3-super-120b-a12b:free")
+
     def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
         models = ModelRegistry()
         models.register(ModelDefinition(
