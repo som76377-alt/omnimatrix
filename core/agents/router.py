@@ -135,10 +135,14 @@ class AgentRouter:
         blocks = [base_instructions]
         # The intent-engineer mindset always applies in the main call, even when
         # a separate preflight is skipped to preserve latency and free quota.
-        intent_agent = self.registry.get("intent_engineer")
         blocks.append(
-            "INTENT ENGINEER ROLE (integrated instruction, not a separate model call):\n"
-            + intent_agent.instructions
+            "INTENT-ENGINEERING CHECK (applies to every request):\\n"
+            "Infer the user's practical goal from the words and relevant conversation context. "
+            "Preserve explicit requirements. Separate facts from assumptions, fill ordinary gaps "
+            "conservatively, and ask a question only when a material ambiguity blocks correct "
+            "progress. Do not inflate simple requests into larger projects. If a structured "
+            "intent brief is supplied, validate it against the original request. Do not reveal "
+            "private chain-of-thought; give only useful conclusions, steps, and checks."
         )
         blocks.append(
             f"ACTIVE SPECIALIST: {plan.primary.role}\n"
