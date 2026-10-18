@@ -9,6 +9,10 @@ PASSWORD_FILE="$KEY_DIR/store-password"
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# Codespaces may inject a restricted GITHUB_TOKEN/GH_TOKEN that cannot manage
+# repository Actions secrets. Use the user's stored GitHub CLI login instead.
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN
+
 # Install GitHub CLI into the user's home directory if the Codespace image lacks it.
 # This avoids needing sudo or a preconfigured system package.
 if ! command -v gh >/dev/null 2>&1; then
@@ -137,7 +141,25 @@ if [[ "$ADMIN" != "true" ]]; then
   exit 1
 fi
 
-existing="$(gh secret list --repo "$REPOSITORY" | awk 'NR > 1 { print $1 }')"
+# A restricted integration token often returns HTTP 403 here. If so, replace
+# the active CLI credential with an interactive GitHub device login and retry.
+if ! existing="$(gh secret list --repo "$REPOSITORY" 2>/tmp/omnitrix-gh-secret-error | awk 'NR > 1 { print $1 }')"; then
+  echo "The current GitHub credential cannot access Actions secrets. Re-authenticating with your GitHub account..."
+  cat /tmp/omnitrix-gh-secret-error >&2 || true
+  gh auth logout --hostname github.com >/dev/null 2>&1 || true
+  echo
+  echo "ONE-TIME APPROVAL REQUIRED"
+  echo "Open https://github.com/login/device and enter the code printed by GitHub CLI."
+  echo "Authorize GitHub CLI with your account that has admin access to $REPOSITORY."
+  export GH_BROWSER=echo
+  gh auth login --hostname github.com --git-protocol https --web --scopes repo
+  ADMIN="$(gh api "repos/$REPOSITORY" --jq '.permissions.admin // false')"
+  if [[ "$ADMIN" != "true" ]]; then
+    echo "The signed-in account needs admin permission on $REPOSITORY to configure Actions secrets."
+    exit 1
+  fi
+  existing="$(gh secret list --repo "$REPOSITORY" | awk 'NR > 1 { print $1 }')"
+fi
 for required_secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
   if printf '%s\n' "$existing" | grep -Fxq "$required_secret"; then
     echo "A signing secret ($required_secret) already exists."
