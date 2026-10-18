@@ -101,6 +101,21 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
+    def test_hosted_mobile_model_profile_uses_current_free_quota_model(self):
+        config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(config["models"]), 1)
+        model = config["models"][0]
+        self.assertEqual(model["provider"], "google")
+        self.assertEqual(model["model_id"], "gemini-3.8-flash")
+        self.assertEqual(model["metadata"]["cost_class"], "user_provided_free_quota")
+        self.assertEqual(model["metadata"]["estimated_cost_usd"], 0)
+
+    def test_mobile_backend_discovery_is_disabled_until_deployed(self):
+        manifest = json.loads((ROOT / "config" / "mobile-backend.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], 1)
+        self.assertFalse(manifest["chat_enabled"])
+        self.assertEqual(manifest["base_url"], "")
+
     def test_public_mobile_health_is_available_without_runtime_token(self):
         status, body = self.request("/api/mobile/health", authorized=False)
         self.assertEqual(status, 200)
