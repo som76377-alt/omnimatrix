@@ -1322,6 +1322,39 @@ private fun AppHeader(title: String, detail: String? = null) {
 
 
 
+internal object MarkwonMathNormalizer {
+    private val fencedCode = Regex("""(?ms)^ {0,3}(`{3,}|~{3,})[^\r\n]*\r?\n[\s\S]*?^ {0,3}\1[ \t]*(?:\r?\n|$)""")
+    private val inlineCode = Regex("""(`+)[^\r\n]*?\1""")
+    private val displayMath = Regex("""\\\[([\s\S]*?)\\\]""")
+    private val inlineMath = Regex("""\\\((.+?)\\\)""")
+
+    fun normalize(source: String): String {
+        val protectedParts = mutableListOf<Pair<String, String>>()
+
+        fun protect(value: String): String {
+            val token = "\uE000OMNITRIX_PROTECTED${protectedParts.size}\uE001"
+            val uniqueToken = token.replace("${protectedParts.size}", protectedParts.size.toString())
+            protectedParts.add(uniqueToken to value)
+            return uniqueToken
+        }
+
+        var result = fencedCode.replace(source) { protect(it.value) }
+        result = inlineCode.replace(result) { protect(it.value) }
+
+        result = displayMath.replace(result) { match ->
+            "\n\n\$\$\n" + match.groupValues[1].trim('\r', '\n') + "\n\$\$\n\n"
+        }
+        result = inlineMath.replace(result) { match ->
+            "\$\$" + match.groupValues[1] + "\$\$"
+        }
+
+        protectedParts.forEach { (token, original) ->
+            result = result.replace(token, original)
+        }
+        return result
+    }
+}
+
 @Composable
 private fun MarkdownMessage(content: String) {
     val context = LocalContext.current
@@ -1359,7 +1392,7 @@ private fun MarkdownMessage(content: String) {
                 movementMethod = LinkMovementMethod.getInstance()
             }
         },
-        update = { textView -> markwon.setMarkdown(textView, content) }
+        update = { textView -> markwon.setMarkdown(textView, MarkwonMathNormalizer.normalize(content)) }
     )
 }
 
