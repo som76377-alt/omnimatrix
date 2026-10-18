@@ -979,25 +979,24 @@ class Omnitrix:
         if not eligible:
             return fallback_model
 
-        preferences = set(agent.preferred_models)
-
-        def preferred(model) -> bool:
+        def preference_rank(model) -> int:
             aliases = model.metadata.get("candidate_ids", [])
             if isinstance(aliases, str):
                 aliases = [aliases]
-            return (
-                model.name in preferences
-                or model.model_id in preferences
-                or (
-                    isinstance(aliases, list)
-                    and any(isinstance(alias, str) and alias in preferences for alias in aliases)
+            model_ids = {model.name}
+            if isinstance(model.model_id, str):
+                model_ids.add(model.model_id)
+            if isinstance(aliases, list):
+                model_ids.update(
+                    alias for alias in aliases if isinstance(alias, str)
                 )
-            )
+            for rank, preference in enumerate(agent.preferred_models):
+                if preference in model_ids:
+                    return rank
+            # Python's stable sort keeps registry order for unpreferred models.
+            return len(agent.preferred_models)
 
-        preferred_candidates = [model for model in eligible if preferred(model)]
-        ordered = preferred_candidates + [
-            model for model in eligible if model not in preferred_candidates
-        ]
+        ordered = sorted(eligible, key=preference_rank)
 
         if prefer_independent_provider:
             independent = [
