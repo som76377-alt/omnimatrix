@@ -155,32 +155,34 @@ else
       -dname "CN=Omnitrix Android, O=Omnitrix, C=IN"
   else
     echo "Creating the Android PKCS#12 signing keystore with Python (no Java runtime required)..."
-    CRYPTO_DIR="$HOME/.local/opt/omnitrix-python-packages"
-    if ! PYTHONPATH="$CRYPTO_DIR" python3 -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
-      echo "Python pip is missing; bootstrapping it locally without sudo..."
-      if python3 -m ensurepip --user >/dev/null 2>&1; then
-        export PATH="$(python3 -m site --user-base 2>/dev/null)/bin:$PATH"
+    CRYPTO_DIR="$KEY_DIR/python-venv"
+    if ! "$CRYPTO_DIR/bin/python" -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
+      echo "Preparing an isolated Python environment for the signing key (no system packages changed)..."
+      if [[ ! -x "$CRYPTO_DIR/bin/python" ]]; then
+        python3 -m venv "$CRYPTO_DIR" 2>/dev/null || {
+          echo "This workspace's Python lacks venv support. Trying the bundled virtual-environment bootstrap..."
+          mkdir -p "$CRYPTO_DIR"
+          python3 -m virtualenv --version >/dev/null 2>&1 || {
+            echo "Could not create an isolated Python environment. No signing key was generated."
+            exit 1
+          }
+          python3 -m virtualenv "$CRYPTO_DIR"
+        }
       fi
-      if ! python3 -m pip --version >/dev/null 2>&1; then
+      if ! "$CRYPTO_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
         PIP_BOOTSTRAP="$(mktemp)"
         trap 'rm -f "$PIP_BOOTSTRAP"' EXIT
         curl -fsSL --retry 3 https://bootstrap.pypa.io/get-pip.py -o "$PIP_BOOTSTRAP" || {
           echo "Could not download the official pip bootstrap. No signing key was generated."
           exit 1
         }
-        python3 "$PIP_BOOTSTRAP" --user --disable-pip-version-check
+        "$CRYPTO_DIR/bin/python" "$PIP_BOOTSTRAP" --disable-pip-version-check
         rm -f "$PIP_BOOTSTRAP"
         trap - EXIT
-        export PATH="$(python3 -m site --user-base 2>/dev/null)/bin:$PATH"
       fi
-      python3 -m pip --version >/dev/null 2>&1 || {
-        echo "Could not bootstrap pip. No signing key was generated."
-        exit 1
-      }
-      mkdir -p "$CRYPTO_DIR"
-      python3 -m pip install --disable-pip-version-check --quiet --target "$CRYPTO_DIR" 'cryptography>=42,<47'
+      "$CRYPTO_DIR/bin/python" -m pip install --disable-pip-version-check --quiet 'cryptography>=42,<47'
     fi
-    PYTHONPATH="$CRYPTO_DIR" python3 - "$KEYSTORE" "$store_password" "$KEY_ALIAS" <<'PY'
+    "$CRYPTO_DIR/bin/python" - "$KEYSTORE" "$store_password" "$KEY_ALIAS" <<'PY'
 import datetime, sys
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
