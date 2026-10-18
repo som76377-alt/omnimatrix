@@ -59,7 +59,7 @@ print(version, asset["browser_download_url"], asset.get("digest") or "-")
   echo "GitHub CLI installed in $HOME/.local/bin/gh"
 fi
 
-for command_name in openssl base64; do
+for command_name in base64 python3; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Required command not found: $command_name"
     exit 1
@@ -115,7 +115,7 @@ if [[ -f "$KEYSTORE" || -f "$PASSWORD_FILE" ]]; then
   fi
   echo "Reusing the existing local Omnitrix signing key."
 else
-  store_password="$(openssl rand -hex 32)"
+  store_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   (umask 077 && printf '%s' "$store_password" > "$PASSWORD_FILE")
   keytool -genkeypair -noprompt \
     -alias "$KEY_ALIAS" \
