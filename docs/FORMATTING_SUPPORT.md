@@ -1,36 +1,36 @@
 # Omnitrix rich-response formatting
 
-**Status:** Implementation is on `fix/universal-rich-formatting-2026-10-18`; it must pass CI and receive visual review before it is considered released.
-
-Formatting belongs in the output renderers, not only in a prompt. Browser Studio and native Android use different rendering engines, so both need separate compatibility tests.
+**Scope:** Browser Studio and native Android have separate renderers. Support is a renderer feature, not just a prompt instruction. This document records the formats that have been implemented and their known boundaries.
 
 ## Browser Studio
 
 Assistant and user messages are parsed as GitHub-Flavored Markdown, sanitized, and then enhanced.
 
-- **Document structure:** headings, paragraphs, line breaks, ordered and unordered lists, task-list text, block quotes, horizontal rules, links, images, and tables.
-- **Inline text:** emphasis, bold, strike-through, inline code, and safely sanitized HTML formatting.
-- **Mathematics:** inline and display TeX via `\\(...\\)`, `\\[...\\]`, `$...$`, and `$$...$$`; common equation environments; fractions, roots, matrices, sums, products, integrals, limits, Greek symbols, subscripts, superscripts, vectors, and derivatives within KaTeX's supported command set.
-- **Physics notation:** common convenience macros `\\grad`, `\\curl`, `\\divergence`, `\\laplacian`, `\\vb`, `\\vu`, `\\dv`, and `\\pdv` are defined for common response conventions.
-- **Chemistry:** KaTeX's `mhchem` extension enables `\\ce{...}` chemical equations/formula notation and `\\pu{...}` units syntax.
-- **Code:** fenced and inline code, syntax highlighting, language labels, and a copy action.
-- **Diagrams:** Mermaid fenced blocks render as SVG with strict security mode. Invalid diagrams remain as readable code.
-- **Responsive layout:** math and tables are styled for message bubbles and narrow screens.
+- **Document structure:** headings, paragraphs, line breaks, ordered/unordered and nested lists, task-list syntax, block quotes, horizontal rules, links, images, tables, and safe inline HTML supported by the sanitizer.
+- **Semantic callouts:** GitHub-style blockquote alerts using `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, or `[!CAUTION]` are converted to color-coded, accessible callouts.
+- **Inline text:** bold, italic, strike-through, inline code, superscript/subscript through supported markup, and readable fallbacks for unsupported HTML/tags.
+- **Mathematics:** inline/display TeX using `\\(...\\)`, `\\[...\\]`, `$...$`, and `$$...$$`; KaTeX auto-render's native equation environments; fractions, roots, matrices, cases, aligned equations, sums, products, integrals, limits, Greek symbols, subscripts, superscripts, vectors, derivatives and common physics macros.
+- **Physics/quantum notation:** built-in helpers include `\\grad`, `\\curl`, `\\divergence`, `\\laplacian`, `\\vb`, `\\vu`, `\\dv`, `\\pdv`, `\\ket`, `\\bra`, `\\braket`, `\\expect`, `\\abs`, `\\norm`, `\\evalat`, and `\\dd`.
+- **Chemistry and quantities:** the pinned KaTeX `mhchem` extension enables `\\ce{...}` chemical formulas/reactions and `\\pu{...}` physical units notation.
+- **Code:** fenced/inline code, syntax highlighting, language labels, and a copy action.
+- **Diagrams:** Mermaid fenced blocks render as SVG using strict security mode. Mermaid's supported diagram grammars include flowcharts, sequence, class/state, entity-relationship, Gantt, mind maps, timelines and other version-supported diagram types. Invalid diagrams remain readable as code.
+- **Charts:** fenced `chart` JSON renders local, data-only SVG bar, line, scatter, and pie charts with axes, legends, point tooltips, title/description, and responsive overflow. It accepts inline values only; external data URLs, executable expressions, and arbitrary HTML are not supported by this renderer.
+- **Responsive behavior:** equations and tables scroll horizontally when needed; charts remain legible on narrow screens.
 
-Markdown output is sanitized with DOMPurify before insertion. KaTeX runs with trust disabled; external links are opened with `noopener noreferrer`; Mermaid SVG is sanitized again. If a dependency fails to load, the original response remains readable as text/code instead of disappearing.
-
-The pinned libraries are loaded from a CDN. Enhanced rendering therefore needs network access unless those assets are later vendored into the app. Version pins and Subresource Integrity hashes should be updated together.
+Safety behavior: Markdown is sanitized by DOMPurify before insertion; KaTeX trust is disabled; external links open with `noopener noreferrer`; Mermaid SVG is sanitized again; charts are constructed via SVG DOM APIs rather than injecting model-provided SVG/HTML. If a renderer or CDN dependency fails, the underlying source remains readable. Chart specifications are constrained and capped to limit resource use.
 
 ## Native Android
 
-The native renderer uses Markwon with tables, strikethrough, task lists, HTML formatting, and JLatexMath. Common model delimiters `\\(...\\)` and `\\[...\\]` are normalized into the dollar-delimited syntax supported by the installed Markwon LaTeX extension. Fenced code and inline code are protected from this normalization. Links use Android's link movement method.
+The native renderer uses Markwon with tables, strikethrough, task-list syntax, HTML formatting and JLatexMath. Standard `\\(...\\)` and `\\[...\\]` math delimiters are normalized into syntax supported by the installed LaTeX extension, while fenced/inline code is protected. Markdown links use Android's link movement method.
 
-The native renderer's TeX command coverage is narrower than browser KaTeX's; custom macros and specialized chemistry syntax that it does not support remain a known compatibility boundary. The browser's `mhchem` extension does not automatically apply to Android.
+Android does not currently render Mermaid diagrams or the custom `chart` JSON blocks as native diagrams/charts; those remain readable source on that surface. Its TeX command coverage is narrower than browser KaTeX's, and KaTeX's `mhchem` extension is browser-only. Unsupported commands should remain visible/readable rather than be represented as a verified rendering.
 
-## Contract and boundaries
+## Important limits
 
-No finite renderer can format every arbitrary model-specific tag or every possible LaTeX package. This contract targets common Markdown, scientific notation and diagram formats. Unsupported or malformed syntax should stay visible or degrade gracefully, never be silently deleted or misrepresented. Rendering improves presentation; it does not improve the model's underlying reasoning or verify a scientific claim by itself.
+No finite renderer supports every TeX package, arbitrary model-specific tag, or every custom media type. In particular, TikZ/PGF drawings, Pgfplots, arbitrary LaTeX packages, notebooks, custom React components, interactive 3D/WebGL, and model-generated executable HTML are not implicitly supported. Use explicit artifacts or purpose-built viewers for those cases instead of trying to execute untrusted markup inside chat.
+
+Rendering changes presentation; it does not establish whether a scientific equation or claim is correct. Visual inspection on real browsers/devices is still required in addition to static tests.
 
 ## Verification
 
-The browser regression test checks dependency pins and load order, sanitizer-before-insertion, math delimiter escaping, chemistry support, code highlighting, Mermaid strict mode and responsive styles. CI runs the full Python unit suite and JavaScript syntax checks; the Android workflow compiles/tests Kotlin and assembles an APK. Static tests are not a substitute for visual checks of representative equations, chemical reactions, tables, code and diagrams on both browser and Android.
+The browser regression test checks dependency pins/order, safe Markdown insertion, standard math delimiters, chemistry support, advanced macro coverage, alert conversion, chart type/point caps, DOM-based SVG construction, code highlighting, Mermaid strict mode and responsive styling. CI runs the unit tests and JavaScript syntax checks; the Android workflow compiles/tests Kotlin and assembles the APK. These checks do not replace an end-to-end visual check of real examples.
