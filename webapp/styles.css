@@ -456,3 +456,13 @@ h2,h3,p{margin-top:0}
   .message-bubble .katex{font-size:1em}
   .message-bubble .katex-display{margin:.65em 0}
 }
+
+
+/* Actual model telemetry: compact, readable, and clearly separate from model prose. */
+.chat-thread-header>div:nth-child(2){min-width:0;flex:1}
+.chat-thread-header small{display:block;max-width:min(62vw,560px);overflow-wrap:anywhere;line-height:1.45}
+.message-model-identity{margin-top:6px;padding:7px 9px;border-left:2px solid var(--amber);background:rgba(182,157,94,.055);color:var(--muted);font:7px/1.6 var(--mono);overflow-wrap:anywhere}
+@media(max-width:620px){
+  .chat-thread-header small{max-width:52vw;font-size:8px}
+  .message-model-identity{font-size:7px}
+}
