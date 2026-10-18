@@ -1217,7 +1217,10 @@ class Omnitrix:
                         model_name=intent_model.name,
                     )
             except Exception as exc:
-                # A malformed/unavailable intent brief must not block the original task.
+                # With a journal, a dispatched request can have an uncertain outcome.
+                # Do not issue later calls after leaving an unmatched transcript boundary.
+                if self.journal is not None:
+                    raise
                 _log_safely(
                     logging.WARNING,
                     "intent_engineer_stage_failed",
@@ -1366,7 +1369,10 @@ class Omnitrix:
                             result=critic_status,
                         )
                     except Exception as exc:
-                        # Critic failure preserves the original draft, not a false success claim.
+                        # With a journal, stop after uncertain provider outcomes so later
+                        # calls cannot obscure an unmatched transcript boundary.
+                        if self.journal is not None:
+                            raise
                         _log_safely(
                             logging.WARNING,
                             "critic_stage_failed",
