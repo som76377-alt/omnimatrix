@@ -192,8 +192,12 @@ Omnitrix requests the `public_repo` and `read:user` OAuth scopes. **`public_repo
 
 The app reads public files and workflow-run status from GitHub on launch without asking for a Codespaces URL or sign-in. Anonymous file viewing is read-only. To write changes, sign in; editing remains allowlisted to selected source/document folders and existing UTF-8 files up to 64 KiB. Saving requires explicit confirmation and creates a commit directly on `main`; this is not a local-only draft. CI status is read-only in the app; the Runs screen links to GitHub Actions for further control.
 
-### Chat backend status
+### Hosted chat status
 
-The Chat tab is **not yet a zero-setup, permanently hosted AI connection**. It requires the Python Omnitrix Studio backend to be running and its HTTPS URL and bearer token to be configured under Account → Chat Settings. GitHub Pages hosts only the static preview and cannot run Python; a Codespace can stop, so it is not a permanent backend.
+A Render deployment blueprint is checked in at `render.yaml`. The Android app discovers the backend through `config/mobile-backend.json`, so the endpoint can be configured later without rebuilding the APK. That manifest remains disabled until a real service is deployed and its URL is verified.
 
-The default model profile is `offline-demo`, which simulates replies. A successful backend connection is not proof of live model inference; a real provider and credential must be explicitly configured for genuine AI responses. The permanently hosted backend and real-provider configuration are still deployment work, not features supplied by the APK itself.
+The hosted service is designed to expose only one unauthenticated route, the mobile chat endpoint. Workspace reads/writes, local test execution, and the development API remain token-protected. Public chat has in-memory IP/global rate limits; these are basic abuse controls, not production-grade identity or billing protection. Do not use this setup with a paid Gemini key or a key attached to billing.
+
+**Deployment is not complete yet.** Connect the Render integration to the Render account that should own the service, deploy the repository's Blueprint, and set `GEMINI_API_KEY` as a server-side secret using a Google AI Studio Free Tier key with billing disabled. The model profile is `gemini-3.8-flash`; the key is never stored in this repository or APK. After Render provides the service URL, update `config/mobile-backend.json` with that verified HTTPS URL and set `chat_enabled` to `true`. The APK then discovers the service automatically over the internet.
+
+Render's free web services sleep after 15 minutes without inbound traffic and usually need about a minute to wake. This gives the app a stable service address without Codespaces, but it is not an always-awake service. If the backend is offline or its free provider quota is exhausted, chat will not work until the service/quota is available again.
