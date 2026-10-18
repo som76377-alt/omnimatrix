@@ -130,6 +130,7 @@ Repository Pages publishing must be configured once at **Settings → Pages → 
 | Path | Purpose |
 | --- | --- |
 | `core/orchestrator/` | Planning, validation, task lifecycle, and orchestration |
+| `core/agents/` | Configurable specialist roles, adaptive intent briefs, and critique stages |
 | `core/models/` | Model types, registry, configuration loader, and provider adapters |
 | `core/tools/` | Tool contracts, permissions, registry, and execution |
 | `core/application/` | Chat application layer |
@@ -142,6 +143,7 @@ Repository Pages publishing must be configured once at **Settings → Pages → 
 | `tests/` | Automated regression tests |
 | `docs/ARCHITECTURE.md` | Current design boundaries and safety assumptions |
 | `docs/ROADMAP.md` | Staged development plan |
+| `docs/SPECIALIST_AGENTS.md` | Specialist role design, candidate-model evidence, budgets, and evaluation plan |
 
 ## Engineering rules
 
