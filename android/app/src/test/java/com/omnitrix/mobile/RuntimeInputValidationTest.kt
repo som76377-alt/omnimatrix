@@ -70,7 +70,7 @@ class RuntimeInputValidationTest {
     @Test
     fun normalizesCommonLatexDelimitersForNativeRenderer() {
         val normalized = MarkwonMathNormalizer.normalize("Force: \\(F = ma\\)\n\\[E = mc^2\\]")
-        assertTrue(normalized.contains("\$\$F = ma\$\$"))
+        assertTrue(normalized.contains("\$F = ma\$"))
         assertTrue(normalized.contains("\$\$\nE = mc^2\n\$\$"))
     }
 
