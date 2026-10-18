@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from core.agents.registry import AgentRegistry
@@ -115,20 +116,27 @@ class SpecialistPipelineTests(unittest.TestCase):
 
     def test_role_preferences_select_the_coding_specialist_candidate(self):
         config_path = ROOT / "config" / "mobile.models.openrouter-free.example.json"
-        models = ModelConfigLoader().load(config_path)
-        adapters = build_adapter_registry(models)
-        omnitrix = Omnitrix(
-            registry=models,
-            adapter_registry=adapters,
-            agent_registry=AgentRegistry.load(AGENT_CONFIG),
-            budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
-        )
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+            },
+        ):
+            models = ModelConfigLoader().load(config_path)
+            adapters = build_adapter_registry(models)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=AgentRegistry.load(AGENT_CONFIG),
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
 
-        selected = omnitrix._select_agent_model(
-            omnitrix.agent_registry.get("coding"),
-            models.get("omnitrix-primary"),
-            required_capabilities=frozenset({"coding"}),
-        )
+            selected = omnitrix._select_agent_model(
+                omnitrix.agent_registry.get("coding"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"coding"}),
+            )
 
         self.assertEqual(selected.name, "cohere-north-mini-code-free")
 
