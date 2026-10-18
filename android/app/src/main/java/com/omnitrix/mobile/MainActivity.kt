@@ -239,10 +239,9 @@ private class GitHubClient(context: Context) {
         val encoded = if (path.isBlank()) "" else path.split("/").joinToString("/") { encodePathPart(it) }
         val address = "https://api.github.com/repos/" + REPOSITORY + "/contents" +
             (if (encoded.isBlank()) "" else "/$encoded") + "?ref=main"
-        ensureValidAccessToken()
+        if (ready()) ensureValidAccessToken()
         val parsed = withContext(Dispatchers.IO) {
-            if (!ready()) throw IOException("Sign in with GitHub first.")
-            JSONTokener(requestRaw("GET", address, null, accessToken)).nextValue()
+            JSONTokener(requestRaw("GET", address, null, accessToken.takeIf { ready() })).nextValue()
         }
         val entriesJson = when (parsed) {
             is JSONArray -> parsed
@@ -308,7 +307,13 @@ private class GitHubClient(context: Context) {
         }
     }
 
-    private suspend fun getJson(path: String) = requestJson("GET", path, null)
+    private suspend fun getJson(path: String): JSONObject {
+        if (ready()) return requestJson("GET", path, null)
+        return withContext(Dispatchers.IO) {
+            val full = if (path.startsWith("https://")) path else "https://api.github.com" + path
+            JSONObject(requestRaw("GET", full, null))
+        }
+    }
 
     private suspend fun requestJson(method: String, path: String, body: JSONObject?): JSONObject {
         if (!ready()) throw IOException("Sign in with GitHub first.")
@@ -479,7 +484,6 @@ private fun OmnitrixApp() {
     var showToken by remember { mutableStateOf(false) }
     var showRuntimeSetup by remember { mutableStateOf(false) }
     var runtimeConnected by remember { mutableStateOf(false) }
-    var runtimeStatus by remember { mutableStateOf<JSONObject?>(null) }
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
@@ -498,10 +502,6 @@ private fun OmnitrixApp() {
     var runsMessage by remember { mutableStateOf("") }
 
     fun loadRepo(path: String) {
-        if (!githubConnected) {
-            repoMessage = "Sign in with GitHub to open the repository."
-            return
-        }
         scope.launch {
             repoBusy = true
             repoMessage = ""
@@ -566,10 +566,6 @@ private fun OmnitrixApp() {
     }
 
     fun loadRuns() {
-        if (!githubConnected) {
-            runsMessage = "Sign in with GitHub to see CI runs."
-            return
-        }
         scope.launch {
             runsBusy = true
             runsMessage = ""
@@ -584,7 +580,7 @@ private fun OmnitrixApp() {
             chatBusy = true
             try {
                 runtime.configure(chatUrl, chatToken)
-                runtimeStatus = runtime.get("/api/health")
+                runtime.get("/api/health")
                 runtimeConnected = true
                 messages = messages + ChatMessage("SYSTEM", "Python chat runtime connected.")
             } catch (e: Exception) {
@@ -595,16 +591,12 @@ private fun OmnitrixApp() {
     }
 
     LaunchedEffect(Unit) {
-        if (githubConnected) {
-            try {
-                username = github.username
-                loadRuns()
-                loadRepo("")
-            } catch (_: Exception) { }
-        }
+        if (githubConnected) username = github.username
+        loadRuns()
+        loadRepo("")
         if (runtime.ready()) {
             try {
-                runtimeStatus = runtime.get("/api/health")
+                runtime.get("/api/health")
                 runtimeConnected = true
             } catch (_: Exception) { runtimeConnected = false }
         }
@@ -668,10 +660,9 @@ private fun OmnitrixApp() {
                         { confirmCommit = true }, { tab = AppTab.ACCOUNT }
                     )
                     AppTab.STATUS -> StatusScreen(
-                        githubConnected, runs, runsBusy, runsMessage,
+                        runs, runsBusy, runsMessage,
                         { loadRuns() },
-                        { url -> openExternal(context, url) },
-                        { tab = AppTab.ACCOUNT }
+                        { url -> openExternal(context, url) }
                     )
                     AppTab.ACCOUNT -> AccountScreen(
                         githubConnected, username, clientId, authBusy, authMessage, githubError, device,
@@ -731,7 +722,6 @@ private fun OmnitrixApp() {
                         {
                             runtime.disconnect()
                             runtimeConnected = false
-                            runtimeStatus = null
                             chatToken = ""
                         },
                         { openExternal(context, "https://github.com/settings/developers") }
@@ -827,9 +817,6 @@ private fun RepoScreen(
     Column(Modifier.fillMaxSize()) {
         AppHeader("Repository", if (selected != null) selected.path else "som76377-alt/omnimatrix")
         when {
-            !connected -> Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth()) {
-                PrimaryButton("SIGN IN WITH GITHUB", onSignIn)
-            }
             selected != null -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     QuietButton("BACK") { onBack() }
@@ -839,9 +826,13 @@ private fun RepoScreen(
                 TerminalField(
                     value = draft, onValueChange = onDraft, placeholder = "",
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp).background(Surface, RoundedCornerShape(2.dp)),
-                    singleLine = false, enabled = !busy, large = false
+                    singleLine = false, enabled = !busy && connected, large = false
                 )
-                PrimaryButton(if (busy) "SAVING…" else "COMMIT TO MAIN", onCommit, enabled = !busy && draft != original, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
+                if (connected) {
+                    PrimaryButton(if (busy) "SAVING…" else "COMMIT TO MAIN", onCommit, enabled = !busy && draft != original, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
+                } else {
+                    QuietButton("SIGN IN TO EDIT", onSignIn)
+                }
             }
             else -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -867,33 +858,27 @@ private fun RepoScreen(
 
 @Composable
 private fun StatusScreen(
-    connected: Boolean, runs: List<CiRun>, busy: Boolean, message: String,
-    onRefresh: () -> Unit, onOpen: (String) -> Unit, onSignIn: () -> Unit
+    runs: List<CiRun>, busy: Boolean, message: String,
+    onRefresh: () -> Unit, onOpen: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         AppHeader("Runs")
-        if (!connected) {
-            Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth()) {
-                PrimaryButton("SIGN IN WITH GITHUB", onSignIn)
-            }
-        } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (busy) "Refreshing…" else "Latest runs", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                QuietButton("REFRESH", onRefresh)
-                QuietButton("OPEN GITHUB") { onOpen("https://github.com/" + REPOSITORY + "/actions") }
-            }
-            if (message.isNotBlank()) Text(message, color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp), contentPadding = PaddingValues(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                items(runs) { run ->
-                    Column(Modifier.fillMaxWidth().clickable { onOpen(run.url) }) {
-                        Text(run.title, color = White, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(4.dp))
-                        Text(run.status.uppercase(), color = statusColor(run.status), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text(run.branch, color = Grey, fontSize = 13.sp)
-                    }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (busy) "Refreshing…" else "Latest runs", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            QuietButton("REFRESH", onRefresh)
+            QuietButton("OPEN GITHUB") { onOpen("https://github.com/" + REPOSITORY + "/actions") }
+        }
+        if (message.isNotBlank()) Text(message, color = if (message.contains("fail", true) || message.contains("error", true)) Red else Grey, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp), contentPadding = PaddingValues(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            items(runs) { run ->
+                Column(Modifier.fillMaxWidth().clickable { onOpen(run.url) }) {
+                    Text(run.title, color = White, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(run.status.uppercase(), color = statusColor(run.status), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(run.branch, color = Grey, fontSize = 13.sp)
                 }
-                if (runs.isEmpty() && !busy) item { Text("No workflow runs returned yet.", color = Grey, fontSize = 15.sp) }
             }
+            if (runs.isEmpty() && !busy) item { Text("No workflow runs returned yet.", color = Grey, fontSize = 15.sp) }
         }
     }
 }
