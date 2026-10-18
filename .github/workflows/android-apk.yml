@@ -92,15 +92,13 @@ jobs:
           ## Omnitrix Android alpha
 
           This is an installable **debug APK** built from the source commit attached to this release.
-          It is not Play-Store-signed. After installing, open **Connect** in the app and pair it with
-          the running Omnitrix Studio Python backend using its HTTPS Codespaces port URL and private
-          runtime bearer token.
+          It is not Play-Store-signed. The app is configured to discover the hosted Omnitrix mobile
+          API at https://omnitrix-studio.onrender.com. The public chat route is intentionally narrow;
+          workspace and other privileged runtime operations still require authorization.
 
-          The default model profile is an offline simulation. Real model inference requires an
-          explicitly configured provider and credential. Workspace changes save to the active
-          Codespaces checkout; this build does not silently commit or push edits to GitHub.
-
-          See the repository README for setup and security notes.
+          The hosted backend uses the configured Google model provider and a key stored only in the
+          server environment. Never place provider keys in the APK or commit them to the repository.
+          Render's free service may sleep when idle. See the repository README for setup and security notes.
           NOTES
           gh release create "$tag" Omnitrix.apk Omnitrix.apk.sha256 \
             --title "Omnitrix Android build ${GITHUB_RUN_NUMBER}" \
