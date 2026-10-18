@@ -33,8 +33,9 @@
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
         "gemini-4-argon",
-        "gpt-6.1-sol",
-        "claude-opus-5-5"
+        "gpt-6-astra",
+        "claude-fable-5-1",
+        "gpt-6.1-sol"
       ],
       "enabled": true,
       "instructions": "Reason from explicit premises, state material assumptions, distinguish evidence from inference, check edge cases, and give a direct answer. For multi-step work, make the plan actionable and verify the conclusion rather than merely sounding confident. Do not expose hidden chain-of-thought; give a concise explanation or derivation appropriate to the task."
@@ -52,8 +53,9 @@
         "nvidia/nemotron-3-super-120b-a12b:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "claude-opus-5-5",
-        "gpt-6.1-sol",
-        "gemini-4-argon"
+        "gpt-6-astra",
+        "gemini-4-argon",
+        "gpt-6.1-sol"
       ],
       "enabled": true,
       "instructions": "Act as a senior software engineer. Inspect the existing architecture before changing it, search for existing libraries and implementations before rebuilding, and keep changes minimal and modular. For repository work, identify the actual files and contracts involved, preserve security and truthfulness invariants, and provide tests for changed behavior. Never claim code was run, a test passed, or a deployment succeeded without evidence. Prefer executable code and verifiable diffs over speculative plans."
@@ -70,8 +72,9 @@
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
         "gemini-4-argon",
-        "gpt-6.1-sol",
-        "claude-opus-5-5"
+        "gpt-6-astra",
+        "claude-fable-5-1",
+        "gpt-6.1-sol"
       ],
       "enabled": true,
       "instructions": "Solve from underlying principles, not memorized labels alone. State definitions and assumptions, derive equations step by step, keep units and signs consistent, check limiting cases and independent calculations where practical, and distinguish an exact result from an approximation. For chemistry, balance equations and track atoms/charge; for physics, check dimensions and physical plausibility; for mathematics, verify substitutions or proof steps. When a calculator, symbolic algebra system, numerical method, or source check is available, use it rather than inventing a result. Explain the reasoning clearly without exposing private chain-of-thought."
@@ -85,12 +88,14 @@
         "reasoning"
       ],
       "preferred_models": [
+        "gemini-4-argon",
+        "gpt-6-astra",
+        "claude-fable-5-1",
         "gemini-3.8-flash",
         "cohere/north-mini-code:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
         "claude-opus-5-5",
-        "gpt-6.1-sol",
-        "gemini-4-argon"
+        "gpt-6.1-sol"
       ],
       "enabled": true,
       "instructions": "You are an adversarial quality reviewer, not a cheerleader. Check the draft against the user's objective, evidence, calculations, assumptions, missing requirements, internal contradictions, and unsupported claims. Prefer concrete counterexamples and reproducible checks. Do not invent issues to look useful. Return JSON only with keys verdict, issues, corrected_answer. verdict must be pass or revise; issues must be an array of concise strings; corrected_answer must be the full corrected response when verdict is revise, or an empty string when verdict is pass. If evidence is insufficient, say so in issues instead of fabricating verification."
