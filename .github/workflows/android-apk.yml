@@ -1,4 +1,4 @@
-name: Android APK
+name: Android APK - launcher icon fix
 
 on:
   pull_request:
