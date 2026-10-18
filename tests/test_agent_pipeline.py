@@ -121,6 +121,13 @@ class SpecialistPipelineTests(unittest.TestCase):
             metadata={"cost_class": "free", "estimated_cost_usd": 0},
         ))
         models.register(ModelDefinition(
+            name="cohere-free",
+            provider="openrouter",
+            model_id="cohere/north-mini-code:free",
+            capabilities=frozenset({"reasoning", "coding"}),
+            metadata={"cost_class": "free", "estimated_cost_usd": 0},
+        ))
+        models.register(ModelDefinition(
             name="google-free-quota",
             provider="google",
             model_id="gemini-3.8-flash",
@@ -133,6 +140,7 @@ class SpecialistPipelineTests(unittest.TestCase):
         ))
         adapters = AdapterRegistry()
         adapters.register(ScriptedAdapter([], name="openrouter-free", provider="openrouter"))
+        adapters.register(ScriptedAdapter([], name="cohere-free", provider="openrouter"))
         adapters.register(ScriptedAdapter([], name="google-free-quota", provider="google"))
         omnitrix = Omnitrix(
             registry=models,
@@ -149,7 +157,8 @@ class SpecialistPipelineTests(unittest.TestCase):
         )
         # An explicit cross-model approval is not allowed to bypass the active
         # runtime spend mode. Google free-quota access is not zero-cost-only.
-        self.assertEqual(selected.name, "openrouter-free")
+        self.assertEqual(selected.name, "cohere-free")
+        self.assertNotEqual(selected.name, "openrouter-free")
 
     def test_invalid_critic_payload_preserves_original_answer(self):
         answer, status = Omnitrix._apply_critic_result(
