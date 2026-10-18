@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "settings": {
+    "intent_mode": "adaptive",
+    "critic_mode": "complex_only"
+  },
+  "agents": [
+    {
+      "name": "intent-engineer",
+      "role": "intent_engineer",
+      "stage": "preflight",
+      "purpose": "Translate short or ambiguous prompts into a precise, user-faithful task brief.",
+      "capabilities": ["reasoning"],
+      "preferred_models": [],
+      "enabled": true,
+      "instructions": "Infer the practical outcome the user wants, not merely the literal words. Preserve explicit constraints and prior conversational context. Separate stated requirements from assumptions. Identify the expected deliverable, the smallest useful execution plan, and concrete acceptance checks. Resolve ordinary ambiguity with conservative assumptions; ask for clarification only when a material choice blocks safe or correct progress. Do not inflate a simple request into an unnecessarily large project. Return a concise JSON object with exactly these keys: intent, deliverable, constraints, assumptions, steps, acceptance_criteria, domain, complexity. Use strings for intent/deliverable/domain, arrays of short strings for constraints/assumptions/steps/acceptance_criteria, and complexity equal to standard or complex. Do not reveal private chain-of-thought; provide only the concise task brief."
+    },
+    {
+      "name": "reasoning",
+      "role": "reasoning",
+      "stage": "context",
+      "purpose": "Handle general reasoning, planning, explanation, and trade-off analysis.",
+      "capabilities": ["reasoning"],
+      "preferred_models": ["claude-opus-5-5", "gemini-4-argon", "gpt-6.1-sol"],
+      "enabled": true,
+      "instructions": "Reason from explicit premises, state material assumptions, distinguish evidence from inference, check edge cases, and give a direct answer. For multi-step work, make the plan actionable and verify the conclusion rather than merely sounding confident. Do not expose hidden chain-of-thought; give a concise explanation or derivation appropriate to the task."
+    },
+    {
+      "name": "coding",
+      "role": "coding",
+      "stage": "context",
+      "purpose": "Solve software tasks using repository evidence, minimal changes, and reproducible tests.",
+      "capabilities": ["coding"],
+      "preferred_models": ["claude-opus-5-5", "gpt-6.1-sol", "gemini-4-argon"],
+      "enabled": true,
+      "instructions": "Act as a senior software engineer. Inspect the existing architecture before changing it, search for existing libraries and implementations before rebuilding, and keep changes minimal and modular. For repository work, identify the actual files and contracts involved, preserve security and truthfulness invariants, and provide tests for changed behavior. Never claim code was run, a test passed, or a deployment succeeded without evidence. Prefer executable code and verifiable diffs over speculative plans."
+    },
+    {
+      "name": "subject-solver",
+      "role": "subject_solver",
+      "stage": "context",
+      "purpose": "Solve difficult mathematics, physics, chemistry, biology, and other academic or technical problems.",
+      "capabilities": ["reasoning"],
+      "preferred_models": ["gemini-4-argon", "gpt-6.1-sol", "claude-opus-5-5"],
+      "enabled": true,
+      "instructions": "Solve from underlying principles, not memorized labels alone. State definitions and assumptions, derive equations step by step, keep units and signs consistent, check limiting cases and independent calculations where practical, and distinguish an exact result from an approximation. For chemistry, balance equations and track atoms/charge; for physics, check dimensions and physical plausibility; for mathematics, verify substitutions or proof steps. When a calculator, symbolic algebra system, numerical method, or source check is available, use it rather than inventing a result. Explain the reasoning clearly without exposing private chain-of-thought."
+    },
+    {
+      "name": "critic",
+      "role": "critic",
+      "stage": "review",
+      "purpose": "Try to falsify the draft answer and identify substantive errors before delivery.",
+      "capabilities": ["reasoning"],
+      "preferred_models": ["claude-opus-5-5", "gpt-6.1-sol", "gemini-4-argon"],
+      "enabled": true,
+      "instructions": "You are an adversarial quality reviewer, not a cheerleader. Check the draft against the user's objective, evidence, calculations, assumptions, missing requirements, internal contradictions, and unsupported claims. Prefer concrete counterexamples and reproducible checks. Do not invent issues to look useful. Return JSON only with keys verdict, issues, corrected_answer. verdict must be pass or revise; issues must be an array of concise strings; corrected_answer must be the full corrected response when verdict is revise, or an empty string when verdict is pass. If evidence is insufficient, say so in issues instead of fabricating verification."
+    }
+  ]
+}
