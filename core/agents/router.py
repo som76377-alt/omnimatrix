@@ -15,6 +15,23 @@ _SUBJECT_TERMS = re.compile(
     r"geometry|trigonometry|scientific|derive|calculate)\b",
     re.IGNORECASE,
 )
+_RESEARCH_TERMS = re.compile(
+    r"\\b(research|look up|search the web|browse|find sources|find references|"
+    r"cite sources|literature review|latest studies|scientific papers|"
+    r"peer-reviewed|official documentation|current documentation|fact-check)\\b",
+    re.IGNORECASE,
+)
+_COMPUTATION_TERMS = re.compile(
+    r"\\b(arithmetic|calculator|unit conversion|evaluate (?:the )?(?:expression|formula)|"
+    r"simplify (?:the )?expression|compute (?:the )?(?:result|value|product|sum)|"
+    r"calculate (?:the )?(?:product|sum|quotient|remainder|average|mean|percentage|factorial))\\b",
+    re.IGNORECASE,
+)
+_NUMERIC_EXPRESSION_REQUEST = re.compile(
+    r"\\b(?:calculate|compute|evaluate)\\s+(?:the\\s+)?"
+    r"(?:value\\s+of\\s+)?[-+()]?\\d[\\d\\s.+*/()^%-]*(?=$|[?.!,])",
+    re.IGNORECASE,
+)
 _CODING_TERMS = re.compile(
     r"\b(code|coding|program|programming|software|website|web app|android app|"
     r"debug|bug|repository|repo|api|compile|build|implement|refactor|test suite)\b",
@@ -89,7 +106,28 @@ class AgentRouter:
 
         subject = bool(_SUBJECT_TERMS.search(objective))
         coding = "coding" in capabilities or bool(_CODING_TERMS.search(objective))
-        if subject:
+        research = bool(_RESEARCH_TERMS.search(objective))
+        computation = bool(
+            _COMPUTATION_TERMS.search(objective)
+            or _NUMERIC_EXPRESSION_REQUEST.search(objective)
+        )
+
+        support: list[AgentDefinition] = []
+        if computation:
+            primary = self.registry.get("computation")
+            domain = "computation"
+        elif coding and research:
+            primary = self.registry.get("coding")
+            domain = "coding"
+            support.append(self.registry.get("research"))
+        elif research and subject:
+            primary = self.registry.get("subject_solver")
+            domain = "subject"
+            support.append(self.registry.get("research"))
+        elif research:
+            primary = self.registry.get("research")
+            domain = "research"
+        elif subject:
             primary = self.registry.get("subject_solver")
             domain = "subject"
         elif coding:
@@ -98,6 +136,15 @@ class AgentRouter:
         else:
             primary = self.registry.get("reasoning")
             domain = "general"
+
+        # For hybrid science/software tasks, keep the main solver authoritative
+        # and add only the specialist lens that contributes a distinct check.
+        if subject and coding and not any(agent.role == "coding" for agent in support):
+            support.append(self.registry.get("coding"))
+        if research and primary.role not in {"research"} and not any(
+            agent.role == "research" for agent in support
+        ):
+            support.append(self.registry.get("research"))
 
         word_count = len(re.findall(r"\b\w+\b", objective))
         complex_task = self._is_complex(objective, domain)
