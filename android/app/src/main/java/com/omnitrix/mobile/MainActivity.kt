@@ -845,6 +845,55 @@ private fun OmnitrixApp() {
     var runsMessage by remember { mutableStateOf("") }
     var repositories by remember { mutableStateOf<List<GitHubRepository>>(emptyList()) }
     var selectedRepository by remember { mutableStateOf<GitHubRepository?>(null) }
+    var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateDownloadedPath by remember { mutableStateOf<String?>(null) }
+    var updateDownloadBusy by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableStateOf(0) }
+    var updateMessage by remember { mutableStateOf("") }
+
+    fun startUpdateDownload(update: AppUpdate) {
+        if (updateDownloadBusy) return
+        scope.launch {
+            updateDownloadBusy = true
+            updateProgress = 0
+            updateMessage = "Downloading and verifying the update…"
+            try {
+                val file = AppUpdater.download(context, update) { progress -> updateProgress = progress }
+                updateDownloadedPath = file.absolutePath
+                updateMessage = "Update downloaded and verified. Tap INSTALL UPDATE to continue."
+            } catch (e: Exception) {
+                updateMessage = e.message ?: "Could not download the update."
+                updateDownloadedPath = null
+            } finally {
+                updateDownloadBusy = false
+            }
+        }
+    }
+
+    fun installDownloadedUpdate() {
+        val path = updateDownloadedPath
+        if (path.isNullOrBlank() || !File(path).isFile) {
+            availableUpdate?.let { startUpdateDownload(it) }
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+            updateMessage = "Allow installs for Omnitrix in Android Settings, then return and tap INSTALL UPDATE again."
+            try {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
+                )
+            } catch (e: Exception) {
+                updateMessage = e.message ?: "Could not open Android's install-permission settings."
+            }
+            return
+        }
+        try {
+            AppUpdater.launchInstaller(context, File(path))
+        } catch (e: Exception) {
+            updateMessage = e.message ?: "Could not open Android's installer."
+        }
+    }
 
     fun loadRepositories() {
         scope.launch {
@@ -1004,6 +1053,20 @@ private fun OmnitrixApp() {
         loadRuns()
         loadRepositories()
         connectHostedRuntime()
+        if (BuildConfig.AUTO_UPDATES_ENABLED) {
+            launch {
+                try {
+                    val update = AppUpdater.checkForUpdate()
+                    if (update != null) {
+                        availableUpdate = update
+                        showUpdateDialog = true
+                        startUpdateDownload(update)
+                    }
+                } catch (_: Exception) {
+                    // Update checks are best-effort and never block chat startup.
+                }
+            }
+        }
     }
 
     MaterialTheme(
@@ -1175,6 +1238,58 @@ private fun OmnitrixApp() {
                 }
             )
         }
+
+        if (showUpdateDialog && availableUpdate != null) {
+            val update = availableUpdate!!
+            AlertDialog(
+                onDismissRequest = { showUpdateDialog = false },
+                containerColor = Surface,
+                title = { Text("OMNITRIX UPDATE", color = Green, fontSize = 20.sp, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(update.title, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("A verified update is available. Omnitrix downloads it automatically in the background.", color = Grey, fontSize = 13.sp, lineHeight = 19.sp)
+                        if (updateDownloadBusy) {
+                            Text("DOWNLOADING… $updateProgress%", color = Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        if (updateMessage.isNotBlank()) {
+                            Text(
+                                updateMessage,
+                                color = if (updateMessage.contains("failed", true) || updateMessage.contains("could not", true)) Red else Grey,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+                        }
+                        if (update.notes.isNotBlank()) {
+                            Text(update.notes.trim().take(320), color = Grey, fontSize = 12.sp, lineHeight = 17.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (updateDownloadedPath != null) installDownloadedUpdate()
+                            else if (!updateDownloadBusy) startUpdateDownload(update)
+                        },
+                        enabled = !updateDownloadBusy
+                    ) {
+                        Text(
+                            if (updateDownloadedPath != null) "INSTALL UPDATE"
+                            else if (updateDownloadBusy) "DOWNLOADING…"
+                            else "RETRY DOWNLOAD",
+                            color = Green,
+                            fontSize = 13.sp
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text("LATER", color = White, fontSize = 13.sp)
+                    }
+                }
+            )
+        }
+
         }
     }
 }
