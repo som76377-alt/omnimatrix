@@ -761,8 +761,11 @@
         return stage + ": " + (item.model || item.configured_model || "unknown model") +
           " [" + (item.provider || "unknown provider") + "]";
       });
+    const effort = primary.reasoning_effort_requested
+      ? " · " + String(primary.reasoning_effort_requested).toUpperCase() + " EFFORT REQUESTED"
+      : "";
     const subtitle = "Answer model · " + (primary.model || primary.configured_model || "unknown") +
-      " · " + (primary.provider || "unknown provider") + " · " + role +
+      " · " + (primary.provider || "unknown provider") + " · " + role + effort +
       " · " + (primary.identity_source === "provider_response" ? "API-reported ID" :
         primary.identity_source === "configured_fallback" ? "configured ID only" :
         primary.provider === "demo" ? "simulated" : "adapter metadata");
@@ -833,10 +836,13 @@
             : active.identity_source === "configured_fallback"
               ? "configured ID only"
               : "adapter metadata";
+        const effort = active.reasoning_effort_requested
+          ? " · " + String(active.reasoning_effort_requested).toUpperCase() + " EFFORT REQUESTED"
+          : "";
         byId("chat-thread-subtitle").textContent =
           "IN FLIGHT · " + model + " · " + (active.provider || "unknown provider") +
           " · " + (active.role || "assistant") + " / " + (active.stage || "inference") +
-          " · " + identity;
+          effort + " · " + identity;
         byId("chat-mode").textContent = "MODEL REQUEST IN FLIGHT";
       } catch (_) {
         // Status polling is informational only. It must not interrupt the actual chat request.
