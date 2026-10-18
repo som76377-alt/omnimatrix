@@ -7,7 +7,7 @@
 
 Omnitrix remains the authority for the user's objective, permissions, budgets, task/run state, and final report. Specialist agents are replaceable role policies. A role is not a separate AI model merely because it has a name. It becomes a separately powered specialist only when the configuration points it to a registered, enabled adapter with suitable capabilities and an explicitly approved cost class.
 
-The current live configuration has a single Google model profile, `omnitrix-primary`, using `gemini-3.8-flash`. The provider bootstrap currently registers Google and the offline demo adapter. Consequently, the first implementation can route work to five distinct *role prompts*, but normally uses the one currently configured live model for those roles. The demo provider remains simulated and does not run the agent pipeline.
+The default live configuration has a single Google model profile, `omnitrix-primary`, using `gemini-3.8-flash`. The specialist branch adds an opt-in OpenRouter adapter and the separate `config/mobile.models.openrouter-free.example.json` profile. That profile is deliberately **not** the default and is not activated by the existing mobile backend manifest. It adds free-endpoint candidates without changing the existing default. The demo provider remains simulated and does not run the live specialist pipeline.
 
 ## Initial role design
 
@@ -20,6 +20,24 @@ The current live configuration has a single Google model profile, `omnitrix-prim
 | `critic` | Try to falsify a draft, identify meaningful errors, and propose a corrected answer when needed | A different configured provider than the draft model, such as GPT-6.1 Sol reviewing a Google draft or Gemini reviewing an OpenAI/Anthropic draft | Finds planted errors, avoids false alarms, preserves correct answers, distinguishes factual verification from reasoning |
 
 These are **candidates for head-to-head evaluation, not a claim that one model always wins**. Candidate names in `config/agents.json` are preferences/aliases only. They do not register providers, fetch model weights, create API credentials, or activate paid calls.
+
+## Opt-in free candidates (snapshot: 18 October 2026)
+
+The example profile exposes two free OpenRouter model IDs so the roles can be tried with a provider adapter without changing the default model file:
+
+| Model | Suggested evaluation role | Current evidence and limitation |
+|---|---|---|
+| `nvidia/nemotron-3-super-120b-a12b:free` | General reasoning; subject solving; intent brief | OpenRouter currently lists it as free, with tool-call support and a 262K context. Availability metrics on a provider page are a short time-window snapshot, not an uptime guarantee. |
+| `cohere/north-mini-code:free` | Coding | OpenRouter describes it as a coding/agentic software-engineering model, with tool calling and a 256K context. Its code benchmark listings are only signals for test selection; repository-specific pass rates must decide if it is good enough. |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | Experimental reasoning/science challenger | Model catalogues list a very large context and tool use, but its free route has shown uneven endpoint availability. It is present in the example profile **disabled by default** until a live smoke test and the benchmark suite establish adequate reliability. |
+
+OpenRouter states its free plan is limited to **50 requests per day**; quotas and model routes can change. See [OpenRouter pricing](https://openrouter.ai/pricing), [Nemotron 3 Super free route](https://openrouter.ai/nvidia/nemotron-3-super-120b-a12b:free), [North Mini Code free route](https://openrouter.ai/cohere/north-mini-code:free), and [Nemotron 3 Ultra free route](https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free).
+
+**Privacy warning:** the current free Nemotron route states not to submit confidential or personal data and that requests may be logged and used to improve the service. Do not send private conversations, credentials, personal details, or sensitive repository content to that route. Review each upstream model/provider's current data terms, rate limits, availability, and region before use. Free does not mean private, reliable, or unlimited. The adapter never falls back silently; it only runs when the explicitly selected model profile and API credential are configured.
+
+The premium candidates (Gemini 4 Argon, Claude Opus 5.5 and GPT-6.1 Sol) should remain in the evaluation matrix as **higher-end quality targets**, not default routes. They require separate API/provider implementations or credentials not added by the free profile. Their current published prices are meaningful: Gemini 4 Argon is not listed on Google's free API tier; Claude Opus 5.5 lists $4/M input and $20/M output; OpenAI prices vary with model/mode/context. Verify the providers' pages at selection time. Do not configure a paid role until its cost estimate, spend mode and maximum per-run budget are explicit.
+
+
 
 ## Why these candidates
 
