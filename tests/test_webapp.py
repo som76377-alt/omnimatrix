@@ -109,6 +109,18 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn(".message-bubble .katex-display", self.css)
         self.assertIn(".message-bubble table", self.css)
 
+    def test_chat_model_label_is_driven_by_provider_trace_and_live_status(self):
+        self.assertIn('id="chat-thread-subtitle" aria-live="polite"', self.html)
+        self.assertIn("function describeExecutionTrace(trace)", self.js)
+        self.assertIn("function traceIdentityLabel(item)", self.js)
+        self.assertIn('identity_source === "provider_response"', self.js)
+        self.assertIn('apiRequest("/health"', self.js)
+        self.assertIn("active_execution", self.js)
+        self.assertIn("reasoning_effort_requested", self.js)
+        self.assertIn("NO MODEL IDENTITY TRACE", self.js)
+        self.assertIn(".message-model-identity", self.css)
+        self.assertIn("provider did not report identity", self.js)
+
     def test_browser_ui_is_honest_about_backend_and_read_only_scope(self):
         self.assertIn("The static GitHub Pages version cannot execute Python itself.", self.html)
         self.assertIn("READ ONLY EXPLORER", self.html)
