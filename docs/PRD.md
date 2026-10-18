@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.29 — Minimal native client and GitHub device sign-in  
-**Research / snapshot date:** 17 October 2026  
-**Implementation status snapshot:** 17 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
+**Version:** 1.30 — Minimal native client and public repository browsing  
+**Research / snapshot date:** 18 October 2026  
+**Implementation status snapshot:** 18 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1891,3 +1891,10 @@ Added localhost HTTP integration tests for token authorization, real demo-orches
 **Security and user confirmation:** Never commit the OAuth access/refresh tokens, runtime token, provider keys, or any other credentials. Any main-branch write must require a specific user confirmation. Treat GitHub API errors, stale content hashes, and workflow statuses as untrusted until the operation's return data is checked. The token scope is broader than this single repository; an eventual least-privilege GitHub App with repository-specific Contents and Actions permissions is a recommended future improvement.
 
 **Verification gate:** Android source changes are verified only by successful Kotlin compilation, Android JVM tests, Python regression tests, APK assembly, and publication from the same source commit. Device-level UI, OAuth approval, repository browsing/commit, and the separate live Python chat flow remain unverified until manually smoke-tested on an Android device; do not imply otherwise.
+
+
+## Version 1.30 change log — native terminal UI and public repository access
+
+The Android client now uses a restrained green-on-black, square-corner terminal theme; removes opening taglines and decorative online/link badges; and uses dark text on filled lime controls. Public repository contents and GitHub Actions run history are loaded on app startup without OAuth. File viewing remains read-only until the owner signs in; writes still require explicit authorization and confirmation.
+
+**Unfinished integration gate:** Chat still requires a running Python Studio backend, its HTTPS URL and bearer token, and a configured model provider for genuine inference. No permanent backend is deployed by this change. Do not describe the APK as fully zero-setup or internet-only until the backend is deployed, its secrets are configured outside the APK, and real chat requests are tested end-to-end.
