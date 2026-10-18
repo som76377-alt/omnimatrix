@@ -76,6 +76,10 @@ class OpenRouterAdapter(ModelAdapter):
     def provider(self) -> str:
         return "openrouter"
 
+    def is_available(self) -> bool:
+        """Return whether an OpenRouter API key is locally configured."""
+        return bool(self._api_key or os.getenv(self._api_key_env))
+
     def supports_model_id(self, model_id: str) -> bool:
         return isinstance(model_id, str) and model_id == self._model_id
 
