@@ -278,7 +278,7 @@ private class GitHubClient(context: Context) {
     suspend fun listRepositories(accountHint: String): List<GitHubRepository> {
         val account = accountHint.trim().ifBlank { REPOSITORY.substringBefore("/") }
         val address = if (ready()) {
-            "https://api.github.com/user/repos?visibility=public&affiliation=owner&sort=updated&per_page=100"
+            "https://api.github.com/user/repos?visibility=all&affiliation=owner&sort=updated&per_page=100"
         } else {
             if (!account.matches(Regex("[A-Za-z0-9-]+"))) {
                 throw IOException("The GitHub username is not valid.")
