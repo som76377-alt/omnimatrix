@@ -572,18 +572,24 @@ class StudioRuntime:
         with self.public_chat_lock:
             minute_cutoff = now - 60
             day_cutoff = now - 86_400
-            client_events = self.public_chat_events.setdefault(client_key, deque())
-            while client_events and client_events[0] <= day_cutoff:
-                client_events.popleft()
             while self.public_chat_global_events and self.public_chat_global_events[0] <= day_cutoff:
                 self.public_chat_global_events.popleft()
+            if len(self.public_chat_global_events) >= self.public_chat_global_per_day_limit:
+                raise PublicChatRateLimitError("Omnitrix has reached its hosted daily chat limit.")
+
+            # Retire stale client buckets so anonymous traffic cannot grow the limiter forever.
+            for stale_key, stale_events in list(self.public_chat_events.items()):
+                while stale_events and stale_events[0] <= day_cutoff:
+                    stale_events.popleft()
+                if not stale_events:
+                    self.public_chat_events.pop(stale_key, None)
+
+            client_events = self.public_chat_events.setdefault(client_key, deque())
             recent_minute_count = sum(1 for stamp in client_events if stamp > minute_cutoff)
             if recent_minute_count >= self.public_chat_per_minute_limit:
                 raise PublicChatRateLimitError("Chat rate limit reached. Try again in a minute.")
             if len(client_events) >= self.public_chat_per_day_limit:
                 raise PublicChatRateLimitError("This connection has reached its daily chat limit.")
-            if len(self.public_chat_global_events) >= self.public_chat_global_per_day_limit:
-                raise PublicChatRateLimitError("Omnitrix has reached its hosted daily chat limit.")
             client_events.append(now)
             self.public_chat_global_events.append(now)
 
