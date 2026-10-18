@@ -1,5 +1,6 @@
 from core.models.base import ModelAdapter
 from core.models.providers.gemini import GeminiAdapter
+from core.models.providers.openrouter import OpenRouterAdapter
 from core.models.registry import ModelDefinition
 
 
@@ -21,7 +22,6 @@ def build_gemini_adapter(model: ModelDefinition) -> ModelAdapter:
         model_id=model.model_id,
     )
 
-from core.models.providers.openrouter import OpenRouterAdapter
 
 
 def build_openrouter_adapter(model: ModelDefinition) -> ModelAdapter:
