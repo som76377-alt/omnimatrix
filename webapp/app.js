@@ -555,6 +555,33 @@
   let mermaidPromise = null;
   let diagramSequence = 0;
 
+  function renderGitHubAlerts(target) {
+    const kinds = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
+    target.querySelectorAll("blockquote").forEach((quote) => {
+      const firstParagraph = quote.firstElementChild;
+      if (!firstParagraph || firstParagraph.tagName !== "P") return;
+      const match = firstParagraph.textContent.match(/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i);
+      if (!match) return;
+      const kind = match[1].toUpperCase();
+      if (!kinds.has(kind)) return;
+
+      quote.classList.add("rich-alert", "rich-alert-" + kind.toLowerCase());
+      const marker = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i;
+      const markerNode = Array.from(firstParagraph.childNodes).find((child) =>
+        child.nodeType === Node.TEXT_NODE && marker.test(child.nodeValue || "")
+      );
+      if (markerNode) {
+        markerNode.nodeValue = (markerNode.nodeValue || "").replace(marker, "");
+        if (!(markerNode.nodeValue || "").trim()) markerNode.remove();
+      }
+
+      const label = document.createElement("span");
+      label.className = "rich-alert-label";
+      label.textContent = kind;
+      firstParagraph.prepend(label);
+    });
+  }
+
   function renderRichContent(target, rawContent) {
     const source = String(rawContent ?? "");
     if (!window.marked || !window.DOMPurify) {
@@ -573,6 +600,8 @@
         FORBID_TAGS: ["style", "iframe", "object", "embed"],
         FORBID_ATTR: ["style"],
       });
+
+      renderGitHubAlerts(target);
 
       target.querySelectorAll("a[href]").forEach((link) => {
         const href = link.getAttribute("href") || "";
@@ -630,14 +659,6 @@
             { left: "$$", right: "$$", display: true },
             { left: "\\(", right: "\\)", display: false },
             { left: "\\[", right: "\\]", display: true },
-            { left: "\\begin{equation}", right: "\\end{equation}", display: true },
-            { left: "\\begin{equation*}", right: "\\end{equation*}", display: true },
-            { left: "\\begin{align}", right: "\\end{align}", display: true },
-            { left: "\\begin{align*}", right: "\\end{align*}", display: true },
-            { left: "\\begin{alignat}", right: "\\end{alignat}", display: true },
-            { left: "\\begin{gather}", right: "\\end{gather}", display: true },
-            { left: "\\begin{gather*}", right: "\\end{gather*}", display: true },
-            { left: "\\begin{CD}", right: "\\end{CD}", display: true },
             { left: "$", right: "$", display: false },
           ],
           macros: {
@@ -649,6 +670,14 @@
             "\\vu": "\\hat{#1}",
             "\\dv": "\\frac{\\mathrm{d} #1}{\\mathrm{d} #2}",
             "\\pdv": "\\frac{\\partial #1}{\\partial #2}",
+            "\\ket": "\\left|#1\\right\\rangle",
+            "\\bra": "\\left\\langle#1\\right|",
+            "\\braket": "\\left\\langle#1\\middle|#2\\right\\rangle",
+            "\\expect": "\\mathbb{E}\\left[#1\\right]",
+            "\\abs": "\\left|#1\\right|",
+            "\\norm": "\\left\\lVert#1\\right\\rVert",
+            "\\evalat": "\\left.#1\\right|_{#2}",
+            "\\dd": "\\mathrm{d}",
           },
           ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
           throwOnError: false,
@@ -666,10 +695,257 @@
         });
       }
 
+      void renderChartBlocks(target);
       void renderMermaidBlocks(target);
     } catch (error) {
       console.error("Rich message rendering failed; showing the source text instead.", error);
       target.textContent = source;
+    }
+  }
+
+  let chartSequence = 0;
+  const CHART_SVG_NS = "http://www.w3.org/2000/svg";
+  const CHART_PALETTE = ["#d0ff55", "#83b5ff", "#ffb86c", "#c7a5ff", "#ff8585", "#63d9c8", "#f3df75", "#b9c5d1"];
+
+  function chartSvgElement(tag, attributes, text) {
+    const element = document.createElementNS(CHART_SVG_NS, tag);
+    Object.entries(attributes || {}).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    if (text !== undefined && text !== null) element.textContent = String(text);
+    return element;
+  }
+
+  function chartText(value, maxLength) {
+    if (typeof value !== "string" && typeof value !== "number") return "";
+    return String(value).slice(0, maxLength || 120);
+  }
+
+  function chartFiniteNumber(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
+  function renderChartSpec(spec) {
+    if (!spec || typeof spec !== "object" || Array.isArray(spec)) throw new Error("Chart needs a JSON object.");
+    const type = chartText(spec.type, 20).toLowerCase();
+    if (!["bar", "line", "scatter", "pie"].includes(type)) {
+      throw new Error("Supported chart types are bar, line, scatter, and pie.");
+    }
+
+    const title = chartText(spec.title, 140);
+    const description = chartText(spec.description, 400);
+    const xLabel = chartText(spec.xLabel, 90);
+    const yLabel = chartText(spec.yLabel, 90);
+    const width = 720;
+    const height = 410;
+    const svg = chartSvgElement("svg", {
+      viewBox: "0 0 " + width + " " + height,
+      role: "img",
+      "aria-label": title || (type + " chart"),
+      focusable: "false"
+    });
+    svg.append(chartSvgElement("title", {}, title || (type.charAt(0).toUpperCase() + type.slice(1) + " chart")));
+    if (description) svg.append(chartSvgElement("desc", {}, description));
+    const titleNode = chartSvgElement("text", {
+      x: width / 2, y: 27, "text-anchor": "middle", "font-size": 18,
+      "font-weight": 650, fill: "#f0f2e8"
+    }, title);
+    if (title) svg.append(titleNode);
+
+    if (type === "pie") {
+      const data = Array.isArray(spec.data) ? spec.data : [];
+      if (!data.length || data.length > 24) throw new Error("Pie charts need 1–24 data slices.");
+      const slices = data.map((item) => {
+        const label = chartText(item && (item.label ?? item.x), 100);
+        const value = item && (item.value ?? item.y);
+        if (!label || !chartFiniteNumber(value) || value < 0) throw new Error("Each pie slice needs a label and a non-negative numeric value.");
+        return { label, value };
+      });
+      const total = slices.reduce((sum, item) => sum + item.value, 0);
+      if (!(total > 0)) throw new Error("Pie chart values must sum to more than zero.");
+      const cx = 245, cy = 218, radius = 142;
+      if (slices.length === 1) {
+        svg.append(chartSvgElement("circle", { cx, cy, r: radius, fill: CHART_PALETTE[0] }));
+      } else {
+        let angle = -Math.PI / 2;
+        slices.forEach((slice, index) => {
+          const next = angle + (slice.value / total) * Math.PI * 2;
+          const x1 = cx + radius * Math.cos(angle), y1 = cy + radius * Math.sin(angle);
+          const x2 = cx + radius * Math.cos(next), y2 = cy + radius * Math.sin(next);
+          const largeArc = next - angle > Math.PI ? 1 : 0;
+          const path = "M " + cx + " " + cy + " L " + x1 + " " + y1 +
+            " A " + radius + " " + radius + " 0 " + largeArc + " 1 " + x2 + " " + y2 + " Z";
+          const part = chartSvgElement("path", {
+            d: path, fill: CHART_PALETTE[index % CHART_PALETTE.length],
+            stroke: "#11150e", "stroke-width": 2
+          });
+          part.append(chartSvgElement("title", {}, slice.label + ": " + slice.value + " (" + (slice.value / total * 100).toFixed(1) + "%)"));
+          svg.append(part);
+          angle = next;
+        });
+      }
+      slices.forEach((slice, index) => {
+        const y = 116 + index * Math.min(27, 240 / slices.length);
+        svg.append(chartSvgElement("rect", { x: 430, y: y - 12, width: 12, height: 12, rx: 2, fill: CHART_PALETTE[index % CHART_PALETTE.length] }));
+        svg.append(chartSvgElement("text", { x: 451, y, "font-size": 13, fill: "#e7eadf" },
+          slice.label + " — " + slice.value + " (" + (slice.value / total * 100).toFixed(1) + "%)"));
+      });
+      return { svg, title, description, type };
+    }
+
+    const rawSeries = Array.isArray(spec.series) && spec.series.length
+      ? spec.series
+      : [{ name: chartText(spec.seriesName, 80) || "Series 1", data: spec.data }];
+    if (rawSeries.length > 8) throw new Error("Charts support at most 8 series.");
+    let totalPoints = 0;
+    const series = rawSeries.map((raw, index) => {
+      if (!raw || typeof raw !== "object" || !Array.isArray(raw.data) || raw.data.length === 0) {
+        throw new Error("Each chart series needs a non-empty data array.");
+      }
+      const name = chartText(raw.name, 80) || ("Series " + (index + 1));
+      const data = raw.data.map((point) => {
+        if (!point || typeof point !== "object" || !chartFiniteNumber(point.y) ||
+            !(typeof point.x === "string" || chartFiniteNumber(point.x))) {
+          throw new Error("Each chart point needs a string/number x and a finite numeric y.");
+        }
+        return { x: point.x, y: point.y };
+      });
+      totalPoints += data.length;
+      return { name, data };
+    });
+    if (totalPoints > 600) throw new Error("Charts are limited to 600 total points.");
+    const allPoints = series.flatMap((item) => item.data);
+    const numericX = allPoints.every((point) => chartFiniteNumber(point.x));
+    const xValues = [];
+    const xSet = new Set();
+    allPoints.forEach((point) => {
+      const key = String(point.x);
+      if (!xSet.has(key)) { xSet.add(key); xValues.push(point.x); }
+    });
+    const xMin = numericX ? Math.min(...allPoints.map((point) => point.x)) : 0;
+    const xMax = numericX ? Math.max(...allPoints.map((point) => point.x)) : Math.max(1, xValues.length - 1);
+    const xRange = (xMax - xMin) || 1;
+    const yValues = allPoints.map((point) => point.y);
+    let yMin = Math.min(...yValues), yMax = Math.max(...yValues);
+    if (type === "bar") { yMin = Math.min(0, yMin); yMax = Math.max(0, yMax); }
+    if (yMin === yMax) {
+      const padding = Math.abs(yMin) * 0.1 || 1;
+      yMin -= padding; yMax += padding;
+    } else {
+      const padding = (yMax - yMin) * 0.08;
+      yMin -= type === "bar" ? 0 : padding;
+      yMax += padding;
+    }
+    const left = 76, right = 26, top = 54, bottom = 88;
+    const plotWidth = width - left - right, plotHeight = height - top - bottom;
+    const xPosition = (value) => numericX
+      ? left + ((Number(value) - xMin) / xRange) * plotWidth
+      : left + (xValues.indexOf(value) / Math.max(1, xValues.length - 1)) * plotWidth;
+    const yPosition = (value) => top + ((yMax - value) / (yMax - yMin)) * plotHeight;
+
+    for (let i = 0; i <= 4; i += 1) {
+      const value = yMin + ((yMax - yMin) * i / 4);
+      const y = yPosition(value);
+      svg.append(chartSvgElement("line", { x1: left, y1: y, x2: width - right, y2: y, stroke: "#394032", "stroke-width": 1 }));
+      svg.append(chartSvgElement("text", { x: left - 10, y: y + 4, "text-anchor": "end", "font-size": 11, fill: "#a4ad98" },
+        Number(value.toPrecision(4)).toString()));
+    }
+    const baseline = yPosition(0);
+    svg.append(chartSvgElement("line", { x1: left, y1: top, x2: left, y2: height - bottom, stroke: "#87907e", "stroke-width": 1 }));
+    svg.append(chartSvgElement("line", { x1: left, y1: Math.max(top, Math.min(height - bottom, baseline)), x2: width - right, y2: Math.max(top, Math.min(height - bottom, baseline)), stroke: "#87907e", "stroke-width": 1 }));
+
+    if (xLabel) svg.append(chartSvgElement("text", { x: left + plotWidth / 2, y: height - 18, "text-anchor": "middle", "font-size": 12, fill: "#c3cab8" }, xLabel));
+    if (yLabel) svg.append(chartSvgElement("text", { x: 18, y: top + plotHeight / 2, transform: "rotate(-90 18 " + (top + plotHeight / 2) + ")", "text-anchor": "middle", "font-size": 12, fill: "#c3cab8" }, yLabel));
+
+    const maxXTicks = 9;
+    const stride = Math.max(1, Math.ceil(xValues.length / maxXTicks));
+    xValues.forEach((value, index) => {
+      if (index % stride !== 0 && index !== xValues.length - 1) return;
+      const x = xPosition(value);
+      svg.append(chartSvgElement("line", { x1: x, y1: height - bottom, x2: x, y2: height - bottom + 5, stroke: "#87907e", "stroke-width": 1 }));
+      svg.append(chartSvgElement("text", { x, y: height - bottom + 19, "text-anchor": "middle", "font-size": 11, fill: "#a4ad98" },
+        chartText(value, 32)));
+    });
+
+    if (type === "bar") {
+      const groupWidth = plotWidth / Math.max(1, xValues.length);
+      const totalBarWidth = Math.min(groupWidth * 0.78, 52);
+      const itemWidth = totalBarWidth / series.length;
+      series.forEach((item, seriesIndex) => {
+        item.data.forEach((point) => {
+          const groupCenter = xPosition(point.x);
+          const x = groupCenter - totalBarWidth / 2 + seriesIndex * itemWidth;
+          const y = yPosition(point.y);
+          const zeroY = yPosition(0);
+          const rect = chartSvgElement("rect", {
+            x, y: Math.min(y, zeroY), width: Math.max(1, itemWidth - 2),
+            height: Math.max(1, Math.abs(zeroY - y)),
+            rx: 2, fill: CHART_PALETTE[seriesIndex % CHART_PALETTE.length], opacity: 0.95
+          });
+          rect.append(chartSvgElement("title", {}, item.name + " · " + point.x + ": " + point.y));
+          svg.append(rect);
+        });
+      });
+    } else {
+      series.forEach((item, seriesIndex) => {
+        const colour = CHART_PALETTE[seriesIndex % CHART_PALETTE.length];
+        if (type === "line" && item.data.length > 1) {
+          const d = item.data.map((point, index) =>
+            (index === 0 ? "M " : "L ") + xPosition(point.x) + " " + yPosition(point.y)
+          ).join(" ");
+          svg.append(chartSvgElement("path", { d, fill: "none", stroke: colour, "stroke-width": 2.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        }
+        item.data.forEach((point) => {
+          const circle = chartSvgElement("circle", {
+            cx: xPosition(point.x), cy: yPosition(point.y), r: type === "scatter" ? 4.5 : 3.5,
+            fill: colour, stroke: "#11150e", "stroke-width": 1
+          });
+          circle.append(chartSvgElement("title", {}, item.name + " · " + point.x + ": " + point.y));
+          svg.append(circle);
+        });
+      });
+    }
+
+    if (series.length > 1) {
+      const legendY = height - 48;
+      const legendSpacing = Math.min(180, (width - left - right) / series.length);
+      series.forEach((item, index) => {
+        const x = left + index * legendSpacing;
+        svg.append(chartSvgElement("line", { x1: x, y1: legendY - 4, x2: x + 15, y2: legendY - 4, stroke: CHART_PALETTE[index % CHART_PALETTE.length], "stroke-width": 3 }));
+        svg.append(chartSvgElement("text", { x: x + 21, y: legendY, "font-size": 11, fill: "#c3cab8" }, item.name));
+      });
+    }
+    return { svg, title, description, type };
+  }
+
+  async function renderChartBlocks(target) {
+    const codeBlocks = Array.from(target.querySelectorAll(
+      "pre > code.language-chart, pre > code.language-omni-chart, pre > code.language-chart-json"
+    ));
+    for (const code of codeBlocks) {
+      if (!target.contains(code)) continue;
+      const pre = code.closest("pre");
+      if (!pre) continue;
+      const wrapper = pre.parentElement && pre.parentElement.classList.contains("code-block-wrap") ? pre.parentElement : pre;
+      try {
+        const spec = JSON.parse(code.textContent || "");
+        const chart = renderChartSpec(spec);
+        const figure = document.createElement("figure");
+        figure.className = "message-chart message-chart-" + chart.type;
+        figure.setAttribute("role", "group");
+        if (chart.title) figure.setAttribute("aria-label", chart.title);
+        figure.append(chart.svg);
+        if (chart.description) {
+          const caption = document.createElement("figcaption");
+          caption.textContent = chart.description;
+          figure.append(caption);
+        }
+        wrapper.replaceWith(figure);
+      } catch (error) {
+        console.warn("Chart was kept as source because its JSON or schema was invalid.", error);
+        const notice = document.createElement("p");
+        notice.className = "chart-fallback-note";
+        notice.textContent = "Chart not rendered: " + (error && error.message ? error.message : "invalid chart specification") + ". The source is preserved above.";
+        wrapper.after(notice);
+      }
     }
   }
 
