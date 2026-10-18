@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -23,15 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -754,10 +760,10 @@ private fun OmnitrixApp() {
         CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Mono, color = White)) {
             Scaffold(
             containerColor = Black,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 Row(
-                    Modifier.fillMaxWidth().background(Black).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
+                    Modifier.fillMaxWidth().background(Black).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     AppTab.entries.forEach { destination ->
@@ -895,16 +901,352 @@ private fun OmnitrixApp() {
 
 @Composable
 private fun AppHeader(title: String, detail: String? = null) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp, bottom = 14.dp)) {
-        Text("OMNITRIX", color = Green, fontSize = 13.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
-        Spacer(Modifier.height(12.dp))
-        Text(title, color = White, fontSize = 25.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 10.dp, bottom = 12.dp)) {
+        Text("OMNITRIX", color = Green, fontSize = 12.sp, letterSpacing = 2.4.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        Spacer(Modifier.height(6.dp))
+        Text(title, color = White, fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
         if (!detail.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(3.dp))
             Text(detail, color = Grey, fontSize = 13.sp, lineHeight = 18.sp)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Green.copy(alpha = 0.28f)))
+    }
+}
+
+
+private data class MarkdownBlock(
+    val type: String,
+    val text: String,
+    val level: Int = 1,
+    val marker: String = ""
+)
+
+private fun parseMarkdownBlocks(source: String): List<MarkdownBlock> {
+    val lines = source.replace("\r\n", "\n").replace('\r', '\n').lines()
+    val result = mutableListOf<MarkdownBlock>()
+    val paragraph = mutableListOf<String>()
+    val fence = Char(96).toString().repeat(3)
+    var index = 0
+
+    fun flushParagraph() {
+        if (paragraph.isNotEmpty()) {
+            val value = paragraph.joinToString("\n").trim()
+            if (value.isNotEmpty()) result.add(MarkdownBlock("paragraph", value))
+            paragraph.clear()
+        }
+    }
+
+    fun isTableRow(line: String) =
+        line.trim().startsWith("|") && line.trim().endsWith("|") && line.count { it == '|' } >= 2
+
+    fun isTableSeparator(line: String): Boolean {
+        if (!isTableRow(line)) return false
+        return line.trim().trim('|').split('|').all { cell ->
+            cell.trim().matches(Regex(":?-{3,}:?"))
+        }
+    }
+
+    while (index < lines.size) {
+        val line = lines[index]
+        if (line.trimStart().startsWith(fence)) {
+            flushParagraph()
+            index++
+            val codeLines = mutableListOf<String>()
+            while (index < lines.size && !lines[index].trimStart().startsWith(fence)) {
+                codeLines.add(lines[index])
+                index++
+            }
+            result.add(MarkdownBlock("code", codeLines.joinToString("\n")))
+            if (index < lines.size) index++
+            continue
+        }
+
+        if (line.isBlank()) {
+            flushParagraph()
+            index++
+            continue
+        }
+
+        if (isTableRow(line) && index + 1 < lines.size && isTableSeparator(lines[index + 1])) {
+            flushParagraph()
+            val tableLines = mutableListOf(line.trim(), lines[index + 1].trim())
+            index += 2
+            while (index < lines.size && isTableRow(lines[index])) {
+                tableLines.add(lines[index].trim())
+                index++
+            }
+            result.add(MarkdownBlock("table", tableLines.joinToString("\n")))
+            continue
+        }
+
+        val heading = Regex("""^(#{1,6})\s+(.+?)\s*#*\s*$""").matchEntire(line.trim())
+        if (heading != null) {
+            flushParagraph()
+            result.add(MarkdownBlock("heading", heading.groupValues[2], heading.groupValues[1].length))
+            index++
+            continue
+        }
+
+        if (Regex("""^\s*(---+|\*\*\*+|___+)\s*$""").matches(line)) {
+            flushParagraph()
+            result.add(MarkdownBlock("rule", ""))
+            index++
+            continue
+        }
+
+        val bullet = Regex("""^\s*[-*+]\s+(.+)$""").matchEntire(line)
+        if (bullet != null) {
+            flushParagraph()
+            result.add(MarkdownBlock("list", bullet.groupValues[1], marker = "•"))
+            index++
+            continue
+        }
+
+        val numbered = Regex("""^\s*(\d+[.)])\s+(.+)$""").matchEntire(line)
+        if (numbered != null) {
+            flushParagraph()
+            result.add(MarkdownBlock("list", numbered.groupValues[2], marker = numbered.groupValues[1]))
+            index++
+            continue
+        }
+
+        if (line.trimStart().startsWith(">")) {
+            flushParagraph()
+            val quoteLines = mutableListOf<String>()
+            while (index < lines.size && lines[index].trimStart().startsWith(">")) {
+                quoteLines.add(lines[index].trimStart().removePrefix(">").trimStart())
+                index++
+            }
+            result.add(MarkdownBlock("quote", quoteLines.joinToString("\n")))
+            continue
+        }
+
+        paragraph.add(line)
+        index++
+    }
+
+    flushParagraph()
+    return result
+}
+
+private fun parseMarkdownTable(source: String): List<List<String>> =
+    source.lines()
+        .filterNot { row ->
+            row.trim().trim('|').split('|').all { cell -> cell.trim().matches(Regex(":?-{3,}:?")) }
+        }
+        .map { row -> row.trim().trim('|').split('|').map { cell -> cell.trim() } }
+
+private val INLINE_MARKDOWN = Regex(
+    "(\\\\[[^\\\\]]+\\\\]\\\\(https?://[^)\\\\s]+\\\\)|\\\\*\\\\*.+?\\\\*\\\\*|__.+?__|" +
+        Char(96) + "[^" + Char(96) + "]+" + Char(96) +
+        "|(?<!\\\\*)\\\\*[^*\\\\n]+\\\\*(?!\\\\*)|(?<!_)_[^_\\\\n]+_(?!_))"
+)
+
+private fun parseInlineMarkdown(source: String) = buildAnnotatedString {
+    var cursor = 0
+    for (match in INLINE_MARKDOWN.findAll(source)) {
+        if (match.range.first > cursor) append(source.substring(cursor, match.range.first))
+        val token = match.value
+        when {
+            token.startsWith("[") && token.contains("](") && token.endsWith(")") -> {
+                val split = token.indexOf("](")
+                val label = token.substring(1, split)
+                val target = token.substring(split + 2, token.length - 1)
+                pushStringAnnotation(tag = "URL", annotation = target)
+                pushStyle(SpanStyle(color = Color(0xFF9BC2FF), textDecoration = TextDecoration.Underline))
+                append(label)
+                pop()
+                pop()
+            }
+            token.startsWith("**") && token.endsWith("**") -> {
+                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                append(token.substring(2, token.length - 2))
+                pop()
+            }
+            token.startsWith("__") && token.endsWith("__") -> {
+                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                append(token.substring(2, token.length - 2))
+                pop()
+            }
+            token.first() == Char(96) && token.last() == Char(96) -> {
+                pushStyle(SpanStyle(background = SurfaceRaised, color = Green, fontFamily = Mono))
+                append(token.substring(1, token.length - 1))
+                pop()
+            }
+            (token.startsWith("*") && token.endsWith("*")) ||
+                (token.startsWith("_") && token.endsWith("_")) -> {
+                pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                append(token.substring(1, token.length - 1))
+                pop()
+            }
+            else -> append(token)
+        }
+        cursor = match.range.last + 1
+    }
+    if (cursor < source.length) append(source.substring(cursor))
+}
+
+@Composable
+private fun MarkdownInline(
+    content: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val annotated = remember(content) { parseInlineMarkdown(content) }
+    ClickableText(
+        text = annotated,
+        modifier = modifier,
+        style = style,
+        onClick = { offset ->
+            annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                .firstOrNull()?.item?.let { target ->
+                    if (target.startsWith("https://") || target.startsWith("http://")) openExternal(context, target)
+                }
+        }
+    )
+}
+
+@Composable
+private fun MarkdownTable(source: String) {
+    val rows = remember(source) { parseMarkdownTable(source) }
+    if (rows.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            .background(Surface, RoundedCornerShape(3.dp))
+    ) {
+        rows.forEachIndexed { rowIndex, cells ->
+            Row(
+                Modifier.background(if (rowIndex == 0) SurfaceRaised else Surface)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                cells.forEach { cell ->
+                    Box(Modifier.width(136.dp).padding(end = 8.dp)) {
+                        MarkdownInline(
+                            cell,
+                            TextStyle(
+                                color = White,
+                                fontFamily = FontFamily.Default,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                fontWeight = if (rowIndex == 0) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
+                }
+            }
+            if (rowIndex < rows.lastIndex) {
+                HorizontalDivider(color = Grey.copy(alpha = 0.18f), thickness = 1.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownMessage(content: String) {
+    val blocks = remember(content) { parseMarkdownBlocks(content) }
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        blocks.forEach { block ->
+            when (block.type) {
+                "heading" -> {
+                    val size = when (block.level) {
+                        1 -> 23
+                        2 -> 20
+                        3 -> 18
+                        else -> 16
+                    }
+                    MarkdownInline(
+                        block.text,
+                        TextStyle(
+                            color = White,
+                            fontFamily = FontFamily.Default,
+                            fontSize = size.sp,
+                            lineHeight = (size + 5).sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        Modifier.fillMaxWidth()
+                    )
+                }
+                "list" -> {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            block.marker,
+                            color = Green,
+                            fontFamily = Mono,
+                            fontSize = 15.sp,
+                            lineHeight = 23.sp,
+                            modifier = Modifier.width(26.dp)
+                        )
+                        MarkdownInline(
+                            block.text,
+                            TextStyle(
+                                color = White,
+                                fontFamily = FontFamily.Default,
+                                fontSize = 15.sp,
+                                lineHeight = 23.sp
+                            ),
+                            Modifier.weight(1f)
+                        )
+                    }
+                }
+                "quote" -> {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .background(SurfaceRaised, RoundedCornerShape(3.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        MarkdownInline(
+                            block.text,
+                            TextStyle(
+                                color = Grey,
+                                fontFamily = FontFamily.Default,
+                                fontSize = 15.sp,
+                                lineHeight = 23.sp,
+                                fontStyle = FontStyle.Italic
+                            )
+                        )
+                    }
+                }
+                "code" -> {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .background(SurfaceRaised, RoundedCornerShape(3.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            block.text,
+                            color = Green,
+                            fontFamily = Mono,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            softWrap = false
+                        )
+                    }
+                }
+                "table" -> MarkdownTable(block.text)
+                "rule" -> HorizontalDivider(color = Grey.copy(alpha = 0.28f), thickness = 1.dp)
+                else -> MarkdownInline(
+                    block.text,
+                    TextStyle(
+                        color = White,
+                        fontFamily = FontFamily.Default,
+                        fontSize = 15.sp,
+                        lineHeight = 23.sp
+                    ),
+                    Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
 
@@ -932,10 +1274,28 @@ private fun ChatScreen(
             contentPadding = PaddingValues(top = 14.dp, bottom = 18.dp)
         ) {
             items(messages) { message ->
-                Column(Modifier.fillMaxWidth()) {
-                    Text(message.role, color = if (message.role == "SYSTEM") Red else Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(5.dp))
-                    Text(message.text, color = White, fontSize = 16.sp, lineHeight = 24.sp)
+                val isUserMessage = message.role == "YOU"
+                Column(
+                    Modifier.fillMaxWidth().then(
+                        if (isUserMessage) Modifier.background(Surface, RoundedCornerShape(3.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                        else Modifier
+                    )
+                ) {
+                    Text(
+                        if (isUserMessage) "YOU" else message.role,
+                        color = when (message.role) {
+                            "SYSTEM" -> Red
+                            "YOU" -> Grey
+                            else -> Green
+                        },
+                        fontSize = 12.sp,
+                        letterSpacing = 1.1.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = Mono
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    MarkdownMessage(message.text)
                 }
             }
             if (busy) item { Text("Thinking…", color = Green, fontSize = 15.sp) }
@@ -950,7 +1310,8 @@ private fun ChatScreen(
                 enabled = connected && !busy && input.isNotBlank(),
                 modifier = Modifier.height(52.dp),
                 shape = RoundedCornerShape(2.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black, disabledContainerColor = SurfaceRaised, disabledContentColor = Grey),
+                border = BorderStroke(1.dp, Green.copy(alpha = 0.72f)),
+                colors = ButtonDefaults.buttonColors(containerColor = Black, contentColor = White, disabledContainerColor = SurfaceRaised, disabledContentColor = Grey),
                 contentPadding = PaddingValues(horizontal = 14.dp)
             ) { Text(if (busy) "WAIT" else "SEND", fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
         }
@@ -1124,8 +1485,9 @@ private fun PrimaryButton(
     Button(
         onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(2.dp),
+        border = BorderStroke(1.dp, Green.copy(alpha = 0.72f)),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Green, contentColor = Black,
+            containerColor = Black, contentColor = White,
             disabledContainerColor = SurfaceRaised, disabledContentColor = Grey
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 15.dp)
