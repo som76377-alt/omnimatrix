@@ -309,6 +309,8 @@ class StudioRuntime:
         self.execution_lock = threading.Lock()
         self.active_chats = 0
         self.active_chats_lock = threading.Lock()
+        # The public mobile activity endpoint is scoped to this opaque session ID.
+        self.active_chat_session_id: str | None = None
         self.app = app
         self.omnitrix = omnitrix
         self.workspace_tool = workspace_tool
@@ -590,6 +592,43 @@ class StudioRuntime:
             "model": "gemini-3.8-flash" if available else None,
         }
 
+    def _public_session_id(self, session_id: str, client_ip: str) -> str:
+        """Namespace a public session to this service and caller IP without exposing the raw ID."""
+        client_key = hashlib.sha256(
+            (self.access_token + "\\0" + client_ip).encode("utf-8")
+        ).hexdigest()
+        return "public_" + hashlib.sha256(
+            (client_key + "\\0" + session_id).encode("utf-8")
+        ).hexdigest()[:48]
+
+    def mobile_activity(self, session_id: Any, client_ip: str) -> dict[str, Any]:
+        """Expose only the matching mobile session's current model route; never prompts or reasoning."""
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            return {"ok": True, "active": False, "status": "idle"}
+
+        ip = client_ip.strip()[:128] if isinstance(client_ip, str) else ""
+        expected_session = self._public_session_id(session_id, ip or "unknown")
+        with self.active_chats_lock:
+            active_session = self.active_chat_session_id
+
+        if active_session != expected_session:
+            return {"ok": True, "active": False, "status": "idle"}
+
+        current = getattr(self.omnitrix, "active_execution", None)
+        if not isinstance(current, dict):
+            return {"ok": True, "active": True, "activity": None}
+
+        allowed_fields = (
+            "status", "stage", "role", "provider", "model", "configured_model",
+            "configured_name", "reasoning_effort_requested", "identity_source",
+        )
+        activity = {
+            key: current.get(key)
+            for key in allowed_fields
+            if current.get(key) is None or isinstance(current.get(key), (str, int, float, bool))
+        }
+        return {"ok": True, "active": True, "activity": activity}
+
     def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
         """Rate-limited public chat only; this path cannot access workspace or test APIs."""
         if not self.public_chat_enabled:
@@ -636,9 +675,7 @@ class StudioRuntime:
         # Namespace caller-provided session IDs by the rate-limit identity so one client
         # cannot intentionally reuse another client's predictable conversation ID.
         safe_payload = dict(payload)
-        safe_payload["session_id"] = "public_" + hashlib.sha256(
-            (client_key + "\\0" + session_id).encode("utf-8")
-        ).hexdigest()[:48]
+        safe_payload["session_id"] = self._public_session_id(session_id, client_ip)
         return self.chat(safe_payload)
 
     def chat(self, payload: Any) -> dict[str, Any]:
@@ -661,6 +698,8 @@ class StudioRuntime:
             with self.active_chats_lock:
                 self.active_chats -= 1
             raise RuntimeError("Studio is busy with another chat, test, or GitHub update; retry this request.")
+        with self.active_chats_lock:
+            self.active_chat_session_id = session_id
         try:
             reply = self.app.send_message(conversation, message.strip())
         except Exception:
@@ -672,6 +711,8 @@ class StudioRuntime:
         finally:
             self.execution_lock.release()
             with self.active_chats_lock:
+                if self.active_chat_session_id == session_id:
+                    self.active_chat_session_id = None
                 self.active_chats -= 1
         return {
             "ok": True,
@@ -902,6 +943,11 @@ def make_handler(
                 return
             if route == "/api/mobile/health":
                 self._send_json(runtime.mobile_health())
+                return
+            if route == "/api/mobile/activity":
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                self._send_json(runtime.mobile_activity(self._first_query("session_id", ""), client_ip))
                 return
             if route.startswith("/api/"):
                 if not self._authorized():
