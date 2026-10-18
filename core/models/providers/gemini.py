@@ -148,13 +148,20 @@ class GeminiAdapter(ModelAdapter):
             },
         )
 
+        reported_model = data.get("model")
+        identity_source = "provider_response"
+        if not isinstance(reported_model, str) or not reported_model.strip():
+            reported_model = self._model_id
+            identity_source = "configured_fallback"
+
         return ModelResponse(
             content=content,
-            model=data.get("model", self._model_id),
+            model=reported_model,
             provider=self.provider,
             usage=usage,
             tool_calls=tuple(tool_calls),
             continuation=continuation,
+            model_identity_source=identity_source,
         )
 
     def _send_request(self, http_request: Request) -> bytes:
