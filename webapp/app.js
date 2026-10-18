@@ -555,6 +555,25 @@
   let mermaidPromise = null;
   let diagramSequence = 0;
 
+  const OMNITRIX_KATEX_MACROS = {
+    "\\grad": "\\nabla",
+    "\\curl": "\\nabla\\times",
+    "\\divergence": "\\nabla\\cdot",
+    "\\laplacian": "\\nabla^2",
+    "\\vb": "\\boldsymbol{#1}",
+    "\\vu": "\\hat{#1}",
+    "\\dv": "\\frac{\\mathrm{d} #1}{\\mathrm{d} #2}",
+    "\\pdv": "\\frac{\\partial #1}{\\partial #2}",
+    "\\ket": "\\left|#1\\right\\rangle",
+    "\\bra": "\\left\\langle#1\\right|",
+    "\\braket": "\\left\\langle#1\\middle|#2\\right\\rangle",
+    "\\expect": "\\mathbb{E}\\left[#1\\right]",
+    "\\abs": "\\left|#1\\right|",
+    "\\norm": "\\left\\lVert#1\\right\\rVert",
+    "\\evalat": "\\left.#1\\right|_{#2}",
+    "\\dd": "\\mathrm{d}",
+  };
+
   function renderGitHubAlerts(target) {
     const kinds = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
     target.querySelectorAll("blockquote").forEach((quote) => {
@@ -580,6 +599,162 @@
       label.textContent = kind;
       firstParagraph.prepend(label);
     });
+  }
+
+  function renderKatexBlock(container, tex, displayMode) {
+    if (!window.katex || typeof window.katex.render !== "function") return false;
+    try {
+      window.katex.render(tex, container, {
+        displayMode: Boolean(displayMode),
+        throwOnError: true,
+        strict: "ignore",
+        trust: false,
+        maxExpand: 1000,
+        maxSize: 25,
+        macros: { ...OMNITRIX_KATEX_MACROS },
+      });
+      return true;
+    } catch (error) {
+      console.warn("Math block could not be rendered; retaining its source.", error);
+      container.replaceChildren();
+      return false;
+    }
+  }
+
+  function renderMathCodeBlocks(target) {
+    const blocks = Array.from(target.querySelectorAll(
+      "pre > code.language-math, pre > code.language-latex, pre > code.language-tex, pre > code.language-katex, pre > code.language-equation"
+    ));
+    for (const code of blocks) {
+      if (!target.contains(code)) continue;
+      const pre = code.closest("pre");
+      if (!pre) continue;
+      const tex = code.textContent || "";
+      const block = document.createElement("div");
+      block.className = "message-math-fence";
+      block.setAttribute("role", "math");
+      if (renderKatexBlock(block, tex, true)) pre.replaceWith(block);
+    }
+  }
+
+  function renderBareMathEnvironments(target) {
+    if (!window.katex || typeof window.katex.render !== "function") return;
+    const environmentPattern = /\\begin\{(equation\*?|alignat\*?|align\*?|gather\*?|CD)\}[\s\S]*?\\end\{\1\}/g;
+    const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+    const candidates = [];
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode;
+      const parent = textNode.parentElement;
+      if (!parent || parent.closest("pre, code, script, style, textarea, .katex, .message-math-fence, .message-chart, .message-media")) continue;
+      environmentPattern.lastIndex = 0;
+      if (environmentPattern.test(textNode.nodeValue || "")) candidates.push(textNode);
+    }
+
+    for (const textNode of candidates) {
+      if (!textNode.parentNode) continue;
+      const source = textNode.nodeValue || "";
+      const pattern = new RegExp(environmentPattern.source, "g");
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      let renderedAny = false;
+      let match;
+      while ((match = pattern.exec(source)) !== null) {
+        if (match.index > cursor) fragment.append(document.createTextNode(source.slice(cursor, match.index)));
+        const math = document.createElement("span");
+        math.className = "message-math-environment";
+        math.setAttribute("role", "math");
+        if (renderKatexBlock(math, match[0], true)) {
+          fragment.append(math);
+          renderedAny = true;
+        } else {
+          fragment.append(document.createTextNode(match[0]));
+        }
+        cursor = match.index + match[0].length;
+      }
+      if (!renderedAny) continue;
+      if (cursor < source.length) fragment.append(document.createTextNode(source.slice(cursor)));
+      textNode.replaceWith(fragment);
+    }
+  }
+
+  function safeMediaUrl(value) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 2048) return null;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderMediaBlocks(target) {
+    const blocks = Array.from(target.querySelectorAll(
+      "pre > code.language-media, pre > code.language-audio, pre > code.language-video"
+    ));
+    for (const code of blocks) {
+      if (!target.contains(code)) continue;
+      const pre = code.closest("pre");
+      if (!pre) continue;
+      try {
+        const spec = JSON.parse(code.textContent || "");
+        const language = Array.from(code.classList).find((name) =>
+          ["language-media", "language-audio", "language-video"].includes(name)
+        );
+        const type = language === "language-audio" ? "audio"
+          : language === "language-video" ? "video"
+          : String(spec && spec.type || "").toLowerCase();
+        if (!spec || typeof spec !== "object" || Array.isArray(spec) ||
+            !["audio", "video"].includes(type)) {
+          throw new Error("Media JSON needs type 'audio' or 'video'.");
+        }
+        const sourceUrl = safeMediaUrl(spec.src);
+        if (!sourceUrl) throw new Error("Media src must be a direct HTTPS URL without credentials.");
+
+        const title = typeof spec.title === "string" ? spec.title.trim().slice(0, 160) : "";
+        const media = document.createElement(type);
+        media.controls = true;
+        media.preload = "none";
+        media.referrerPolicy = "no-referrer";
+        media.setAttribute("aria-label", title || (type === "audio" ? "Audio player" : "Video player"));
+        media.src = sourceUrl.href;
+        if (type === "video") {
+          media.playsInline = true;
+          const posterUrl = safeMediaUrl(spec.poster);
+          if (posterUrl) media.poster = posterUrl.href;
+          media.controlsList = "nodownload";
+        }
+
+        const figure = document.createElement("figure");
+        figure.className = "message-media message-media-" + type;
+        figure.append(media);
+
+        const caption = document.createElement("figcaption");
+        if (title) caption.append(document.createTextNode(title + " "));
+        const sourceLink = document.createElement("a");
+        sourceLink.href = sourceUrl.href;
+        sourceLink.textContent = "Open media source";
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        sourceLink.referrerPolicy = "no-referrer";
+        caption.append(sourceLink);
+        figure.append(caption);
+
+        const errorNote = document.createElement("p");
+        errorNote.className = "message-media-error";
+        errorNote.hidden = true;
+        errorNote.textContent = "Playback failed. Use the source link above or check the media URL.";
+        media.addEventListener("error", () => { errorNote.hidden = false; });
+        figure.append(errorNote);
+        pre.replaceWith(figure);
+      } catch (error) {
+        console.warn("Media block retained as code because its schema or URL was invalid.", error);
+        const note = document.createElement("p");
+        note.className = "message-media-fallback";
+        note.textContent = "Media not rendered: " + (error && error.message ? error.message : "invalid media specification") + ". The source is preserved above.";
+        pre.after(note);
+      }
+    }
   }
 
   function renderRichContent(target, rawContent) {
@@ -618,6 +793,11 @@
         image.decoding = "async";
         image.referrerPolicy = "no-referrer";
       });
+
+      // Special formats are transformed only after Markdown sanitization; invalid source remains readable.
+      renderMathCodeBlocks(target);
+      renderMediaBlocks(target);
+      renderBareMathEnvironments(target);
 
       // Keep code legible and copyable without allowing a language label to become executable HTML.
       target.querySelectorAll("pre > code").forEach((code) => {
@@ -661,24 +841,8 @@
             { left: "\\[", right: "\\]", display: true },
             { left: "$", right: "$", display: false },
           ],
-          macros: {
-            "\\grad": "\\nabla",
-            "\\curl": "\\nabla\\times",
-            "\\divergence": "\\nabla\\cdot",
-            "\\laplacian": "\\nabla^2",
-            "\\vb": "\\boldsymbol{#1}",
-            "\\vu": "\\hat{#1}",
-            "\\dv": "\\frac{\\mathrm{d} #1}{\\mathrm{d} #2}",
-            "\\pdv": "\\frac{\\partial #1}{\\partial #2}",
-            "\\ket": "\\left|#1\\right\\rangle",
-            "\\bra": "\\left\\langle#1\\right|",
-            "\\braket": "\\left\\langle#1\\middle|#2\\right\\rangle",
-            "\\expect": "\\mathbb{E}\\left[#1\\right]",
-            "\\abs": "\\left|#1\\right|",
-            "\\norm": "\\left\\lVert#1\\right\\rVert",
-            "\\evalat": "\\left.#1\\right|_{#2}",
-            "\\dd": "\\mathrm{d}",
-          },
+          macros: { ...OMNITRIX_KATEX_MACROS },
+
           ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
           throwOnError: false,
           strict: "ignore",
@@ -690,7 +854,7 @@
 
       if (window.hljs) {
         target.querySelectorAll("pre code").forEach((code) => {
-          if (code.classList.contains("language-mermaid") || code.classList.contains("language-mmd")) return;
+          if (code.classList.contains("language-mermaid") || code.classList.contains("language-mmd") || /language-(math|latex|tex|katex|equation|media|audio|video)/.test(code.className)) return;
           try { window.hljs.highlightElement(code); } catch { /* Keep unhighlighted code readable. */ }
         });
       }
