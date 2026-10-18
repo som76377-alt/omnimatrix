@@ -129,15 +129,21 @@ done
 mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
 
-if [[ -f "$KEYSTORE" || -f "$PASSWORD_FILE" ]]; then
-  if [[ ! -f "$KEYSTORE" || ! -f "$PASSWORD_FILE" ]]; then
-    echo "Found an incomplete local signing setup in $KEY_DIR; refusing to replace it."
+if [[ -f "$KEYSTORE" ]]; then
+  if [[ ! -f "$PASSWORD_FILE" ]]; then
+    echo "The keystore exists but its password file is missing; refusing to risk losing this signing identity."
     exit 1
   fi
   echo "Reusing the existing local Omnitrix signing key."
 else
-  store_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-  (umask 077 && printf '%s' "$store_password" > "$PASSWORD_FILE")
+  if [[ -f "$PASSWORD_FILE" ]]; then
+    # Recover the password file left by the earlier keytool runtime failure.
+    store_password="$(cat "$PASSWORD_FILE")"
+    echo "Recovering the incomplete local setup by creating the missing keystore."
+  else
+    store_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+    (umask 077 && printf '%s' "$store_password" > "$PASSWORD_FILE")
+  fi
   if [[ -n "$KEYTOOL_BIN" ]]; then
     "$KEYTOOL_BIN" -genkeypair -noprompt \
       -alias "$KEY_ALIAS" \
