@@ -80,4 +80,11 @@ class RuntimeInputValidationTest {
         assertEquals(original, MarkwonMathNormalizer.normalize(original))
     }
 
+    @Test
+    fun formatsAlertMarkersAsReadableBoldLabels() {
+        val source = "> [!WARNING] Check the assumptions\n> More detail follows."
+        val result = MarkwonMathNormalizer.normalize(source)
+        assertTrue(result.contains("> **WARNING**  Check the assumptions"))
+    }
+
 }
