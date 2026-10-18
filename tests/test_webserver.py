@@ -269,6 +269,48 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(activity["stage"], "answer_generation")
         self.assertEqual(activity["identity_source"], "adapter_metadata")
 
+    def test_public_mobile_activity_is_session_scoped_and_exposes_only_safe_model_metadata(self):
+        session_id = "mobile-session-12345678"
+        client_ip = "127.0.0.1"
+        self.runtime.active_chat_session_id = self.runtime._public_session_id(session_id, client_ip)
+        self.runtime.omnitrix.active_execution = {
+            "status": "request_in_flight",
+            "stage": "answer_generation",
+            "role": "reasoning",
+            "provider": "openrouter",
+            "configured_model": "nvidia/nemotron-3-super-120b-a12b:free",
+            "reasoning_effort_requested": "high",
+            "identity_source": "configured_id_pending_provider_response",
+            "private_reasoning": "must never be exposed",
+        }
+
+        status, body = self.request(
+            "/api/mobile/activity?session_id=" + session_id,
+            authorized=False,
+        )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["active"])
+        self.assertEqual(body["activity"]["role"], "reasoning")
+        self.assertEqual(body["activity"]["provider"], "openrouter")
+        self.assertEqual(body["activity"]["reasoning_effort_requested"], "high")
+        self.assertEqual(
+            body["activity"]["identity_source"],
+            "configured_id_pending_provider_response",
+        )
+        self.assertNotIn("private_reasoning", json.dumps(body))
+        self.assertNotIn("must never be exposed", json.dumps(body))
+
+        status, other = self.request(
+            "/api/mobile/activity?session_id=someone-elses-session",
+            authorized=False,
+        )
+        self.assertEqual(status, 200, other)
+        self.assertFalse(other["active"])
+        self.assertNotIn("nvidia/nemotron", json.dumps(other))
+
+        self.runtime.active_chat_session_id = None
+        self.runtime.omnitrix.active_execution = None
+
     def test_workspace_browser_fails_closed_without_explicit_opt_in(self):
         status, body = self.request("/api/workspace/read?path=notes.txt")
         self.assertEqual(status, 403)
