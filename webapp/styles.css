@@ -513,3 +513,55 @@ h2,h3,p{margin-top:0}
   .message-bubble .message-chart{padding:.2em;border-radius:2px}
   .message-bubble .message-chart svg{min-width:500px}
 }
+
+
+/* Explicit math and media blocks use renderer-created elements, not model HTML. */
+.message-bubble .message-math-fence{
+  max-width:100%;
+  margin:.9em 0;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding:.35em .1em;
+}
+.message-bubble .message-math-environment{
+  display:block;
+  max-width:100%;
+  margin:.9em 0;
+  overflow-x:auto;
+  overflow-y:hidden;
+}
+.message-bubble .message-media{
+  min-width:0;
+  margin:1em 0;
+  padding:.65em;
+  border:1px solid var(--border);
+  border-radius:4px;
+  background:#11150e;
+}
+.message-bubble .message-media audio,
+.message-bubble .message-media video{
+  display:block;
+  width:100%;
+  max-width:100%;
+  border-radius:3px;
+  background:#080a07;
+}
+.message-bubble .message-media-video video{max-height:480px}
+.message-bubble .message-media figcaption{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.5em;
+  justify-content:space-between;
+  margin-top:.55em;
+  color:var(--muted);
+  font-size:.85em;
+}
+.message-bubble .message-media-error,
+.message-bubble .message-media-fallback{
+  margin:.5em 0 0;
+  color:var(--muted);
+  font-size:.86em;
+  border-left:2px solid var(--muted);
+  padding-left:.6em;
+}
+.message-bubble .message-media-error[hidden]{display:none}
