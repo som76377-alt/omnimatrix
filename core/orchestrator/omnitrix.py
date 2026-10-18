@@ -1005,6 +1005,17 @@ class Omnitrix:
             ]
             if independent:
                 return independent[0]
+            # A different upstream model is still useful when multiple vendors
+            # are exposed through the same gateway. Do not self-critique merely
+            # because both models share an API gateway.
+            independent_model = [
+                model
+                for model in ordered
+                if model.name != fallback_model.name
+                and model.model_id != fallback_model.model_id
+            ]
+            if independent_model:
+                return independent_model[0]
 
         for model in ordered:
             if model.name == fallback_model.name:
