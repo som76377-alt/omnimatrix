@@ -80,13 +80,54 @@ if ! gh auth status --hostname github.com >/dev/null 2>&1; then
 fi
 
 
-if ! command -v keytool >/dev/null 2>&1; then
-  if ! command -v sudo >/dev/null 2>&1; then
-    echo "Java 17 is required to generate the signing key. Install a JDK and run this again."
-    exit 1
+# Ensure keytool is available without depending on sudo or a Linux package manager.
+KEYTOOL_BIN="$(command -v keytool || true)"
+if [[ -z "$KEYTOOL_BIN" ]]; then
+  for command_name in curl tar find; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      echo "Required command missing for the local Java bootstrap: $command_name"
+      echo "This Codespace image is missing a standard utility; no signing key was changed."
+      exit 1
+    fi
+  done
+
+  case "$(uname -m)" in
+    x86_64|amd64) JDK_ARCH="x64" ;;
+    aarch64|arm64) JDK_ARCH="aarch64" ;;
+    *)
+      echo "Unsupported Codespace CPU architecture for Java 17: $(uname -m)"
+      exit 1
+      ;;
+  esac
+
+  JDK_DIR="$HOME/.local/opt/omnitrix-jdk-17"
+  if [[ ! -x "$JDK_DIR/bin/keytool" ]]; then
+    JDK_TMP="$(mktemp -d)"
+    trap 'rm -rf "$JDK_TMP"' EXIT
+    mkdir -p "$JDK_TMP/extracted" "$HOME/.local/opt"
+    echo "Java 17 keytool is missing; downloading the official Eclipse Adoptium JDK into your home directory..."
+    curl -fL --retry 3 \
+      "https://api.adoptium.net/v3/binary/latest/17/ga/linux/$JDK_ARCH/jdk/hotspot/normal/eclipse" \
+      -o "$JDK_TMP/jdk.tar.gz"
+    tar -xzf "$JDK_TMP/jdk.tar.gz" -C "$JDK_TMP/extracted"
+    JDK_EXTRACTED="$(find "$JDK_TMP/extracted" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+    if [[ -z "$JDK_EXTRACTED" || ! -x "$JDK_EXTRACTED/bin/keytool" ]]; then
+      echo "The downloaded Java archive did not contain a working keytool. No signing key was changed."
+      exit 1
+    fi
+    JDK_STAGE="$HOME/.local/opt/omnitrix-jdk-17.new"
+    rm -rf "$JDK_STAGE"
+    mv "$JDK_EXTRACTED" "$JDK_STAGE"
+    rm -rf "$JDK_DIR"
+    mv "$JDK_STAGE" "$JDK_DIR"
+    rm -rf "$JDK_TMP"
+    trap - EXIT
   fi
-  sudo apt-get update
-  sudo apt-get install -y openjdk-17-jdk-headless
+  KEYTOOL_BIN="$JDK_DIR/bin/keytool"
+fi
+if [[ ! -x "$KEYTOOL_BIN" ]]; then
+  echo "Java keytool is still unavailable after bootstrap. No signing key was changed."
+  exit 1
 fi
 
 gh auth status --hostname github.com >/dev/null
@@ -117,7 +158,7 @@ if [[ -f "$KEYSTORE" || -f "$PASSWORD_FILE" ]]; then
 else
   store_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   (umask 077 && printf '%s' "$store_password" > "$PASSWORD_FILE")
-  keytool -genkeypair -noprompt \
+  "$KEYTOOL_BIN" -genkeypair -noprompt \
     -alias "$KEY_ALIAS" \
     -keyalg RSA -keysize 3072 -validity 10000 \
     -storetype PKCS12 \
