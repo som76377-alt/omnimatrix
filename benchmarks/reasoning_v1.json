@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "model_name": "reasoning-nemotron-super-free",
+  "description": "Small, repeatable smoke benchmark for the Omnitrix Reasoning specialist. Signals are lightweight review hints, not an accuracy score.",
+  "cases": [
+    {
+      "id": "causal-physics",
+      "prompt": "Explain how an induction cooktop heats a metal pan as a causal chain from alternating current to heat. Distinguish what happens in the coil from what happens in the pan.",
+      "review_signals": ["coil", "magnetic field", "current", "resistance"]
+    },
+    {
+      "id": "uncertainty-calibration",
+      "prompt": "A sealed box has a mass of 2 kg. Without opening it or receiving any other measurements, can you determine whether it contains a metal object? Answer directly and distinguish what is known from what is not known.",
+      "review_signals": ["cannot determine", "not enough information", "mass"]
+    },
+    {
+      "id": "constraint-tracking",
+      "prompt": "Give exactly three numbered steps for checking whether a phone app's backend is reachable. Do not suggest reinstalling the app, and do not claim you performed any checks yourself.",
+      "review_signals": ["1", "2", "3"]
+    },
+    {
+      "id": "false-premise",
+      "prompt": "Since all metals are magnetic, why does copper always stick to a magnet? First check whether the premise is correct, then answer briefly.",
+      "review_signals": ["not all metals", "copper", "magnetic"]
+    },
+    {
+      "id": "simple-arithmetic",
+      "prompt": "A sensor records 12 readings, each 0.5 seconds apart. What is the elapsed time from the first reading to the last? Show the calculation and state why the number of intervals matters.",
+      "review_signals": ["11", "5.5"]
+    }
+  ]
+}
