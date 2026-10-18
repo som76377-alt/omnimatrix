@@ -1,19 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#071007"
-        android:pathData="M54,4 A50,50 0,1 0,54 104 A50,50 0,1 0,54 4 Z" />
-    <path
-        android:fillColor="#A4FF3F"
-        android:pathData="M54,10 A44,44 0,1 0,54 98 A44,44 0,1 0,54 10 Z" />
-    <path
-        android:fillColor="#071007"
-        android:pathData="M54,18 A36,36 0,1 0,54 90 A36,36 0,1 0,54 18 Z" />
-    <path
-        android:fillColor="#A4FF3F"
-        android:pathData="M31,29 L77,29 L59,49 L59,59 L77,79 L31,79 L49,59 L49,49 Z" />
-</vector>
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/omnitrix_logo"
+    android:gravity="fill"
+    android:filter="true" />
