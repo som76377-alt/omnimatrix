@@ -24,6 +24,9 @@ on:
       - "config/mobile.models.json"
       - "config/mobile-backend.json"
       - "render.yaml"
+      - "tools/**"
+      - "docs/ANDROID_AUTO_UPDATES.md"
+      - "README.md"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
