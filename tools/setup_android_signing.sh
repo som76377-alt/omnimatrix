@@ -84,54 +84,12 @@ if ! gh auth status --hostname github.com >/dev/null 2>&1; then
 fi
 
 
-# Ensure keytool is available without depending on sudo or a Linux package manager.
+# Prefer a usable keytool, but do not assume the Codespace can run glibc JDK binaries.
+# Some hosted workspace images lack the ELF loader required by the Adoptium download.
 KEYTOOL_BIN="$(command -v keytool || true)"
-if [[ -z "$KEYTOOL_BIN" ]]; then
-  for command_name in curl tar find; do
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-      echo "Required command missing for the local Java bootstrap: $command_name"
-      echo "This Codespace image is missing a standard utility; no signing key was changed."
-      exit 1
-    fi
-  done
-
-  case "$(uname -m)" in
-    x86_64|amd64) JDK_ARCH="x64" ;;
-    aarch64|arm64) JDK_ARCH="aarch64" ;;
-    *)
-      echo "Unsupported Codespace CPU architecture for Java 17: $(uname -m)"
-      exit 1
-      ;;
-  esac
-
-  JDK_DIR="$HOME/.local/opt/omnitrix-jdk-17"
-  if [[ ! -x "$JDK_DIR/bin/keytool" ]]; then
-    JDK_TMP="$(mktemp -d)"
-    trap 'rm -rf "$JDK_TMP"' EXIT
-    mkdir -p "$JDK_TMP/extracted" "$HOME/.local/opt"
-    echo "Java 17 keytool is missing; downloading the official Eclipse Adoptium JDK into your home directory..."
-    curl -fL --retry 3 \
-      "https://api.adoptium.net/v3/binary/latest/17/ga/linux/$JDK_ARCH/jdk/hotspot/normal/eclipse" \
-      -o "$JDK_TMP/jdk.tar.gz"
-    tar -xzf "$JDK_TMP/jdk.tar.gz" -C "$JDK_TMP/extracted"
-    JDK_EXTRACTED="$(find "$JDK_TMP/extracted" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-    if [[ -z "$JDK_EXTRACTED" || ! -x "$JDK_EXTRACTED/bin/keytool" ]]; then
-      echo "The downloaded Java archive did not contain a working keytool. No signing key was changed."
-      exit 1
-    fi
-    JDK_STAGE="$HOME/.local/opt/omnitrix-jdk-17.new"
-    rm -rf "$JDK_STAGE"
-    mv "$JDK_EXTRACTED" "$JDK_STAGE"
-    rm -rf "$JDK_DIR"
-    mv "$JDK_STAGE" "$JDK_DIR"
-    rm -rf "$JDK_TMP"
-    trap - EXIT
-  fi
-  KEYTOOL_BIN="$JDK_DIR/bin/keytool"
-fi
-if [[ ! -x "$KEYTOOL_BIN" ]]; then
-  echo "Java keytool is still unavailable after bootstrap. No signing key was changed."
-  exit 1
+if [[ -n "$KEYTOOL_BIN" ]] && ! "$KEYTOOL_BIN" -help >/dev/null 2>&1; then
+  echo "The system keytool exists but cannot run in this workspace; using the portable PKCS#12 fallback."
+  KEYTOOL_BIN=""
 fi
 
 gh auth status --hostname github.com >/dev/null
@@ -180,14 +138,54 @@ if [[ -f "$KEYSTORE" || -f "$PASSWORD_FILE" ]]; then
 else
   store_password="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   (umask 077 && printf '%s' "$store_password" > "$PASSWORD_FILE")
-  "$KEYTOOL_BIN" -genkeypair -noprompt \
-    -alias "$KEY_ALIAS" \
-    -keyalg RSA -keysize 3072 -validity 10000 \
-    -storetype PKCS12 \
-    -keystore "$KEYSTORE" \
-    -storepass "$store_password" \
-    -keypass "$store_password" \
-    -dname "CN=Omnitrix Android, O=Omnitrix, C=IN"
+  if [[ -n "$KEYTOOL_BIN" ]]; then
+    "$KEYTOOL_BIN" -genkeypair -noprompt \
+      -alias "$KEY_ALIAS" \
+      -keyalg RSA -keysize 3072 -validity 10000 \
+      -storetype PKCS12 \
+      -keystore "$KEYSTORE" \
+      -storepass "$store_password" \
+      -keypass "$store_password" \
+      -dname "CN=Omnitrix Android, O=Omnitrix, C=IN"
+  else
+    echo "Creating the Android PKCS#12 signing keystore with Python (no Java runtime required)..."
+    CRYPTO_DIR="$HOME/.local/opt/omnitrix-python-packages"
+    if ! PYTHONPATH="$CRYPTO_DIR" python3 -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
+      python3 -m pip --version >/dev/null 2>&1 || {
+        echo "Python pip is unavailable; no signing key was generated."
+        exit 1
+      }
+      mkdir -p "$CRYPTO_DIR"
+      python3 -m pip install --disable-pip-version-check --quiet --target "$CRYPTO_DIR" 'cryptography>=42,<47'
+    fi
+    PYTHONPATH="$CRYPTO_DIR" python3 - "$KEYSTORE" "$store_password" "$KEY_ALIAS" <<'PY'
+import datetime, sys
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, PrivateFormat
+from cryptography.x509.oid import NameOID
+
+path, password, alias = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
+key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+name = x509.Name([
+    x509.NameAttribute(NameOID.COMMON_NAME, "Omnitrix Android"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Omnitrix"),
+    x509.NameAttribute(NameOID.COUNTRY_NAME, "IN"),
+])
+now = datetime.datetime.now(datetime.timezone.utc)
+cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+    .public_key(key.public_key()).serial_number(x509.random_serial_number())
+    .not_valid_before(now - datetime.timedelta(minutes=5))
+    .not_valid_after(now + datetime.timedelta(days=10000))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .sign(key, hashes.SHA256()))
+p12 = serialization.pkcs12.serialize_key_and_certificates(
+    alias, key, cert, None, BestAvailableEncryption(password))
+with open(path, "wb") as f:
+    f.write(p12)
+PY
+  fi
   chmod 600 "$KEYSTORE" "$PASSWORD_FILE"
 fi
 
