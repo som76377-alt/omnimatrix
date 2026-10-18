@@ -149,6 +149,7 @@ class Omnitrix:
         self.agent_router = AgentRouter(agent_registry) if agent_registry is not None else None
         # Populated from provider responses for the most recent successful chat turn.
         self.last_execution_trace: dict[str, object] | None = None
+        self.active_execution: dict[str, object] | None = None
         self.tool_executor = ToolExecutor(self.tool_registry, journal=self.journal)
 
     @classmethod
@@ -855,6 +856,24 @@ class Omnitrix:
         )
         return result
 
+    def _set_active_model(
+        self,
+        *,
+        stage: str,
+        agent_role: str,
+        configured_model,
+    ) -> None:
+        """Publish the selected route while its provider request is in flight."""
+        self.active_execution = {
+            "status": "request_in_flight",
+            "stage": stage,
+            "role": agent_role,
+            "provider": configured_model.provider,
+            "configured_model": configured_model.model_id or configured_model.name,
+            "configured_name": configured_model.name,
+            "identity_source": "configured_id_pending_provider_response",
+        }
+
     def _record_model_activity(
         self,
         task: Task,
@@ -870,7 +889,7 @@ class Omnitrix:
         if not isinstance(activity, list):
             activity = []
             task.metadata["model_activity"] = activity
-        activity.append({
+        record = {
             "stage": stage,
             "role": agent_role,
             "provider": response.provider,
@@ -879,11 +898,22 @@ class Omnitrix:
             "configured_name": configured_model.name,
             "identity_source": getattr(response, "model_identity_source", "adapter_metadata"),
             "latency_seconds": round(max(0.0, duration_seconds), 3),
-        })
+        }
+        activity.append(record)
+        self.active_execution = {
+            "status": "response_received",
+            "stage": stage,
+            "role": agent_role,
+            "provider": response.provider,
+            "model": response.model,
+            "configured_model": configured_model.model_id or configured_model.name,
+            "identity_source": getattr(response, "model_identity_source", "adapter_metadata"),
+        }
 
     def chat(self, conversation: Conversation, user_message: str) -> str:
         """Process one conversational turn and update the conversation."""
         self.last_execution_trace = None
+        self.active_execution = None
         conversation.add_user_message(user_message)
 
         task = Task(
@@ -899,6 +929,7 @@ class Omnitrix:
                 messages=conversation.messages,
             )
         except Exception as exc:
+            self.active_execution = None
             self._journal_checkpoint(
                 task,
                 "task_failure_observed",
@@ -918,6 +949,7 @@ class Omnitrix:
                 if isinstance(item, dict)
             ],
         }
+        self.active_execution = None
         self._journal_checkpoint(
             task,
             "task_result_ready",
@@ -1211,6 +1243,11 @@ class Omnitrix:
             )
             task.metadata["model_transcript_sequence"] = sequence + 1
 
+        self._set_active_model(
+            stage=stage,
+            agent_role=stage,
+            configured_model=model,
+        )
         model_started_at = time.perf_counter()
         response = adapter.generate(request)
         self._record_model_activity(
@@ -1643,6 +1680,12 @@ class Omnitrix:
                     request.messages
                     + (assistant_message,)
                     + tuple(tool_messages)
+                ),
+                tools=self._get_authorized_model_tools(allowed_tool_scopes),
+                continuation=response.continuation,
+                instructions=request.instructions,
+            )
+ssages)
                 ),
                 tools=self._get_authorized_model_tools(allowed_tool_scopes),
                 continuation=response.continuation,
