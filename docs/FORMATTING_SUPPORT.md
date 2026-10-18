@@ -9,9 +9,9 @@ Assistant and user messages are parsed as GitHub-Flavored Markdown, sanitized, a
 - **Document structure:** headings, paragraphs, line breaks, ordered/unordered and nested lists, task-list syntax, block quotes, horizontal rules, links, images, tables, and safe inline HTML supported by the sanitizer.
 - **Semantic callouts:** GitHub-style blockquote alerts using `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, or `[!CAUTION]` are converted to color-coded, accessible callouts.
 - **Inline text:** bold, italic, strike-through, inline code, superscript/subscript through supported markup, and readable fallbacks for unsupported HTML/tags.
-- **Mathematics:** inline/display TeX using `\\(...\\)`, `\\[...\\]`, `$...$`, and `$$...$$`; KaTeX auto-render's native equation environments; fractions, roots, matrices, cases, aligned equations, sums, products, integrals, limits, Greek symbols, subscripts, superscripts, vectors, derivatives and common physics macros.
-- **Physics/quantum notation:** built-in helpers include `\\grad`, `\\curl`, `\\divergence`, `\\laplacian`, `\\vb`, `\\vu`, `\\dv`, `\\pdv`, `\\ket`, `\\bra`, `\\braket`, `\\expect`, `\\abs`, `\\norm`, `\\evalat`, and `\\dd`.
-- **Chemistry and quantities:** the pinned KaTeX `mhchem` extension enables `\\ce{...}` chemical formulas/reactions and `\\pu{...}` physical units notation.
+- **Mathematics:** inline/display TeX using `\(...\)`, `\[...\]`, `$...$`, and `$$...$$`; KaTeX auto-render's native equation environments; fractions, roots, matrices, cases, aligned equations, sums, products, integrals, limits, Greek symbols, subscripts, superscripts, vectors, derivatives and common physics macros.
+- **Physics/quantum notation:** built-in helpers include `\grad`, `\curl`, `\divergence`, `\laplacian`, `\vb`, `\vu`, `\dv`, `\pdv`, `\ket`, `\bra`, `\braket`, `\expect`, `\abs`, `\norm`, `\evalat`, and `\dd`.
+- **Chemistry and quantities:** the pinned KaTeX `mhchem` extension enables `\ce{...}` chemical formulas/reactions and `\pu{...}` physical units notation.
 - **Code:** fenced/inline code, syntax highlighting, language labels, and a copy action.
 - **Diagrams:** Mermaid fenced blocks render as SVG using strict security mode. Mermaid's supported diagram grammars include flowcharts, sequence, class/state, entity-relationship, Gantt, mind maps, timelines and other version-supported diagram types. Invalid diagrams remain readable as code.
 - **Charts:** fenced `chart` JSON renders local, data-only SVG bar, line, scatter, and pie charts with axes, legends, point tooltips, title/description, and responsive overflow. It accepts inline values only; external data URLs, executable expressions, and arbitrary HTML are not supported by this renderer.
@@ -19,9 +19,30 @@ Assistant and user messages are parsed as GitHub-Flavored Markdown, sanitized, a
 
 Safety behavior: Markdown is sanitized by DOMPurify before insertion; KaTeX trust is disabled; external links open with `noopener noreferrer`; Mermaid SVG is sanitized again; charts are constructed via SVG DOM APIs rather than injecting model-provided SVG/HTML. If a renderer or CDN dependency fails, the underlying source remains readable. Chart specifications are constrained and capped to limit resource use.
 
+
+### Chart block example
+
+A chart is opt-in and data-only: put JSON in a `chart` fenced block. It renders in browser Studio; on Android the same JSON remains readable source until a native chart renderer is implemented.
+
+```chart
+{
+  "type": "line",
+  "title": "Position over time",
+  "xLabel": "Time (s)",
+  "yLabel": "Position (m)",
+  "data": [
+    {"x": 0, "y": 0},
+    {"x": 1, "y": 2},
+    {"x": 2, "y": 8},
+    {"x": 3, "y": 18}
+  ]
+}
+```
+
+Multiple line/bar series use `"series": [{"name":"A","data":[{"x":0,"y":1}]}, ...]`. Pie charts use `"data": [{"label":"A","value":3}, ...]`. The renderer accepts only explicit local data and known chart types.
 ## Native Android
 
-The native renderer uses Markwon with tables, strikethrough, task-list syntax, HTML formatting and JLatexMath. Standard `\\(...\\)` and `\\[...\\]` math delimiters are normalized into syntax supported by the installed LaTeX extension, while fenced/inline code is protected. Markdown links use Android's link movement method.
+The native renderer uses Markwon with tables, strikethrough, task-list syntax, HTML formatting and JLatexMath. Standard `\(...\)` and `\[...\]` math delimiters are normalized into syntax supported by the installed LaTeX extension, while fenced/inline code is protected. Markdown links use Android's link movement method.
 
 Android does not currently render Mermaid diagrams or the custom `chart` JSON blocks as native diagrams/charts; those remain readable source on that surface. Its TeX command coverage is narrower than browser KaTeX's, and KaTeX's `mhchem` extension is browser-only. Unsupported commands should remain visible/readable rather than be represented as a verified rendering.
 
