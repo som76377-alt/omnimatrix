@@ -89,6 +89,8 @@ class WebConsoleTests(unittest.TestCase):
         self.assertLess(self.js.index("window.DOMPurify.sanitize(parsed"), self.js.index("target.innerHTML = window.DOMPurify.sanitize(parsed"))
         self.assertIn("renderMathInElement(target", self.js)
         self.assertIn('left: "$", right: "$", display: true', self.js)
+        self.assertIn('left: "\\\\[", right: "\\\\]", display: true', self.js)
+        self.assertIn('left: "\\\\(", right: "\\\\)", display: false', self.js)
         self.assertIn("highlightElement(code)", self.js)
         self.assertIn("renderMermaidBlocks(target)", self.js)
         self.assertIn('securityLevel: "strict"', self.js)
