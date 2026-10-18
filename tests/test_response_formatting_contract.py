@@ -18,7 +18,8 @@ class ResponseFormattingContractTests(unittest.TestCase):
             r"\ce{...}",
             "Mermaid",
             "fenced `chart`",
-            '"bar", "line", "scatter", and "pie"',
+            "Supported chart types are",
+            "`bar`, `line`, `scatter`, and `pie`",
             "[!WARNING]",
             "Do not emit arbitrary HTML",
         ):
