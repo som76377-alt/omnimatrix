@@ -37,6 +37,14 @@ def build_openrouter_adapter(model: ModelDefinition) -> ModelAdapter:
 
     max_output_tokens = model.metadata.get("max_output_tokens", 8192)
     timeout_seconds = model.metadata.get("timeout_seconds", 60.0)
+    reasoning_effort = model.metadata.get("reasoning_effort")
+    exclude_reasoning = model.metadata.get("exclude_reasoning", True)
+    if reasoning_effort is not None and reasoning_effort not in {
+        "minimal", "low", "medium", "high", "xhigh", "none"
+    }:
+        raise ValueError(f"Model '{model.name}' has an invalid reasoning_effort.")
+    if not isinstance(exclude_reasoning, bool):
+        raise ValueError(f"Model '{model.name}' has an invalid exclude_reasoning.")
     if isinstance(max_output_tokens, bool) or not isinstance(max_output_tokens, int):
         raise ValueError(f"Model '{model.name}' has an invalid max_output_tokens.")
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
@@ -47,5 +55,7 @@ def build_openrouter_adapter(model: ModelDefinition) -> ModelAdapter:
         model_id=model.model_id,
         api_key_env=api_key_env,
         max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
+        exclude_reasoning=exclude_reasoning,
         timeout=float(timeout_seconds),
     )

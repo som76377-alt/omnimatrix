@@ -37,6 +37,8 @@ class OpenRouterAdapter(ModelAdapter):
         api_key_env: str = "OPENROUTER_API_KEY",
         timeout: float = 60.0,
         max_output_tokens: int = 8192,
+        reasoning_effort: str | None = None,
+        exclude_reasoning: bool = True,
         referer: str | None = "https://github.com/som76377-alt/omnimatrix",
         title: str = "Omnitrix",
     ) -> None:
@@ -65,6 +67,13 @@ class OpenRouterAdapter(ModelAdapter):
         self._api_key_env = api_key_env
         self._timeout = float(timeout)
         self._max_output_tokens = max_output_tokens
+        allowed_efforts = {"minimal", "low", "medium", "high", "xhigh", "none"}
+        if reasoning_effort is not None and reasoning_effort not in allowed_efforts:
+            raise ValueError("Unsupported OpenRouter reasoning_effort.")
+        if not isinstance(exclude_reasoning, bool):
+            raise TypeError("exclude_reasoning must be a boolean.")
+        self._reasoning_effort = reasoning_effort
+        self._exclude_reasoning = exclude_reasoning
         self._referer = referer
         self._title = title
 
@@ -154,8 +163,10 @@ class OpenRouterAdapter(ModelAdapter):
         if not isinstance(usage, dict):
             usage = None
         response_model = data.get("model")
+        identity_source = "provider_response"
         if not isinstance(response_model, str) or not response_model.strip():
             response_model = self._model_id
+            identity_source = "configured_fallback"
 
         return ModelResponse(
             content=content,
@@ -163,6 +174,7 @@ class OpenRouterAdapter(ModelAdapter):
             provider=self.provider,
             usage=usage,
             tool_calls=tuple(tool_calls),
+            model_identity_source=identity_source,
         )
 
     def _build_payload(self, request: ModelRequest) -> dict[str, Any]:
@@ -221,6 +233,11 @@ class OpenRouterAdapter(ModelAdapter):
             "messages": messages,
             "max_tokens": self._max_output_tokens,
         }
+        if self._reasoning_effort is not None:
+            payload["reasoning"] = {
+                "effort": self._reasoning_effort,
+                "exclude": self._exclude_reasoning,
+            }
         if request.tools:
             payload["tools"] = [
                 {

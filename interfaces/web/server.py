@@ -339,6 +339,7 @@ class StudioRuntime:
                 "provider": item.provider,
                 "model_id": item.model_id,
                 "capabilities": sorted(item.capabilities),
+                "reasoning_effort": item.metadata.get("reasoning_effort"),
                 "adapter_available": (
                     self.omnitrix.adapter_registry.has(item.name)
                     and self.omnitrix.adapter_registry.get(item.name).is_available()
@@ -416,6 +417,7 @@ class StudioRuntime:
             "agents": agents,
             "models": models,
             "tools": tool_details,
+            "active_execution": getattr(self.omnitrix, "active_execution", None),
             "checked_at": utc_now(),
         }
 
@@ -678,6 +680,7 @@ class StudioRuntime:
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "message_count": len(conversation.messages),
             "completed_at": utc_now(),
+            "execution_trace": getattr(self.omnitrix, "last_execution_trace", None),
         }
 
     def run_tests(self) -> dict[str, Any]:

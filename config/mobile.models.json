@@ -39,7 +39,9 @@
           "nvidia/nemotron-3-super-120b-a12b:free"
         ],
         "data_policy": "no_confidential_or_personal_data",
-        "profile_note": "Role-preferred zero-price reasoning candidate. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free route availability/terms may change; do not send confidential, personal, or sensitive content."
+        "profile_note": "Role-preferred zero-price reasoning candidate. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free route availability/terms may change; do not send confidential, personal, or sensitive content. OpenRouter reasoning effort is explicitly set to high; reasoning text is excluded from application responses.",
+        "reasoning_effort": "high",
+        "exclude_reasoning": true
       }
     }
   ]

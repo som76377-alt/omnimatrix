@@ -16,6 +16,9 @@ class ModelResponse:
     usage: dict[str, Any] | None = None
     tool_calls: tuple[ModelToolCall, ...] = ()
     continuation: ModelContinuation | None = None
+    # "provider_response" means the API itself returned this model identifier.
+    # Other values explicitly indicate adapter/configured metadata rather than proof.
+    model_identity_source: str = "adapter_metadata"
 
 
 class ModelAdapterError(RuntimeError):

@@ -721,7 +721,64 @@
   }
 
 
-  function appendMessage(role, content, sourceLabel) {
+  function traceIdentityLabel(item) {
+    const model = item && (item.model || item.configured_model || item.configured_name);
+    const provider = item && item.provider;
+    const source = item && item.identity_source;
+    if (!model) return "Model identity unavailable";
+    if (source === "provider_response") return "Provider-reported: " + model + " · " + provider;
+    if (source === "configured_fallback") return "Configured ID (provider did not report identity): " + model + " · " + provider;
+    if (provider === "demo") return "Demo adapter metadata (simulated; not live model inference)";
+    return "Adapter metadata (not provider-confirmed): " + model + " · " + (provider || "provider unknown");
+  }
+
+  function answerActivity(trace) {
+    const activity = trace && Array.isArray(trace.activity) ? trace.activity : [];
+    return activity.filter((item) =>
+      item && item.role !== "critic" && item.role !== "intent_engineer" &&
+      (item.stage === "answer_generation" || item.stage === "tool_call_decision")
+    );
+  }
+
+  function describeExecutionTrace(trace) {
+    if (!trace || !Array.isArray(trace.activity) || trace.activity.length === 0) {
+      return {
+        subtitle: "No per-turn model trace was returned",
+        source: "NO MODEL IDENTITY TRACE · DO NOT INFER MODEL FROM CONFIGURATION",
+        primary: null,
+      };
+    }
+    const primaryCalls = answerActivity(trace);
+    const primary = primaryCalls.length ? primaryCalls[primaryCalls.length - 1] : trace.activity[trace.activity.length - 1];
+    const identity = traceIdentityLabel(primary);
+    const role = primary.role || trace.primary_agent || "assistant";
+    const extra = trace.activity
+      .filter((item) => item && (item.stage === "intent_engineer" || item.stage === "critic"))
+      .map((item) => {
+        const stage = item.stage === "critic"
+          ? "critic" + (item.review_status ? " (" + item.review_status + ")" : "")
+          : "intent preflight";
+        return stage + ": " + (item.model || item.configured_model || "unknown model") +
+          " [" + (item.provider || "unknown provider") + "]";
+      });
+    const effort = primary.reasoning_effort_requested
+      ? " · " + String(primary.reasoning_effort_requested).toUpperCase() + " EFFORT REQUESTED"
+      : "";
+    const subtitle = "Answer model · " + (primary.model || primary.configured_model || "unknown") +
+      " · " + (primary.provider || "unknown provider") + " · " + role + effort +
+      " · " + (primary.identity_source === "provider_response" ? "API-reported ID" :
+        primary.identity_source === "configured_fallback" ? "configured ID only" :
+        primary.provider === "demo" ? "simulated" : "adapter metadata");
+    return {
+      subtitle,
+      source: identity + " · role: " + role +
+        (Number.isFinite(primary.latency_seconds) ? " · " + primary.latency_seconds + "s" : "") +
+        (extra.length ? " · Additional model calls: " + extra.join("; ") : ""),
+      primary,
+    };
+  }
+
+  function appendMessage(role, content, sourceLabel, executionTrace) {
     const article = node("article", "message " + (role === "user" ? "user-message" : "assistant-message"));
     article.append(node("div", "message-avatar", role === "user" ? "YOU" : "O"));
     const body = node("div", "message-content");
@@ -730,6 +787,10 @@
     const bubble = node("div", "message-bubble");
     renderRichContent(bubble, content);
     body.append(meta, bubble, node("div", "message-source", sourceLabel || (role === "user" ? "USER MESSAGE" : "MODEL RESPONSE")));
+    if (role === "assistant" && executionTrace) {
+      const description = describeExecutionTrace(executionTrace);
+      body.append(node("div", "message-model-identity", description.source));
+    }
     article.append(body);
     byId("chat-messages").append(article);
     byId("chat-messages").scrollTop = byId("chat-messages").scrollHeight;
@@ -758,21 +819,52 @@
     byId("chat-char-count").textContent = "0 / 8000";
     appendMessage("user", message, "SENT TO PYTHON BACKEND");
     byId("send-message").disabled = true;
-    byId("chat-thread-subtitle").textContent = "Omnitrix is processing the turn…";
+    byId("chat-thread-subtitle").textContent = "Request queued · waiting for the runtime to report the selected model";
+    byId("chat-mode").textContent = "MODEL ROUTING";
     addActivity("CHAT", "Message submitted to the configured Omnitrix backend.");
+    const activePoll = window.setInterval(async () => {
+      if (!state.busyChat) return;
+      try {
+        const health = await apiRequest("/health");
+        const active = health && health.active_execution;
+        if (!active || !state.busyChat) return;
+        const model = active.model || active.configured_model || active.configured_name || "unknown model";
+        const identity = active.identity_source === "provider_response"
+          ? "provider-reported ID"
+          : active.identity_source === "configured_id_pending_provider_response"
+            ? "provider identity pending"
+            : active.identity_source === "configured_fallback"
+              ? "configured ID only"
+              : "adapter metadata";
+        const effort = active.reasoning_effort_requested
+          ? " · " + String(active.reasoning_effort_requested).toUpperCase() + " EFFORT REQUESTED"
+          : "";
+        byId("chat-thread-subtitle").textContent =
+          "IN FLIGHT · " + model + " · " + (active.provider || "unknown provider") +
+          " · " + (active.role || "assistant") + " / " + (active.stage || "inference") +
+          effort + " · " + identity;
+        byId("chat-mode").textContent = "MODEL REQUEST IN FLIGHT";
+      } catch (_) {
+        // Status polling is informational only. It must not interrupt the actual chat request.
+      }
+    }, 800);
     try {
       const result = await apiRequest("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, message }),
       });
+      const trace = describeExecutionTrace(result.execution_trace);
       const source = result.provider_mode === "offline-demo"
         ? "OFFLINE DEMO · SIMULATED RESPONSE · NOT REAL INFERENCE"
         : "PYTHON ORCHESTRATOR · " + result.elapsed_seconds + "s";
-      appendMessage("assistant", result.reply, source);
+      appendMessage("assistant", result.reply, source, result.execution_trace);
       byId("chat-thread-subtitle").textContent = result.provider_mode === "offline-demo"
-        ? "Simulated demo provider · no real inference" : "Real configured provider adapter";
-      byId("chat-mode").textContent = result.provider_mode === "offline-demo" ? "SIMULATED RESPONSES" : "MODEL ADAPTER ACTIVE";
+        ? "Simulation only · no live model inference"
+        : trace.subtitle;
+      byId("chat-mode").textContent = result.provider_mode === "offline-demo"
+        ? "SIMULATED RESPONSES"
+        : (trace.primary ? "MODEL TRACE RECORDED" : "NO MODEL TRACE");
       addActivity("CHAT", "Turn completed in " + result.elapsed_seconds + "s via " + result.provider_mode + ".");
     } catch (error) {
       appendMessage("assistant", error.message, "SYSTEM ERROR · NO VERIFIED COMPLETION");
@@ -780,6 +872,7 @@
       addActivity("ERROR", "Chat request failed: " + error.message);
       if (error.status === 401) openConnect();
     } finally {
+      window.clearInterval(activePoll);
       state.busyChat = false;
       input.disabled = !state.connected;
       byId("send-message").disabled = !state.connected;

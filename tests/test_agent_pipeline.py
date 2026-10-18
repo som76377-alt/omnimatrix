@@ -12,6 +12,7 @@ from core.models.loader import ModelConfigLoader
 from core.models.providers.bootstrap import build_adapter_registry
 from core.models.registry import ModelDefinition, ModelRegistry
 from core.contracts import BudgetLimits
+from core.policy.quality import QUALITY_POLICY_MARKER
 from core.orchestrator.omnitrix import Omnitrix
 
 
@@ -99,6 +100,20 @@ class SpecialistPipelineTests(unittest.TestCase):
 
         self.assertEqual(result, corrected)
         self.assertEqual(len(adapter.requests), 3)
+        self.assertTrue(all(
+            request.instructions and QUALITY_POLICY_MARKER in request.instructions
+            for request in adapter.requests
+        ))
+        trace = omnitrix.last_execution_trace
+        self.assertIsNotNone(trace)
+        activity = trace["activity"]
+        self.assertEqual(
+            [item["stage"] for item in activity],
+            ["intent_engineer", "answer_generation", "critic"],
+        )
+        self.assertEqual(activity[1]["role"], "subject_solver")
+        self.assertEqual(activity[1]["model"], "test-live-model")
+        self.assertEqual(activity[2]["review_status"], "revised")
         self.assertEqual(adapter.requests[0].tools, ())
         self.assertIn("ACTIVE SPECIALIST: subject_solver", adapter.requests[1].instructions)
         self.assertIn("STRUCTURED INTENT BRIEF", adapter.requests[1].instructions)
@@ -110,6 +125,12 @@ class SpecialistPipelineTests(unittest.TestCase):
         result = omnitrix.chat(Conversation(), "What is the boiling point of water?")
         self.assertIn("100", result)
         self.assertEqual(len(adapter.requests), 1)
+        self.assertEqual(len(omnitrix.last_execution_trace["activity"]), 1)
+        self.assertEqual(
+            omnitrix.last_execution_trace["activity"][0]["stage"],
+            "answer_generation",
+        )
+        self.assertIn(QUALITY_POLICY_MARKER, adapter.requests[0].instructions)
 
     def test_malformed_intent_json_is_rejected(self):
         self.assertIsNone(Omnitrix._validate_intent_brief("not json"))
