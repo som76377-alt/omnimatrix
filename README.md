@@ -90,7 +90,8 @@ Model profiles live under `config/`. The offline profile is `config/demo.models.
 The default `config/mobile.models.json` is unchanged. To explicitly test the OpenRouter free-model candidates in a CLI or private Studio environment, choose the separate example profile:
 
 ```bash
-export OPENROUTER_API_KEY="set-this-in-your-own-secret-managed-environment"
+# First provide OPENROUTER_API_KEY through your own shell or secret manager.
+: "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your secret-managed environment}"
 python -m interfaces.cli.main --config config/mobile.models.openrouter-free.example.json --allow-free-quota
 ```
 
