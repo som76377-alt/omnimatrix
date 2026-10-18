@@ -49,6 +49,15 @@ class ModelAdapter(ABC):
         """Return the model provider identifier."""
         raise NotImplementedError
 
+    def is_available(self) -> bool:
+        """Return whether this adapter can currently make an authenticated request.
+
+        Providers without environment credentials can keep the default behavior;
+        key-backed adapters override this method. Availability is only a local
+        configuration check and does not guarantee provider uptime or quota.
+        """
+        return True
+
     def supports_model_id(self, model_id: str) -> bool:
         """Return whether this adapter can serve a provider-reported model ID.
 

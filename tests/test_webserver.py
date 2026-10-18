@@ -226,6 +226,13 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("calculator", {item["name"] for item in body["tools"]})
         self.assertFalse(body["workspace_read_enabled"])
         self.assertFalse(body["workspace_write_enabled"])
+        self.assertTrue(body["specialists_configured"])
+        self.assertFalse(body["specialist_runtime_active"])
+        self.assertEqual(
+            {item["role"] for item in body["agents"]},
+            {"reasoning", "coding", "subject_solver", "critic", "intent_engineer"},
+        )
+        self.assertIn("openrouter_key_detected", body)
         encoded = json.dumps(body)
         self.assertNotIn(self.token, encoded)
         self.assertNotIn(str(self.workspace), encoded)
