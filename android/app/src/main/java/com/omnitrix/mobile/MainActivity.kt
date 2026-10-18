@@ -61,6 +61,8 @@ private val Red = Color(0xFFFF6B6B)
 private val Mono = FontFamily.Monospace
 private val Pixel = FontFamily(Font(R.font.pixelify_sans, weight = FontWeight.Normal))
 private const val REPOSITORY = "som76377-alt/omnimatrix"
+private const val HOSTED_BACKEND_DISCOVERY_URL =
+    "https://raw.githubusercontent.com/som76377-alt/omnimatrix/main/config/mobile-backend.json"
 
 private enum class AppTab(val title: String) {
     CHAT("Chat"), REPO("Repo"), STATUS("Runs"), ACCOUNT("Account")
@@ -413,35 +415,114 @@ private class RuntimeClient(context: Context) {
         private set
     var token: String = prefs.getString("token", "") ?: ""
         private set
+    private var hostedBase: String = ""
+    private var useHostedBackend: Boolean = true
 
     fun configure(urlValue: String, tokenValue: String) {
         base = RuntimeInputValidation.normalizeStudioUrl(urlValue)
         token = RuntimeInputValidation.validateRuntimeToken(tokenValue)
+        useHostedBackend = false
         prefs.edit().putString("url", base).putString("token", token).apply()
     }
     fun ready() = base.isNotBlank() && token.isNotBlank()
     fun disconnect() {
         token = ""
+        useHostedBackend = true
         prefs.edit().remove("token").apply()
     }
-    suspend fun get(route: String) = request("GET", route, null)
-    suspend fun post(route: String, body: JSONObject) = request("POST", route, body)
+    suspend fun get(route: String) = requestPrivate("GET", route, null)
+    suspend fun post(route: String, body: JSONObject) = requestPrivate("POST", route, body)
 
-    private suspend fun request(method: String, route: String, body: JSONObject?): JSONObject = withContext(Dispatchers.IO) {
-        if (!ready()) throw IOException("Connect the Python chat runtime from Account.")
+    suspend fun connectAutomatically(): JSONObject {
+        if (ready()) {
+            try {
+                val privateHealth = requestPrivate("GET", "/api/health", null)
+                val liveModel = privateHealth.optString("provider_mode") != "offline-demo"
+                if (liveModel && privateHealth.optBoolean("gemini_key_detected")) {
+                    useHostedBackend = false
+                    return privateHealth
+                }
+            } catch (_: Exception) {
+                // A stale manual connection must not block the hosted default.
+            }
+        }
+        useHostedBackend = true
+        val hostedHealth = hostedHealth()
+        if (!hostedHealth.optBoolean("chat_available")) {
+            throw IOException("Hosted AI is not ready.")
+        }
+        return hostedHealth
+    }
+
+    suspend fun hostedHealth(): JSONObject {
+        val address = discoverHostedBase() + "/api/mobile/health"
+        val health = requestPublic("GET", address, null)
+        if (!health.optBoolean("chat_available")) {
+            val reason = health.optString("reason")
+            val message = when (reason) {
+                "provider_key_missing" -> "Hosted AI is waiting for its server-side model key."
+                "model_not_configured" -> "Hosted AI model configuration is incomplete."
+                "public_chat_disabled" -> "Hosted chat is disabled on the server."
+                else -> "Hosted AI is not ready."
+            }
+            throw IOException(message)
+        }
+        return health
+    }
+
+    suspend fun sendChat(body: JSONObject): JSONObject {
+        if (!useHostedBackend && ready()) {
+            return requestPrivate("POST", "/api/chat", body)
+        }
+        useHostedBackend = true
+        return requestPublic("POST", discoverHostedBase() + "/api/mobile/chat", body)
+    }
+
+    private suspend fun discoverHostedBase(): String {
+        if (hostedBase.isNotBlank()) return hostedBase
+        val manifest = requestPublic("GET", HOSTED_BACKEND_DISCOVERY_URL, null)
+        if (!manifest.optBoolean("chat_enabled")) {
+            throw IOException("Hosted chat is not deployed yet.")
+        }
+        val candidate = manifest.optString("base_url", "").trimEnd('/')
+        if (candidate.isBlank()) throw IOException("Hosted chat server URL is not configured.")
+        val parsed = try { URL(candidate) } catch (_: Exception) {
+            throw IOException("Hosted chat server URL is invalid.")
+        }
+        val host = parsed.host.lowercase()
+        if (parsed.protocol != "https" ||
+            !(host.endsWith(".onrender.com") || host == "onrender.com") ||
+            parsed.path.isNotEmpty() || parsed.query != null || parsed.ref != null ||
+            candidate.contains("@")
+        ) {
+            throw IOException("Hosted chat server URL failed its HTTPS host validation.")
+        }
+        hostedBase = candidate
+        return hostedBase
+    }
+
+    private suspend fun requestPrivate(
+        method: String, route: String, body: JSONObject?
+    ): JSONObject = withContext(Dispatchers.IO) {
+        if (!ready()) throw IOException("No saved private runtime connection.")
         val connection = URL(base + route).openConnection() as HttpURLConnection
         connection.requestMethod = method
         connection.connectTimeout = 12000
         connection.readTimeout = if (route == "/api/tests/run") 210000 else 25000
         connection.useCaches = false
         connection.setRequestProperty("Accept", "application/json")
-        connection.setRequestProperty("Authorization", "Bearer " + RuntimeInputValidation.validateRuntimeToken(token))
+        connection.setRequestProperty(
+            "Authorization",
+            "Bearer " + RuntimeInputValidation.validateRuntimeToken(token)
+        )
         if (body != null) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
         try {
-            if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
+            if (body != null) connection.outputStream.use {
+                it.write(body.toString().toByteArray(StandardCharsets.UTF_8))
+            }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
@@ -450,7 +531,7 @@ private class RuntimeClient(context: Context) {
                 text.trimStart().startsWith("<html", ignoreCase = true) ||
                 contentType.contains("text/html", ignoreCase = true)
             if (looksLikeHtml) {
-                throw IOException("GitHub Codespaces returned an HTML sign-in/interstitial page instead of the Omnitrix API (HTTP $code). In Codespaces → Ports, set port 8000 visibility to Public. Keep your current URL and token; then tap Connect Chat again.")
+                throw IOException("The runtime returned an HTML sign-in page instead of its API.")
             }
             if (code !in 200..299) {
                 val detail = try { JSONObject(text).optString("error", "") } catch (_: Exception) { "" }
@@ -458,8 +539,51 @@ private class RuntimeClient(context: Context) {
             }
             try {
                 JSONObject(text)
-            } catch (e: Exception) {
-                throw IOException("Omnitrix Studio returned an invalid JSON response (HTTP " + code + ", content type " + contentType.ifBlank { "unknown" } + "). Restart Studio in Codespaces and retry.")
+            } catch (_: Exception) {
+                throw IOException(
+                    "Runtime returned invalid JSON (HTTP " + code +
+                        ", content type " + contentType.ifBlank { "unknown" } + ")."
+                )
+            }
+        } finally { connection.disconnect() }
+    }
+
+    private suspend fun requestPublic(
+        method: String, address: String, body: JSONObject?
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val connection = URL(address).openConnection() as HttpURLConnection
+        connection.requestMethod = method
+        connection.connectTimeout = 20000
+        connection.readTimeout = if (address.contains("onrender.com")) 120000 else 20000
+        connection.useCaches = false
+        connection.setRequestProperty("Accept", "application/json")
+        connection.setRequestProperty("User-Agent", "Omnitrix-Android")
+        if (body != null) {
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        }
+        try {
+            if (body != null) connection.outputStream.use {
+                it.write(body.toString().toByteArray(StandardCharsets.UTF_8))
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val contentType = connection.contentType.orEmpty()
+            val looksLikeHtml = text.trimStart().startsWith("<!doctype html", ignoreCase = true) ||
+                text.trimStart().startsWith("<html", ignoreCase = true) ||
+                contentType.contains("text/html", ignoreCase = true)
+            if (looksLikeHtml) {
+                throw IOException("Hosted chat returned a web page instead of its API.")
+            }
+            if (code !in 200..299) {
+                val detail = try { JSONObject(text).optString("error", "") } catch (_: Exception) { "" }
+                throw IOException(if (detail.isBlank()) "Hosted chat returned HTTP " + code else detail)
+            }
+            try {
+                JSONObject(text)
+            } catch (_: Exception) {
+                throw IOException("Hosted chat returned invalid JSON.")
             }
         } finally { connection.disconnect() }
     }
@@ -484,6 +608,7 @@ private fun OmnitrixApp() {
     var showToken by remember { mutableStateOf(false) }
     var showRuntimeSetup by remember { mutableStateOf(false) }
     var runtimeConnected by remember { mutableStateOf(false) }
+    var runtimeMessage by remember { mutableStateOf("") }
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
@@ -578,14 +703,36 @@ private fun OmnitrixApp() {
     fun connectRuntime() {
         scope.launch {
             chatBusy = true
+            runtimeMessage = ""
             try {
                 runtime.configure(chatUrl, chatToken)
-                runtime.get("/api/health")
+                val health = runtime.get("/api/health")
+                if (health.optString("provider_mode") == "offline-demo") {
+                    throw IOException("This server uses the offline demo model, not live AI.")
+                }
+                if (!health.optBoolean("gemini_key_detected")) {
+                    throw IOException("This server has no live Gemini provider key configured.")
+                }
                 runtimeConnected = true
-                messages = messages + ChatMessage("SYSTEM", "Python chat runtime connected.")
+                runtimeMessage = ""
             } catch (e: Exception) {
                 runtimeConnected = false
-                messages = messages + ChatMessage("SYSTEM", e.message ?: "Runtime connection failed.")
+                runtimeMessage = e.message ?: "Runtime connection failed."
+            } finally { chatBusy = false }
+        }
+    }
+
+    fun connectHostedRuntime() {
+        scope.launch {
+            chatBusy = true
+            runtimeMessage = ""
+            try {
+                runtime.connectAutomatically()
+                runtimeConnected = true
+                runtimeMessage = ""
+            } catch (e: Exception) {
+                runtimeConnected = false
+                runtimeMessage = e.message ?: "Hosted chat is not available."
             } finally { chatBusy = false }
         }
     }
@@ -594,12 +741,7 @@ private fun OmnitrixApp() {
         if (githubConnected) username = github.username
         loadRuns()
         loadRepo("")
-        if (runtime.ready()) {
-            try {
-                runtime.get("/api/health")
-                runtimeConnected = true
-            } catch (_: Exception) { runtimeConnected = false }
-        }
+        connectHostedRuntime()
     }
 
     MaterialTheme(
@@ -633,7 +775,7 @@ private fun OmnitrixApp() {
             Box(Modifier.fillMaxSize().padding(insets).background(Black)) {
                 when (tab) {
                     AppTab.CHAT -> ChatScreen(
-                        messages, chatInput, runtimeConnected, chatBusy,
+                        messages, chatInput, runtimeConnected, chatBusy, runtimeMessage,
                         { chatInput = it },
                         {
                             val prompt = chatInput.trim()
@@ -643,15 +785,18 @@ private fun OmnitrixApp() {
                                 chatBusy = true
                                 scope.launch {
                                     try {
-                                        val response = runtime.post("/api/chat", JSONObject().put("message", prompt).put("session_id", sessionId))
+                                        val response = runtime.sendChat(
+                                            JSONObject().put("message", prompt).put("session_id", sessionId)
+                                        )
                                         messages = messages + ChatMessage("OMNITRIX", response.optString("reply", "No response text returned."))
                                     } catch (e: Exception) {
-                                        messages = messages + ChatMessage("SYSTEM", e.message ?: "Chat request failed.")
+                                        runtimeConnected = false
+                                        runtimeMessage = e.message ?: "Chat request failed."
                                     } finally { chatBusy = false }
                                 }
                             }
                         },
-                        { tab = AppTab.ACCOUNT; showRuntimeSetup = true }
+                        { connectHostedRuntime() }
                     )
                     AppTab.REPO -> RepoScreen(
                         githubConnected, repoPath, entries, selectedFile, fileDraft, fileOriginal, repoBusy, repoMessage,
@@ -765,7 +910,7 @@ private fun AppHeader(title: String, detail: String? = null) {
 
 @Composable
 private fun ChatScreen(
-    messages: List<ChatMessage>, input: String, connected: Boolean, busy: Boolean,
+    messages: List<ChatMessage>, input: String, connected: Boolean, busy: Boolean, connectionMessage: String,
     onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -773,8 +918,12 @@ private fun ChatScreen(
         if (!connected) {
             Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().padding(bottom = 8.dp)) {
                 Text("Not connected", color = Grey, fontSize = 13.sp)
+                if (connectionMessage.isNotBlank()) {
+                    Spacer(Modifier.height(5.dp))
+                    Text(connectionMessage, color = if (connectionMessage.contains("not deployed", true) || connectionMessage.contains("not configured", true)) Grey else Red, fontSize = 13.sp, lineHeight = 18.sp)
+                }
                 Spacer(Modifier.height(8.dp))
-                PrimaryButton("CONNECT CHAT", onConnect)
+                PrimaryButton(if (busy) "CONNECTING…" else "RETRY", onConnect, enabled = !busy)
             }
         }
         LazyColumn(
