@@ -708,14 +708,37 @@ private fun OmnitrixApp() {
     var runs by remember { mutableStateOf<List<CiRun>>(emptyList()) }
     var runsBusy by remember { mutableStateOf(false) }
     var runsMessage by remember { mutableStateOf("") }
+    var repositories by remember { mutableStateOf<List<GitHubRepository>>(emptyList()) }
+    var selectedRepository by remember { mutableStateOf<GitHubRepository?>(null) }
+
+    fun loadRepositories() {
+        scope.launch {
+            repoBusy = true
+            repoMessage = ""
+            try {
+                val account = username.ifBlank { REPOSITORY.substringBefore("/") }
+                repositories = github.listRepositories(account)
+                selectedRepository = null
+                repoPath = ""
+                entries = emptyList()
+                selectedFile = null
+                repoMessage = if (repositories.isEmpty()) "No public repositories were found for @$account." else ""
+            } catch (e: Exception) {
+                repoMessage = e.message ?: "Could not load repositories."
+            } finally {
+                repoBusy = false
+            }
+        }
+    }
 
     fun loadRepo(path: String) {
+        val repository = selectedRepository ?: return
         scope.launch {
             repoBusy = true
             repoMessage = ""
             selectedFile = null
             try {
-                entries = github.listContents(path)
+                entries = github.listContents(repository, path)
                 repoPath = path
                 repoMessage = if (entries.isEmpty()) "No visible files here." else ""
             } catch (e: Exception) {
@@ -724,16 +747,29 @@ private fun OmnitrixApp() {
         }
     }
 
+    fun selectRepository(repository: GitHubRepository?) {
+        selectedRepository = repository
+        selectedFile = null
+        fileDraft = ""
+        fileOriginal = ""
+        fileSha = ""
+        repoPath = ""
+        entries = emptyList()
+        repoMessage = ""
+        if (repository != null) loadRepo("")
+    }
+
     fun openRepoEntry(entry: RepoEntry) {
         if (entry.type == "dir") {
             loadRepo(entry.path)
             return
         }
+        val repository = selectedRepository ?: return
         scope.launch {
             repoBusy = true
             repoMessage = ""
             try {
-                val result = github.readFile(entry.path)
+                val result = github.readFile(repository, entry.path)
                 selectedFile = entry
                 fileDraft = result.first
                 fileOriginal = result.first
@@ -751,20 +787,28 @@ private fun OmnitrixApp() {
             fileOriginal = ""
             fileSha = ""
             repoMessage = ""
-        } else {
+        } else if (repoPath.isNotBlank()) {
             loadRepo(if (repoPath.contains("/")) repoPath.substringBeforeLast("/") else "")
+        } else {
+            selectRepository(null)
         }
     }
 
     fun saveRepoFile() {
         val entry = selectedFile ?: return
+        val repository = selectedRepository ?: return
+        if (repository.fullName != REPOSITORY) {
+            repoMessage = "Edits are currently restricted to the Omnitrix repository."
+            confirmCommit = false
+            return
+        }
         scope.launch {
             repoBusy = true
             repoMessage = ""
             try {
-                github.updateFile(entry.path, fileDraft, fileSha)
+                github.updateFile(repository, entry.path, fileDraft, fileSha)
                 fileOriginal = fileDraft
-                val refreshed = github.readFile(entry.path)
+                val refreshed = github.readFile(repository, entry.path)
                 fileSha = refreshed.second
                 repoMessage = "Committed to main."
             } catch (e: Exception) {
@@ -823,7 +867,7 @@ private fun OmnitrixApp() {
     LaunchedEffect(Unit) {
         if (githubConnected) username = github.username
         loadRuns()
-        loadRepo("")
+        loadRepositories()
         connectHostedRuntime()
     }
 
@@ -882,10 +926,27 @@ private fun OmnitrixApp() {
                         { connectHostedRuntime() }
                     )
                     AppTab.REPO -> RepoScreen(
-                        githubConnected, repoPath, entries, selectedFile, fileDraft, fileOriginal, repoBusy, repoMessage,
-                        { backRepo() },
-                        { loadRepo(repoPath) }, { openRepoEntry(it) }, { fileDraft = it },
-                        { confirmCommit = true }, { tab = AppTab.ACCOUNT }
+                        connected = githubConnected,
+                        accountName = username.ifBlank { REPOSITORY.substringBefore("/") },
+                        repositories = repositories,
+                        selectedRepository = selectedRepository,
+                        folder = repoPath,
+                        entries = entries,
+                        selected = selectedFile,
+                        draft = fileDraft,
+                        original = fileOriginal,
+                        busy = repoBusy,
+                        message = repoMessage,
+                        onBack = { backRepo() },
+                        onRefresh = {
+                            if (selectedRepository == null) loadRepositories() else loadRepo(repoPath)
+                        },
+                        onOpen = { openRepoEntry(it) },
+                        onDraft = { fileDraft = it },
+                        onCommit = { confirmCommit = true },
+                        onSignIn = { tab = AppTab.ACCOUNT },
+                        onSelectRepository = { selectRepository(it) },
+                        onNavigate = { loadRepo(it) }
                     )
                     AppTab.STATUS -> StatusScreen(
                         runs, runsBusy, runsMessage,
@@ -926,8 +987,15 @@ private fun OmnitrixApp() {
                                         authMessage = "Signed in as " + github.username
                                         try { runs = github.recentRuns(); runsMessage = "" }
                                         catch (loadError: Exception) { runsMessage = loadError.message ?: "Could not load workflows." }
-                                        try { entries = github.listContents(""); repoPath = ""; repoMessage = "" }
-                                        catch (loadError: Exception) { repoMessage = loadError.message ?: "Could not load repository." }
+                                        try {
+                                            repositories = github.listRepositories(username)
+                                            selectedRepository = null
+                                            entries = emptyList()
+                                            repoPath = ""
+                                            repoMessage = ""
+                                        } catch (loadError: Exception) {
+                                            repoMessage = loadError.message ?: "Could not load repositories."
+                                        }
                                     } catch (e: Exception) {
                                         githubError = e.message ?: "GitHub sign-in failed."
                                         device = null
