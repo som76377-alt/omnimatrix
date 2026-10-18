@@ -19,7 +19,7 @@ class ResponseFormattingContractTests(unittest.TestCase):
             "Mermaid",
             "fenced math",
             "fenced audio",
-            "fenced video",
+            "fenced audio, video, or media",
             "direct browser-compatible media file",
             "fenced `chart`",
             "Supported chart types are",
