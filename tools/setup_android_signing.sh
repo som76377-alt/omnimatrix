@@ -7,6 +7,8 @@ KEY_DIR="$HOME/.config/omnitrix-signing"
 KEYSTORE="$KEY_DIR/omnitrix-update.p12"
 PASSWORD_FILE="$KEY_DIR/store-password"
 
+export PATH="$HOME/.local/bin:$PATH"
+
 # Install GitHub CLI into the user's home directory if the Codespace image lacks it.
 # This avoids needing sudo or a preconfigured system package.
 if ! command -v gh >/dev/null 2>&1; then
