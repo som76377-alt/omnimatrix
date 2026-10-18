@@ -2,6 +2,11 @@
 
 **Scope:** Browser Studio and native Android have separate renderers. Support is a renderer feature, not just a prompt instruction. This document records the formats that have been implemented and their known boundaries.
 
+## Model output guidance
+
+User-facing chat requests receive the versioned `OMNI-RENDER-1.0` formatting contract from `core/policy/response_formatting.py`. It tells the model when and how to use supported TeX, chemistry, Mermaid diagrams, the data-only `chart` block, and semantic callouts. It is a prompt contract, not a guarantee that a probabilistic model will obey every instruction.
+
+The task planner's strict JSON-only prompt deliberately does **not** receive this user-facing formatting contract, so machine-readable plans are not contaminated with presentation instructions.
 ## Browser Studio
 
 Assistant and user messages are parsed as GitHub-Flavored Markdown, sanitized, and then enhanced.
