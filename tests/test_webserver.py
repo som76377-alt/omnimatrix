@@ -230,7 +230,10 @@ class StudioServerTests(unittest.TestCase):
         self.assertFalse(body["specialist_runtime_active"])
         self.assertEqual(
             {item["role"] for item in body["agents"]},
-            {"reasoning", "coding", "subject_solver", "critic", "intent_engineer"},
+            {
+                "reasoning", "coding", "subject_solver", "research",
+                "computation", "critic", "intent_engineer",
+            },
         )
         self.assertIn("openrouter_key_detected", body)
         encoded = json.dumps(body)
