@@ -1895,6 +1895,10 @@ Added localhost HTTP integration tests for token authorization, real demo-orches
 
 ## Version 1.30 change log — native terminal UI and public repository access
 
-The Android client now uses a restrained green-on-black, square-corner terminal theme; removes opening taglines and decorative online/link badges; and uses dark text on filled lime controls. Public repository contents and GitHub Actions run history are loaded on app startup without OAuth. File viewing remains read-only until the owner signs in; writes still require explicit authorization and confirmation.
+The Android client uses a restrained green-on-black, square-corner terminal theme, removes opening taglines and decorative online/link badges, and uses dark text on filled lime controls. Public repository contents and GitHub Actions run history load on app startup without OAuth. File viewing remains read-only until the owner signs in; writes still require explicit authorization and confirmation.
 
-**Unfinished integration gate:** Chat still requires a running Python Studio backend, its HTTPS URL and bearer token, and a configured model provider for genuine inference. No permanent backend is deployed by this change. Do not describe the APK as fully zero-setup or internet-only until the backend is deployed, its secrets are configured outside the APK, and real chat requests are tested end-to-end.
+## Version 1.31 change log — hosted-chat deployment groundwork
+
+Added a Render Blueprint (`render.yaml`), a dedicated Google Gemini mobile model profile (`config/mobile.models.json`), a public mobile-chat endpoint protected by strict route separation, per-IP/global in-memory rate caps, and explicit free-quota spend-mode selection. The Android app now auto-discovers a hosted endpoint from `config/mobile-backend.json` and calls only the narrow mobile chat route by default. Workspace access, commits and test execution remain outside that public route.
+
+**Deployment gate remains open:** the Render service has not been created/deployed, its server-side `GEMINI_API_KEY` is not configured, and the discovery manifest deliberately remains disabled with no backend URL. A Render account connection and a user-owned, Free Tier provider key are still required. Render's free service sleeps after inactivity, and the in-memory rate limits reset on process restart; this is a zero-cost alpha deployment path, not a production-grade always-on/authenticated service. Do not label the app internet-only until deployment and real chat smoke tests succeed.
