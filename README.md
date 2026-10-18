@@ -85,6 +85,17 @@ python -m interfaces.cli.main --config config/demo.models.json --allow-workspace
 
 Model profiles live under `config/`. The offline profile is `config/demo.models.json`; provider credentials must not be committed to the repository. The Gemini adapter reads `GEMINI_API_KEY` from the process environment. Set it in your shell only when intentionally testing live provider access, and verify the configured model identifier against the provider's current documentation before relying on it.
 
+### Optional free specialist model profile
+
+The default `config/mobile.models.json` is unchanged. To explicitly test the OpenRouter free-model candidates in a CLI or private Studio environment, choose the separate example profile:
+
+```bash
+export OPENROUTER_API_KEY="set-this-in-your-own-secret-managed-environment"
+python -m interfaces.cli.main --config config/mobile.models.openrouter-free.example.json --allow-free-quota
+```
+
+Do **not** commit the key or paste it into chat/issues. Selecting this profile intentionally routes prompts to external OpenRouter model endpoints. Current free routes have changing availability, quotas and data terms; the NVIDIA free route says not to send confidential or personal data. Use only with non-sensitive test prompts, and check the upstream terms each time. The free plan currently states 50 requests per day, so it is a small evaluation path, not an unlimited production backend. The Render start command still uses the default Google profile until an operator deliberately changes deployment configuration and adds the provider secret in the hosting dashboard.
+
 The core application uses the Python standard library, with one explicit runtime dependency (`cryptography`) for opt-in AES-GCM encrypted model-state snapshots. Install runtime dependencies with `python -m pip install -r requirements.txt`. CI installs this file before tests. The encryption key is supplied separately by the caller and is never stored in the SQLite journal.
 
 ## Project specifications
