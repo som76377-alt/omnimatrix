@@ -1,6 +1,7 @@
 import unittest
 
 from core.models.providers.bootstrap import build_adapter_registry
+from core.models.loader import ModelConfigLoader
 from pathlib import Path
 
 from core.models.providers.gemini import GeminiAdapter
@@ -74,9 +75,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_builds_optional_openrouter_models_from_example_profile(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        registry = __import__(
-            "core.models.loader", fromlist=["ModelConfigLoader"]
-        ).ModelConfigLoader().load(
+        registry = ModelConfigLoader().load(
             root / "config" / "mobile.models.openrouter-free.example.json"
         )
 
