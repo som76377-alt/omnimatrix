@@ -672,6 +672,141 @@ private class RuntimeClient(context: Context) {
     }
 }
 
+
+private object AppUpdater {
+    suspend fun checkForUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
+        val connection = URL("https://api.github.com/repos/" + REPOSITORY + "/releases/latest")
+            .openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 12000
+        connection.readTimeout = 18000
+        connection.useCaches = false
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        connection.setRequestProperty("User-Agent", "Omnitrix-Android-Updater")
+        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw IOException("Update check returned HTTP " + code + ".")
+            val body = connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            val release = JSONObject(body)
+            val tag = release.optString("tag_name", "")
+            val version = Regex("""omnitrix-android-build-(\d+)-attempt-\d+""")
+                .matchEntire(tag)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return@withContext null
+            if (version <= BuildConfig.VERSION_CODE) return@withContext null
+            val assets = release.optJSONArray("assets") ?: JSONArray()
+            var apk: JSONObject? = null
+            for (index in 0 until assets.length()) {
+                val candidate = assets.optJSONObject(index) ?: continue
+                if (candidate.optString("name") == "Omnitrix.apk") {
+                    apk = candidate
+                    break
+                }
+            }
+            val asset = apk ?: throw IOException("The newest Omnitrix release has no APK asset.")
+            val digest = asset.optString("digest", "").removePrefix("sha256:").lowercase()
+            if (!digest.matches(Regex("[0-9a-f]{64}"))) {
+                throw IOException("The newest APK release has no valid SHA-256 checksum.")
+            }
+            val downloadUrl = asset.optString("browser_download_url", "")
+            if (!downloadUrl.startsWith("https://github.com/" + REPOSITORY + "/releases/")) {
+                throw IOException("The update download URL failed validation.")
+            }
+            AppUpdate(
+                versionCode = version,
+                versionName = release.optString("name", "Build " + version),
+                title = release.optString("name", "Omnitrix build " + version),
+                notes = release.optString("body", ""),
+                downloadUrl = downloadUrl,
+                sha256 = digest,
+                sizeBytes = asset.optLong("size", 0L)
+            )
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun download(context: Context, update: AppUpdate, onProgress: (Int) -> Unit): File =
+        withContext(Dispatchers.IO) {
+            if (update.sizeBytes <= 0L || update.sizeBytes > 50L * 1024L * 1024L) {
+                throw IOException("The APK file size is not within the allowed limit.")
+            }
+            val directory = File(context.filesDir, "updates")
+            if (!directory.exists() && !directory.mkdirs()) throw IOException("Could not create the update folder.")
+            val target = File(directory, "Omnitrix-" + update.versionCode + ".apk")
+            if (target.isFile && verifySha256(target, update.sha256)) {
+                onProgress(100)
+                return@withContext target
+            }
+            val temporary = File(directory, "Omnitrix-" + update.versionCode + ".apk.part")
+            val connection = URL(update.downloadUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 120000
+            connection.useCaches = false
+            connection.setRequestProperty("User-Agent", "Omnitrix-Android-Updater")
+            connection.setRequestProperty("Accept", "application/vnd.android.package-archive")
+            try {
+                val code = connection.responseCode
+                if (code !in 200..299) throw IOException("APK download returned HTTP " + code + ".")
+                val actualLength = connection.contentLengthLong
+                if (actualLength > 0L && actualLength > 50L * 1024L * 1024L) {
+                    throw IOException("The APK download is larger than 50 MB.")
+                }
+                var total = 0L
+                connection.inputStream.use { input ->
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            total += count
+                            val denominator = if (actualLength > 0L) actualLength else update.sizeBytes
+                            onProgress(((total * 100L) / denominator.coerceAtLeast(1L)).toInt().coerceIn(0, 99))
+                            if (total > 50L * 1024L * 1024L) throw IOException("The APK download exceeded the size limit.")
+                        }
+                        output.fd.sync()
+                    }
+                }
+                if (total != update.sizeBytes) throw IOException("The downloaded APK size did not match the release.")
+                if (!verifySha256(temporary, update.sha256)) throw IOException("The downloaded APK failed its SHA-256 integrity check.")
+                if (target.exists() && !target.delete()) throw IOException("Could not replace the cached update.")
+                if (!temporary.renameTo(target)) throw IOException("Could not finalize the downloaded update.")
+                onProgress(100)
+                target
+            } catch (e: Exception) {
+                temporary.delete()
+                throw e
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+    private fun verifySha256(file: File, expected: String): Boolean {
+        if (!file.isFile || expected.isBlank()) return false
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        return actual.equals(expected, ignoreCase = true)
+    }
+
+    fun launchInstaller(context: Context, apkFile: File) {
+        if (!apkFile.isFile) throw IOException("The downloaded update file is missing.")
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", apkFile)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+}
+
 @Composable
 private fun OmnitrixApp() {
     val context = LocalContext.current
