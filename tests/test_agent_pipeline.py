@@ -7,6 +7,8 @@ from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.messages import ModelRequest
+from core.models.loader import ModelConfigLoader
+from core.models.providers.bootstrap import build_adapter_registry
 from core.models.registry import ModelDefinition, ModelRegistry
 from core.contracts import BudgetLimits
 from core.orchestrator.omnitrix import Omnitrix
@@ -110,6 +112,25 @@ class SpecialistPipelineTests(unittest.TestCase):
 
     def test_malformed_intent_json_is_rejected(self):
         self.assertIsNone(Omnitrix._validate_intent_brief("not json"))
+
+    def test_role_preferences_select_the_coding_specialist_candidate(self):
+        config_path = ROOT / "config" / "mobile.models.openrouter-free.example.json"
+        models = ModelConfigLoader().load(config_path)
+        adapters = build_adapter_registry(models)
+        omnitrix = Omnitrix(
+            registry=models,
+            adapter_registry=adapters,
+            agent_registry=AgentRegistry.load(AGENT_CONFIG),
+            budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+        )
+
+        selected = omnitrix._select_agent_model(
+            omnitrix.agent_registry.get("coding"),
+            models.get("omnitrix-primary"),
+            required_capabilities=frozenset({"coding"}),
+        )
+
+        self.assertEqual(selected.name, "cohere-north-mini-code-free")
 
     def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
         models = ModelRegistry()
