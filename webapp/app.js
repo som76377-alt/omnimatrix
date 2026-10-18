@@ -602,6 +602,7 @@
   }
 
   function renderKatexBlock(container, tex, displayMode) {
+    if (typeof tex !== "string" || tex.length > 20000) return false;
     if (!window.katex || typeof window.katex.render !== "function") return false;
     try {
       window.katex.render(tex, container, {
@@ -697,7 +698,9 @@
       const pre = code.closest("pre");
       if (!pre) continue;
       try {
-        const spec = JSON.parse(code.textContent || "");
+        const rawSpec = code.textContent || "";
+        if (rawSpec.length > 12000) throw new Error("Media JSON exceeds the supported size limit.");
+        const spec = JSON.parse(rawSpec);
         const language = Array.from(code.classList).find((name) =>
           ["language-media", "language-audio", "language-video"].includes(name)
         );
@@ -835,6 +838,7 @@
 
       if (typeof window.renderMathInElement === "function") {
         window.renderMathInElement(target, {
+          ignoredClasses: ["katex", "message-math-fence", "message-math-environment"],
           delimiters: [
             { left: "$$", right: "$$", display: true },
             { left: "\\(", right: "\\)", display: false },
@@ -1096,7 +1100,9 @@
       if (!pre) continue;
       const wrapper = pre.parentElement && pre.parentElement.classList.contains("code-block-wrap") ? pre.parentElement : pre;
       try {
-        const spec = JSON.parse(code.textContent || "");
+        const rawSpec = code.textContent || "";
+        if (rawSpec.length > 50000) throw new Error("Chart JSON exceeds the supported size limit.");
+        const spec = JSON.parse(rawSpec);
         const chart = renderChartSpec(spec);
         const figure = document.createElement("figure");
         figure.className = "message-chart message-chart-" + chart.type;
