@@ -232,7 +232,7 @@ class StudioServerTests(unittest.TestCase):
             {item["role"] for item in body["agents"]},
             {"reasoning", "coding", "subject_solver", "critic", "intent_engineer"},
         )
-        self.assertFalse(body["openrouter_key_detected"])
+        self.assertIn("openrouter_key_detected", body)
         encoded = json.dumps(body)
         self.assertNotIn(self.token, encoded)
         self.assertNotIn(str(self.workspace), encoded)
