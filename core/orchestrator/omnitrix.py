@@ -1017,9 +1017,8 @@ class Omnitrix:
             if independent_model:
                 return independent_model[0]
 
-        for model in ordered:
-            if model.name == fallback_model.name:
-                return model
+        # Candidate order already reflects each role's preference ranking.
+        # Returning the fallback here would override the specialist preferences.
         return ordered[0]
 
     @staticmethod
