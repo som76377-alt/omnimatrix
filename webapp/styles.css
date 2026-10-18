@@ -406,3 +406,53 @@ h2,h3,p{margin-top:0}
 .connected-button{border-color:#4b5d30;background:#202619;color:var(--acid)}
 @media(max-width:900px){.sync-chip{max-width:150px}.codespace-link{font-size:7px;padding:6px}}
 @media(max-width:620px){.sync-chip{max-width:125px;white-space:normal;line-height:1.35}.codespace-link{font-size:7px;padding:5px 6px}.heading-actions{max-width:60%}}
+
+
+/* Rich response typography: keep the original Studio theme and make every output format readable. */
+.message-bubble{min-width:0;overflow-wrap:anywhere;word-break:normal;font-size:13px;line-height:1.72}
+.message-bubble>*:first-child{margin-top:0}
+.message-bubble>*:last-child{margin-bottom:0}
+.message-bubble h1,.message-bubble h2,.message-bubble h3,.message-bubble h4,.message-bubble h5,.message-bubble h6{color:var(--text);font-family:var(--display);font-weight:700;line-height:1.28;letter-spacing:-.015em;margin:1.1em 0 .45em}
+.message-bubble h1{font-size:1.55em}.message-bubble h2{font-size:1.35em}.message-bubble h3{font-size:1.18em}.message-bubble h4,.message-bubble h5,.message-bubble h6{font-size:1.05em}
+.message-bubble p{margin:0 0 .85em}
+.message-bubble ul,.message-bubble ol{padding-left:1.55em;margin:.5em 0 .9em}
+.message-bubble li{padding-left:.2em;margin:.28em 0}
+.message-bubble li::marker{color:var(--acid)}
+.message-bubble blockquote{margin:.9em 0;padding:.55em .9em;border-left:3px solid var(--acid);background:var(--surface-2);color:var(--muted)}
+.message-bubble blockquote>*:last-child{margin-bottom:0}
+.message-bubble hr{border:0;border-top:1px solid var(--border);margin:1.1em 0}
+.message-bubble a{color:#a7c6ff;text-decoration:underline;text-underline-offset:2px}
+.message-bubble strong{color:var(--text);font-weight:700}
+.message-bubble del{color:var(--muted)}
+.message-bubble :not(pre)>code{display:inline;background:var(--surface-3);color:var(--acid);border:1px solid var(--border-soft);border-radius:3px;padding:.08em .32em;font: .91em/1.5 var(--mono);overflow-wrap:anywhere}
+.code-block-wrap{position:relative;min-width:0;margin:.85em 0;background:#11130f;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.code-block-wrap pre{margin:0;padding:36px 12px 12px;max-width:100%;overflow:auto;tab-size:2}
+.code-block-wrap pre code{display:block;white-space:pre;font:12px/1.65 var(--mono);background:transparent;text-shadow:none}
+.code-language-label{position:absolute;left:11px;top:10px;color:var(--muted);font:9px var(--mono);letter-spacing:.08em}
+.code-copy-button{position:absolute;right:8px;top:6px;z-index:2;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);padding:4px 7px;font:9px var(--mono);border-radius:2px}
+.code-copy-button:hover,.code-copy-button:focus-visible{color:var(--acid);border-color:var(--acid)}
+.code-copy-button.copied{color:var(--acid);border-color:var(--acid)}
+.message-bubble table{width:100%;border-collapse:collapse;margin:.85em 0;font-size:.94em;display:block;overflow-x:auto}
+.message-bubble th,.message-bubble td{padding:8px 10px;text-align:left;vertical-align:top;border:1px solid var(--border);min-width:90px}
+.message-bubble th{background:var(--surface-3);font-weight:700;color:var(--text)}
+.message-bubble tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+.message-bubble img{display:block;max-width:100%;height:auto;margin:.65em auto;border-radius:3px}
+.message-bubble sup,.message-bubble sub{line-height:0}
+.message-bubble .katex{font-size:1.05em;color:inherit}
+.message-bubble .katex-display{max-width:100%;margin:.9em 0;padding:.2em 0;overflow-x:auto;overflow-y:hidden}
+.message-bubble .katex-display>.katex{white-space:normal}
+.message-bubble .message-diagram{max-width:100%;overflow:auto;background:#12150f;border:1px solid var(--border);padding:10px;margin:.85em 0;border-radius:3px}
+.message-bubble .message-diagram svg{display:block;max-width:100%;height:auto;margin:auto}
+.message-bubble dl{margin:.7em 0}
+.message-bubble dt{font-weight:700;color:var(--text);margin-top:.5em}
+.message-bubble dd{margin-left:1.4em;color:var(--muted)}
+.message-bubble details{padding:.6em .75em;border:1px solid var(--border);margin:.6em 0}
+.message-bubble summary{cursor:pointer;color:var(--text);font-weight:600}
+@media(max-width:620px){
+  .message-bubble{font-size:12px}
+  .code-block-wrap pre{padding-left:9px;padding-right:9px}
+  .code-block-wrap pre code{font-size:11px}
+  .message-bubble th,.message-bubble td{padding:7px 8px;min-width:82px}
+  .message-bubble .katex{font-size:1em}
+  .message-bubble .katex-display{margin:.65em 0}
+}
