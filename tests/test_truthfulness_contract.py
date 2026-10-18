@@ -3,9 +3,12 @@ import unittest
 from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
-from core.models.messages import ModelRequest
+from core.models.messages import MessageRole, ModelRequest
 from core.models.registry import ModelDefinition, ModelRegistry
+from core.models.types import ModelContinuation, ModelToolCall
 from core.orchestrator.omnitrix import Omnitrix
+from core.tools.bootstrap import build_tool_registry
+from core.tools.permissions import ToolPermission
 from core.policy.truthfulness import (
     TRUTHFULNESS_CONTRACT,
     TRUTHFULNESS_POLICY_MARKER,
@@ -130,6 +133,87 @@ class TruthfulnessContractTests(unittest.TestCase):
         self.assertIn("Return only a valid JSON object", request.instructions)
         self.assertIn("Do not assume tools, credentials, APIs", request.instructions)
         self.assertIn("verification task", request.instructions.lower())
+
+
+class ToolContinuationPolicyAdapter(ModelAdapter):
+    def __init__(self):
+        self.requests: list[ModelRequest] = []
+
+    @property
+    def name(self) -> str:
+        return "truthfulness-tool-test-model"
+
+    @property
+    def provider(self) -> str:
+        return "test"
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        require_truthfulness_contract(request.instructions)
+        tool_messages = [
+            message for message in request.messages
+            if message.role == MessageRole.TOOL
+        ]
+        if not tool_messages:
+            return ModelResponse(
+                content="",
+                model=self.name,
+                provider=self.provider,
+                tool_calls=(
+                    ModelToolCall(
+                        id="truthfulness-calculator-call",
+                        tool_name="calculator",
+                        arguments={"expression": "2 + 2"},
+                    ),
+                ),
+                continuation=ModelContinuation(
+                    provider=self.provider,
+                    state={"turn": 1},
+                ),
+            )
+        if len(tool_messages) != 1 or tool_messages[0].tool_result is None:
+            raise AssertionError("Expected the calculator result on continuation.")
+        if not tool_messages[0].tool_result.success or tool_messages[0].tool_result.output != 4:
+            raise AssertionError("Calculator returned an unexpected result.")
+        return ModelResponse(
+            content="The calculator returned 4.",
+            model=self.name,
+            provider=self.provider,
+        )
+
+
+class ToolContinuationTruthfulnessTests(unittest.TestCase):
+    def test_policy_is_present_on_tool_call_and_continuation_requests(self):
+        models = ModelRegistry()
+        models.register(
+            ModelDefinition(
+                name="truthfulness-tool-test-model",
+                provider="test",
+                capabilities=frozenset({"reasoning", "calculation"}),
+                context_window=32000,
+                enabled=True,
+                metadata={"cost_class": "demo", "estimated_cost_usd": 0},
+            )
+        )
+        adapter = ToolContinuationPolicyAdapter()
+        adapters = AdapterRegistry()
+        adapters.register(adapter)
+        omnitrix = Omnitrix(
+            registry=models,
+            adapter_registry=adapters,
+            tool_registry=build_tool_registry(),
+            tool_permission=ToolPermission.from_capabilities({"calculation"}),
+        )
+
+        result = omnitrix.chat(Conversation(), "Calculate 2 + 2 using the calculator.")
+
+        self.assertEqual(result, "The calculator returned 4.")
+        self.assertEqual(len(adapter.requests), 2)
+        self.assertTrue(all(has_truthfulness_contract(r.instructions) for r in adapter.requests))
+        self.assertEqual(
+            adapter.requests[0].instructions,
+            adapter.requests[1].instructions,
+        )
 
 
 if __name__ == "__main__":
