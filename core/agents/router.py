@@ -33,6 +33,13 @@ _VAGUE_ACTIONS = re.compile(
     re.IGNORECASE,
 )
 
+_ACTION_REQUESTS = re.compile(
+    r"\b(build|make|create|design|write|implement|develop|generate|fix|improve|"
+    r"refactor|debug|automate|convert|turn .{0,50} into|draft|produce|plan|"
+    r"set up|configure|integrate|analyze this|review this|solve this)\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class AgentPlan:
@@ -92,14 +99,17 @@ class AgentRouter:
             primary = self.registry.get("reasoning")
             domain = "general"
 
+        word_count = len(re.findall(r"\b\w+\b", objective))
         complex_task = self._is_complex(objective, domain)
-        vague_short_prompt = len(re.findall(r"\b\w+\b", objective)) <= 12 and bool(
-            _VAGUE_ACTIONS.search(objective)
-        )
+        vague_short_prompt = word_count <= 12 and bool(_VAGUE_ACTIONS.search(objective))
+        short_action_request = word_count <= 28 and bool(_ACTION_REQUESTS.search(objective))
         intent_mode = self.registry.intent_mode
         needs_preflight = (
             intent_mode == "always"
-            or (intent_mode == "adaptive" and (complex_task or vague_short_prompt))
+            or (
+                intent_mode == "adaptive"
+                and (complex_task or vague_short_prompt or short_action_request)
+            )
         )
         critic_mode = self.registry.critic_mode
         needs_critique = critic_mode == "always" or (
