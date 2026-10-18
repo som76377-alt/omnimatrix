@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "base_url": "",
-  "chat_enabled": false
+  "base_url": "https://omnitrix-studio.onrender.com",
+  "chat_enabled": true
 }
