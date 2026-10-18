@@ -1688,12 +1688,6 @@ class Omnitrix:
                 continuation=response.continuation,
                 instructions=request.instructions,
             )
-ssages)
-                ),
-                tools=self._get_authorized_model_tools(allowed_tool_scopes),
-                continuation=response.continuation,
-                instructions=request.instructions,
-            )
 
     def _get_authorized_model_tools(
         self, allowed_tool_scopes: frozenset[str] | None = None
