@@ -7,13 +7,22 @@ KEY_DIR="$HOME/.config/omnitrix-signing"
 KEYSTORE="$KEY_DIR/omnitrix-update.p12"
 PASSWORD_FILE="$KEY_DIR/store-password"
 
-for command_name in gh keytool openssl base64; do
+for command_name in gh openssl base64; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Required command not found: $command_name"
-    echo "Run this from the Omnitrix GitHub Codespace with Java 17, GitHub CLI, and OpenSSL installed."
+    echo "Run this from the Omnitrix GitHub Codespace."
     exit 1
   fi
 done
+
+if ! command -v keytool >/dev/null 2>&1; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Java 17 is required to generate the signing key. Install a JDK and run this again."
+    exit 1
+  fi
+  sudo apt-get update
+  sudo apt-get install -y openjdk-17-jdk-headless
+fi
 
 gh auth status >/dev/null
 ADMIN="$(gh api "repos/$REPOSITORY" --jq '.permissions.admin // false')"
