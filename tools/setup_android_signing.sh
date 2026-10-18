@@ -7,13 +7,76 @@ KEY_DIR="$HOME/.config/omnitrix-signing"
 KEYSTORE="$KEY_DIR/omnitrix-update.p12"
 PASSWORD_FILE="$KEY_DIR/store-password"
 
-for command_name in gh openssl base64; do
+# Install GitHub CLI into the user's home directory if the Codespace image lacks it.
+# This avoids needing sudo or a preconfigured system package.
+if ! command -v gh >/dev/null 2>&1; then
+  for command_name in curl tar python3; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      echo "Required bootstrap command missing: $command_name"
+      echo "Open the Omnitrix Codespace with its standard terminal image and rerun this script."
+      exit 1
+    fi
+  done
+
+  case "$(uname -m)" in
+    x86_64|amd64) GH_ARCH="amd64" ;;
+    aarch64|arm64) GH_ARCH="arm64" ;;
+    *)
+      echo "Unsupported Codespace CPU architecture: $(uname -m)"
+      exit 1
+      ;;
+  esac
+
+  echo "GitHub CLI is missing; downloading the official GitHub CLI release..."
+  GH_RELEASE_JSON="$(curl -fsSL --retry 2 https://api.github.com/repos/cli/cli/releases/latest)"
+  read -r GH_VERSION GH_URL GH_DIGEST < <(python3 -c '
+import json, sys
+data=json.load(sys.stdin)
+version=data["tag_name"].lstrip("v")
+arch=sys.argv[1]
+name=f"gh_{version}_linux_{arch}.tar.gz"
+asset=next((item for item in data.get("assets", []) if item.get("name")==name), None)
+if not asset:
+    raise SystemExit("Could not find the official GitHub CLI Linux archive.")
+print(version, asset["browser_download_url"], asset.get("digest") or "-")
+' "$GH_ARCH" <<< "$GH_RELEASE_JSON")
+
+  GH_TMP="$(mktemp -d)"
+  trap 'rm -rf "$GH_TMP"' EXIT
+  curl -fL --retry 2 "$GH_URL" -o "$GH_TMP/gh.tar.gz"
+  if [[ "$GH_DIGEST" == sha256:* ]]; then
+    printf '%s  %s\n' "$(cut -d: -f2- <<< "$GH_DIGEST")" "$GH_TMP/gh.tar.gz" | sha256sum -c -
+  fi
+  tar -xzf "$GH_TMP/gh.tar.gz" -C "$GH_TMP"
+  mkdir -p "$HOME/.local/bin"
+  install -m 0755 "$GH_TMP/gh_"$GH_VERSION"_linux_"$GH_ARCH"/bin/gh" "$HOME/.local/bin/gh"
+  export PATH="$HOME/.local/bin:$PATH"
+  hash -r
+  rm -rf "$GH_TMP"
+  trap - EXIT
+  echo "GitHub CLI installed in $HOME/.local/bin/gh"
+fi
+
+for command_name in openssl base64; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Required command not found: $command_name"
-    echo "Run this from the Omnitrix GitHub Codespace."
     exit 1
   fi
 done
+
+# Start GitHub's device authorization if this Codespace has not authenticated gh yet.
+if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+  echo
+  echo "ONE-TIME APPROVAL REQUIRED"
+  echo "1. Open https://github.com/login/device on your phone."
+  echo "2. GitHub CLI will print a one-time code below. Enter that code on the page."
+  echo "3. Tap Authorize GitHub CLI. This terminal will continue automatically after approval."
+  echo
+  # Prevent a headless Codespace from trying to open a browser inside the container.
+  export GH_BROWSER=echo
+  gh auth login --hostname github.com --git-protocol https --web --scopes repo
+fi
+
 
 if ! command -v keytool >/dev/null 2>&1; then
   if ! command -v sudo >/dev/null 2>&1; then
@@ -24,7 +87,7 @@ if ! command -v keytool >/dev/null 2>&1; then
   sudo apt-get install -y openjdk-17-jdk-headless
 fi
 
-gh auth status >/dev/null
+gh auth status --hostname github.com >/dev/null
 ADMIN="$(gh api "repos/$REPOSITORY" --jq '.permissions.admin // false')"
 if [[ "$ADMIN" != "true" ]]; then
   echo "The currently signed-in GitHub account needs admin permission on $REPOSITORY to configure Actions secrets."
