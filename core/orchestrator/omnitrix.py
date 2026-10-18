@@ -1285,8 +1285,9 @@ class Omnitrix:
         )
         task.metadata["agent_roles"] = (
             [agent_plan.primary.role]
-            + (["intent_engineer"] if agent_plan and agent_plan.needs_intent_preflight else [])
-            + (["critic"] if agent_plan and agent_plan.needs_critique else [])
+            + [agent.role for agent in agent_plan.support_roles]
+            + (["intent_engineer"] if agent_plan.needs_intent_preflight else [])
+            + (["critic"] if agent_plan.needs_critique else [])
             if agent_plan is not None
             else []
         )
