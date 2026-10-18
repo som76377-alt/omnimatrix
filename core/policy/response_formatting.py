@@ -33,7 +33,7 @@ Use readable, semantically structured output that the actual Omnitrix chat rende
 - Do not claim a diagram rendered successfully unless the renderer/preview was actually checked. If uncertain about Mermaid syntax, provide a simple valid diagram or describe the limitation.
 
 4. DATA CHARTS
-- Use a fenced `chart block containing valid JSON for a simple native SVG chart when a chart genuinely helps.
+- Use a fenced `chart` block containing valid JSON for a simple native SVG chart when a chart genuinely helps.
 - Supported chart types are `bar`, `line`, `scatter`, and `pie`. Bar/line/scatter use `{"type":"line","title":"Example","xLabel":"x","yLabel":"y","data":[{"x":0,"y":1},{"x":1,"y":3}]}`. Pie uses `{"type":"pie","data":[{"label":"A","value":3},{"label":"B","value":2}]}`. Multiple line/bar series use a `series` array with `name` and `data`.
 - Chart data must be explicit inline values. Do not reference external URLs, scripts, expressions, or HTML in chart JSON. Use charts only when data is present or can be derived reliably; never invent points to make a chart look complete.
 - Browser Studio renders chart blocks. Native Android currently preserves chart source as readable text instead of rendering a chart.
@@ -42,7 +42,7 @@ Use readable, semantically structured output that the actual Omnitrix chat rende
 - Use a GitHub-style blockquote callout only when a genuinely useful note/warning/tip needs emphasis:
   > [!NOTE]
   > Text of the note.
-  Supported labels are NOTE, TIP, IMPORTANT, WARNING, and CAUTION.
+  Supported labels are `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, and `[!CAUTION]`.
 - Keep formatting proportional to the task. A short direct answer should remain short; a complex tutorial can use deeper structure and the most helpful visual formats.
 - Unsupported TeX packages such as TikZ/PGF/Pgfplots, custom interactive widgets, and arbitrary embedded media are not supported by the chat renderer. In those cases, use a supported artifact or explain the limitation instead of fabricating a visual.
 """
