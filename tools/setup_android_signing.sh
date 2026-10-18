@@ -231,7 +231,6 @@ PY
     fi
   fi
   chmod 600 "$KEYSTORE" "$PASSWORD_FILE"
-  chmod 600 "$KEYSTORE" "$PASSWORD_FILE"
 fi
 
 store_password="$(cat "$PASSWORD_FILE")"
