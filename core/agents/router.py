@@ -12,7 +12,7 @@ _SUBJECT_TERMS = re.compile(
     r"\b(math|mathematics|algebra|calculus|integral|derivative|equation|proof|prove|"
     r"physics|chemistry|biology|science|thermodynamics|electromagnet|quantum|"
     r"stoichiometry|molecule|reaction|chemical|mechanics|statistics|probability|"
-    r"geometry|trigonometry|scientific|derive|calculate)\b",
+    r"geometry|trigonometry|derive|calculate)\b",
     re.IGNORECASE,
 )
 _RESEARCH_TERMS = re.compile(
