@@ -10,6 +10,9 @@ on:
       - "config/mobile.models.json"
       - "config/mobile-backend.json"
       - "render.yaml"
+      - "tools/**"
+      - "docs/ANDROID_AUTO_UPDATES.md"
+      - "README.md"
       - ".github/workflows/android-apk.yml"
   push:
     branches: [main]
@@ -62,6 +65,7 @@ jobs:
           python -m json.tool config/mobile.models.json > /dev/null
           python -m json.tool config/mobile-backend.json > /dev/null
           ruby -e 'require "yaml"; YAML.safe_load_file("render.yaml", aliases: true); puts "Render Blueprint YAML is valid"'
+          bash -n tools/setup_android_signing.sh
 
       - name: Test Python backend
         run: |
