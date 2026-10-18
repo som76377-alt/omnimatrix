@@ -22,7 +22,7 @@ _RESEARCH_TERMS = re.compile(
     re.IGNORECASE,
 )
 _COMPUTATION_TERMS = re.compile(
-    r"\b(arithmetic|calculator|unit conversion|evaluate (?:the )?(?:expression|formula)|"
+    r"\b(arithmetic|unit conversion|evaluate (?:the )?(?:expression|formula)|"
     r"simplify (?:the )?expression|compute (?:the )?(?:result|value|product|sum)|"
     r"calculate (?:the )?(?:product|sum|quotient|remainder|average|mean|percentage|factorial))\b",
     re.IGNORECASE,
