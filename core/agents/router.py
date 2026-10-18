@@ -136,7 +136,7 @@ class AgentRouter:
         # The intent-engineer mindset always applies in the main call, even when
         # a separate preflight is skipped to preserve latency and free quota.
         blocks.append(
-            "INTENT-ENGINEERING CHECK (applies to every request):\\n"
+            "INTENT-ENGINEERING CHECK (applies to every request):\n"
             "Infer the user's practical goal from the words and relevant conversation context. "
             "Preserve explicit requirements. Separate facts from assumptions, fill ordinary gaps "
             "conservatively, and ask a question only when a material ambiguity blocks correct "
