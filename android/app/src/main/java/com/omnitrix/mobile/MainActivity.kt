@@ -136,11 +136,12 @@ internal object ModelActivityLabelFormatter {
         }
         val record = selected ?: return "MODEL ID UNAVAILABLE · no model call recorded"
         val identitySource = record.optString("identity_source")
-        val model = if (identitySource == "provider_response") {
+        val reportedModel = if (identitySource == "provider_response") {
             record.optString("model")
         } else {
             record.optString("configured_model")
-        }.ifBlank { "model ID missing" }
+        }
+        val model = reportedModel.ifBlank { "model ID missing" }
         val provider = record.optString("provider").ifBlank { "provider unknown" }
         val role = record.optString("role").ifBlank { "role unknown" }
         val provenance = when (identitySource) {
@@ -638,6 +639,14 @@ private class RuntimeClient(context: Context) {
     }
 
     suspend fun activity(sessionId: String): JSONObject {
+        if (!useHostedBackend && ready()) {
+            val health = requestPrivate("GET", "/api/health", null)
+            val current = health.optJSONObject("active_execution")
+            return JSONObject()
+                .put("ok", true)
+                .put("active", current != null)
+                .put("activity", current)
+        }
         val encodedSession = URLEncoder.encode(sessionId, StandardCharsets.UTF_8.name())
         return requestPublic(
             "GET",
@@ -1205,8 +1214,8 @@ private fun OmnitrixApp() {
                                                 } else {
                                                     "ROUTING · waiting for this session's model selection"
                                                 }
-                                            } catch (_: kotlinx.coroutines.CancellationException) {
-                                                throw
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                                throw cancelled
                                             } catch (_: Exception) {
                                                 // Do not invent a model while the activity endpoint is unavailable.
                                                 modelActivityLabel = "INFERENCE RUNNING · model identity not yet available"
@@ -1557,7 +1566,7 @@ private fun ChatScreen(
                     if (!isUserMessage && !message.modelLabel.isNullOrBlank()) {
                         Spacer(Modifier.height(3.dp))
                         Text(
-                            message.modelLabel,
+                            message.modelLabel.orEmpty(),
                             color = Grey,
                             fontSize = 10.sp,
                             lineHeight = 14.sp,
