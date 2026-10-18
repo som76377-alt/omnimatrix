@@ -154,40 +154,59 @@ else
       -keypass "$store_password" \
       -dname "CN=Omnitrix Android, O=Omnitrix, C=IN"
   else
-    echo "Creating the Android PKCS#12 signing keystore with Python (no Java runtime required)..."
-    CRYPTO_DIR="$KEY_DIR/python-venv"
-    if ! "$CRYPTO_DIR/bin/python" -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
-      echo "Preparing an isolated Python environment for the signing key (no system packages changed)..."
-      if [[ ! -x "$CRYPTO_DIR/bin/python" ]]; then
-        python3 -m venv "$CRYPTO_DIR" 2>/dev/null || {
-          echo "This workspace's Python lacks venv support. Trying the bundled virtual-environment bootstrap..."
-          mkdir -p "$CRYPTO_DIR"
-          python3 -m virtualenv --version >/dev/null 2>&1 || {
-            echo "Could not create an isolated Python environment. No signing key was generated."
+    if command -v openssl >/dev/null 2>&1; then
+      # OpenSSL is commonly available in Codespaces and avoids downloading Python
+      # crypto wheels or relying on a Java runtime / compatible ELF loader.
+      echo "Creating the Android PKCS#12 signing keystore with OpenSSL (no downloads required)..."
+      OPENSSL_TMP="$(mktemp -d)"
+      trap 'rm -rf "$OPENSSL_TMP"' EXIT
+      openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 10000 \
+        -keyout "$OPENSSL_TMP/private-key.pem" \
+        -out "$OPENSSL_TMP/certificate.pem" \
+        -subj "/CN=Omnitrix Android/O=Omnitrix/C=IN"
+      openssl pkcs12 -export \
+        -inkey "$OPENSSL_TMP/private-key.pem" \
+        -in "$OPENSSL_TMP/certificate.pem" \
+        -out "$KEYSTORE" \
+        -name "$KEY_ALIAS" \
+        -passout "pass:$store_password"
+      rm -rf "$OPENSSL_TMP"
+      trap - EXIT
+    else
+      echo "OpenSSL is unavailable; falling back to the isolated Python cryptography environment..."
+      CRYPTO_DIR="$KEY_DIR/python-venv"
+      if ! "$CRYPTO_DIR/bin/python" -c 'from cryptography.hazmat.primitives.serialization import pkcs12' >/dev/null 2>&1; then
+        echo "Preparing an isolated Python environment for the signing key (no system packages changed)..."
+        if [[ ! -x "$CRYPTO_DIR/bin/python" ]]; then
+          python3 -m venv "$CRYPTO_DIR" 2>/dev/null || {
+            echo "This workspace's Python lacks venv support. Trying the bundled virtual-environment bootstrap..."
+            mkdir -p "$CRYPTO_DIR"
+            python3 -m virtualenv --version >/dev/null 2>&1 || {
+              echo "Could not create an isolated Python environment. No signing key was generated."
+              exit 1
+            }
+            python3 -m virtualenv "$CRYPTO_DIR"
+          }
+        fi
+        if ! "$CRYPTO_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+          PIP_BOOTSTRAP="$(mktemp)"
+          trap 'rm -f "$PIP_BOOTSTRAP"' EXIT
+          curl -fsSL --retry 3 https://bootstrap.pypa.io/get-pip.py -o "$PIP_BOOTSTRAP" || {
+            echo "Could not download the official pip bootstrap. No signing key was generated."
             exit 1
           }
-          python3 -m virtualenv "$CRYPTO_DIR"
-        }
+          "$CRYPTO_DIR/bin/python" "$PIP_BOOTSTRAP" --disable-pip-version-check
+          rm -f "$PIP_BOOTSTRAP"
+          trap - EXIT
+        fi
+        "$CRYPTO_DIR/bin/python" -m pip install --disable-pip-version-check --quiet 'cryptography>=42,<47'
       fi
-      if ! "$CRYPTO_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
-        PIP_BOOTSTRAP="$(mktemp)"
-        trap 'rm -f "$PIP_BOOTSTRAP"' EXIT
-        curl -fsSL --retry 3 https://bootstrap.pypa.io/get-pip.py -o "$PIP_BOOTSTRAP" || {
-          echo "Could not download the official pip bootstrap. No signing key was generated."
-          exit 1
-        }
-        "$CRYPTO_DIR/bin/python" "$PIP_BOOTSTRAP" --disable-pip-version-check
-        rm -f "$PIP_BOOTSTRAP"
-        trap - EXIT
-      fi
-      "$CRYPTO_DIR/bin/python" -m pip install --disable-pip-version-check --quiet 'cryptography>=42,<47'
-    fi
-    "$CRYPTO_DIR/bin/python" - "$KEYSTORE" "$store_password" "$KEY_ALIAS" <<'PY'
+      "$CRYPTO_DIR/bin/python" - "$KEYSTORE" "$store_password" "$KEY_ALIAS" <<'PY'
 import datetime, sys
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, PrivateFormat
+from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, pkcs12
 from cryptography.x509.oid import NameOID
 
 path, password, alias = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
@@ -204,12 +223,14 @@ cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
     .not_valid_after(now + datetime.timedelta(days=10000))
     .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
     .sign(key, hashes.SHA256()))
-p12 = serialization.pkcs12.serialize_key_and_certificates(
+p12 = pkcs12.serialize_key_and_certificates(
     alias, key, cert, None, BestAvailableEncryption(password))
 with open(path, "wb") as f:
     f.write(p12)
 PY
+    fi
   fi
+  chmod 600 "$KEYSTORE" "$PASSWORD_FILE"
   chmod 600 "$KEYSTORE" "$PASSWORD_FILE"
 fi
 
