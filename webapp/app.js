@@ -703,7 +703,6 @@
     }
   }
 
-  let chartSequence = 0;
   const CHART_SVG_NS = "http://www.w3.org/2000/svg";
   const CHART_PALETTE = ["#d0ff55", "#83b5ff", "#ffb86c", "#c7a5ff", "#ff8585", "#63d9c8", "#f3df75", "#b9c5d1"];
 
@@ -720,7 +719,7 @@
   }
 
   function chartFiniteNumber(value) {
-    return typeof value === "number" && Number.isFinite(value);
+    return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1e100;
   }
 
   function renderChartSpec(spec) {
@@ -795,7 +794,11 @@
       ? spec.series
       : [{ name: chartText(spec.seriesName, 80) || "Series 1", data: spec.data }];
     if (rawSeries.length > 8) throw new Error("Charts support at most 8 series.");
+    const declaredPointCount = rawSeries.reduce((sum, raw) =>
+      sum + (raw && Array.isArray(raw.data) ? raw.data.length : 0), 0);
+    if (declaredPointCount > 600) throw new Error("Charts are limited to 600 total points.");
     let totalPoints = 0;
+    const xTypes = new Set();
     const series = rawSeries.map((raw, index) => {
       if (!raw || typeof raw !== "object" || !Array.isArray(raw.data) || raw.data.length === 0) {
         throw new Error("Each chart series needs a non-empty data array.");
@@ -806,12 +809,14 @@
             !(typeof point.x === "string" || chartFiniteNumber(point.x))) {
           throw new Error("Each chart point needs a string/number x and a finite numeric y.");
         }
+        xTypes.add(typeof point.x);
         return { x: point.x, y: point.y };
       });
       totalPoints += data.length;
       return { name, data };
     });
     if (totalPoints > 600) throw new Error("Charts are limited to 600 total points.");
+    if (xTypes.size > 1) throw new Error("Use either numeric x-values or categorical x-values, not a mixture.");
     const allPoints = series.flatMap((item) => item.data);
     const numericX = allPoints.every((point) => chartFiniteNumber(point.x));
     const xValues = [];
@@ -820,8 +825,9 @@
       const key = String(point.x);
       if (!xSet.has(key)) { xSet.add(key); xValues.push(point.x); }
     });
-    const xMin = numericX ? Math.min(...allPoints.map((point) => point.x)) : 0;
-    const xMax = numericX ? Math.max(...allPoints.map((point) => point.x)) : Math.max(1, xValues.length - 1);
+    let xMin = numericX ? Math.min(...allPoints.map((point) => point.x)) : 0;
+    let xMax = numericX ? Math.max(...allPoints.map((point) => point.x)) : Math.max(1, xValues.length - 1);
+    if (numericX && xMin === xMax) { xMin -= 1; xMax += 1; }
     const xRange = (xMax - xMin) || 1;
     const yValues = allPoints.map((point) => point.y);
     let yMin = Math.min(...yValues), yMax = Math.max(...yValues);
@@ -838,7 +844,7 @@
     const plotWidth = width - left - right, plotHeight = height - top - bottom;
     const xPosition = (value) => numericX
       ? left + ((Number(value) - xMin) / xRange) * plotWidth
-      : left + (xValues.indexOf(value) / Math.max(1, xValues.length - 1)) * plotWidth;
+      : left + ((xValues.indexOf(value) + 0.5) / Math.max(1, xValues.length)) * plotWidth;
     const yPosition = (value) => top + ((yMax - value) / (yMax - yMin)) * plotHeight;
 
     for (let i = 0; i <= 4; i += 1) {
