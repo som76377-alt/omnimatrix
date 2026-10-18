@@ -78,6 +78,10 @@ class GeminiAdapter(ModelAdapter):
     def provider(self) -> str:
         return "google"
 
+    def is_available(self) -> bool:
+        """Return whether a Gemini API key is locally configured."""
+        return bool(self._api_key or os.getenv(self._api_key_env))
+
     def supports_model_id(self, model_id: str) -> bool:
         return isinstance(model_id, str) and model_id == self._model_id
 
