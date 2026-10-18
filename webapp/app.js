@@ -549,13 +549,168 @@
   byId("refresh-tree").addEventListener("click", () => loadDirectory(state.workspacePath));
   byId("sidebar-refresh").addEventListener("click", () => loadDirectory(state.workspacePath));
 
+
+  // Rich responses are rendered as Markdown, then sanitized before they touch the DOM.
+  // KaTeX, Highlight.js, and Mermaid are optional enhancements; plain text remains the safe fallback.
+  let mermaidPromise = null;
+  let diagramSequence = 0;
+
+  function renderRichContent(target, rawContent) {
+    const source = String(rawContent ?? "");
+    if (!window.marked || !window.DOMPurify) {
+      target.textContent = source;
+      return;
+    }
+
+    try {
+      const parsed = window.marked.parse(source, {
+        gfm: true,
+        breaks: false,
+        async: false,
+      });
+      target.innerHTML = window.DOMPurify.sanitize(parsed, {
+        USE_PROFILES: { html: true },
+        FORBID_TAGS: ["style", "iframe", "object", "embed"],
+        FORBID_ATTR: ["style"],
+      });
+
+      target.querySelectorAll("a[href]").forEach((link) => {
+        const href = link.getAttribute("href") || "";
+        if (!/^https?:\/\//i.test(href) && !href.startsWith("#") && !href.startsWith("mailto:")) {
+          link.removeAttribute("href");
+        }
+        if (/^https?:\/\//i.test(href)) {
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+        }
+      });
+      target.querySelectorAll("img").forEach((image) => {
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.referrerPolicy = "no-referrer";
+      });
+
+      // Keep code legible and copyable without allowing a language label to become executable HTML.
+      target.querySelectorAll("pre > code").forEach((code) => {
+        const pre = code.parentElement;
+        if (!pre || pre.parentElement?.classList.contains("code-block-wrap")) return;
+        const wrapper = document.createElement("div");
+        wrapper.className = "code-block-wrap";
+        pre.replaceWith(wrapper);
+        wrapper.append(pre);
+
+        const languageClass = Array.from(code.classList).find((name) => name.startsWith("language-"));
+        if (languageClass) {
+          const label = document.createElement("span");
+          label.className = "code-language-label";
+          label.textContent = languageClass.slice("language-".length).slice(0, 24).toUpperCase();
+          wrapper.append(label);
+        }
+
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "code-copy-button";
+        copy.textContent = "COPY";
+        copy.setAttribute("aria-label", "Copy code block");
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(code.textContent || "");
+            copy.textContent = "COPIED";
+            copy.classList.add("copied");
+          } catch {
+            toast("Clipboard access is unavailable in this browser.");
+          }
+        });
+        wrapper.append(copy);
+      });
+
+      if (typeof window.renderMathInElement === "function") {
+        window.renderMathInElement(target, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\\\[", right: "\\\\]", display: true },
+            { left: "\\\\(", right: "\\\\)", display: false },
+            { left: "$", right: "$", display: false },
+          ],
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
+          throwOnError: false,
+          strict: "ignore",
+          trust: false,
+          maxExpand: 1000,
+          maxSize: 25,
+        });
+      }
+
+      if (window.hljs) {
+        target.querySelectorAll("pre code").forEach((code) => {
+          if (code.classList.contains("language-mermaid") || code.classList.contains("language-mmd")) return;
+          try { window.hljs.highlightElement(code); } catch { /* Keep unhighlighted code readable. */ }
+        });
+      }
+
+      void renderMermaidBlocks(target);
+    } catch (error) {
+      console.error("Rich message rendering failed; showing the source text instead.", error);
+      target.textContent = source;
+    }
+  }
+
+  async function renderMermaidBlocks(target) {
+    const codeBlocks = Array.from(target.querySelectorAll("pre > code.language-mermaid, pre > code.language-mmd"));
+    if (!codeBlocks.length || !window.DOMPurify) return;
+
+    try {
+      if (!mermaidPromise) {
+        mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.esm.min.mjs")
+          .then((module) => module.default || module);
+      }
+      const mermaid = await mermaidPromise;
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "dark",
+        flowchart: { htmlLabels: false },
+        sequence: { useMaxWidth: true },
+      });
+
+      for (const code of codeBlocks) {
+        if (!target.contains(code)) continue;
+        const pre = code.closest("pre");
+        if (!pre) continue;
+        const wrapper = pre.parentElement?.classList.contains("code-block-wrap") ? pre.parentElement : pre;
+        try {
+          const rendered = await mermaid.render("omnitrix-diagram-" + (++diagramSequence), code.textContent || "");
+          const safeSvg = window.DOMPurify.sanitize(rendered.svg, {
+            USE_PROFILES: { svg: true, svgFilters: true },
+            FORBID_TAGS: ["script", "foreignObject"],
+            FORBID_ATTR: ["onerror", "onclick", "onload"],
+          });
+          const diagram = document.createElement("div");
+          diagram.className = "message-diagram";
+          diagram.setAttribute("role", "img");
+          diagram.setAttribute("aria-label", "Generated diagram");
+          diagram.innerHTML = safeSvg;
+          wrapper.replaceWith(diagram);
+        } catch (error) {
+          // A malformed diagram stays visible as code instead of silently disappearing.
+          console.warn("Mermaid diagram could not be rendered.", error);
+        }
+      }
+    } catch (error) {
+      // Dynamic diagram library failure must not break the rest of chat.
+      console.warn("Diagram renderer unavailable; Mermaid source remains visible.", error);
+    }
+  }
+
+
   function appendMessage(role, content, sourceLabel) {
     const article = node("article", "message " + (role === "user" ? "user-message" : "assistant-message"));
     article.append(node("div", "message-avatar", role === "user" ? "YOU" : "O"));
     const body = node("div", "message-content");
     const meta = node("div", "message-meta");
     meta.append(node("span", "", role === "user" ? "YOU" : "OMNITRIX CORE"), node("time", "", dateLabel(new Date().toISOString())));
-    const bubble = node("div", "message-bubble", content);
+    const bubble = node("div", "message-bubble");
+    renderRichContent(bubble, content);
     body.append(meta, bubble, node("div", "message-source", sourceLabel || (role === "user" ? "USER MESSAGE" : "MODEL RESPONSE")));
     article.append(body);
     byId("chat-messages").append(article);
