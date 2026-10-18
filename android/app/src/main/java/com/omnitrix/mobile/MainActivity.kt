@@ -1345,7 +1345,7 @@ internal object MarkwonMathNormalizer {
             "\n\n\$\$\n" + match.groupValues[1].trim('\r', '\n') + "\n\$\$\n\n"
         }
         result = inlineMath.replace(result) { match ->
-            "\$\$" + match.groupValues[1] + "\$\$"
+            "\$" + match.groupValues[1] + "\$"
         }
 
         val alertMarker = Regex("""(?m)^([ \t]*>[ \t]*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(.*)$""", RegexOption.IGNORE_CASE)
