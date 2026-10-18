@@ -116,6 +116,44 @@ class StudioServerTests(unittest.TestCase):
         self.assertTrue(manifest["chat_enabled"])
         self.assertEqual(manifest["base_url"], "https://omnitrix-studio.onrender.com")
 
+    def test_apk_download_endpoint_streams_binary_with_download_headers(self):
+        from unittest.mock import patch
+
+        class FakeResponse:
+            headers = {"Content-Length": "16"}
+
+            def __init__(self):
+                self.sent = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, amount=-1):
+                if self.sent:
+                    return b""
+                self.sent = True
+                return b"fake apk payload"
+
+        with patch("interfaces.web.server.urlopen_url", return_value=FakeResponse()) as upstream:
+            req = Request(self.base_url + "/downloads/Omnitrix.apk", method="GET")
+            with urlopen(req, timeout=3) as response:
+                body = response.read()
+                content_type = response.headers.get("Content-Type")
+                disposition = response.headers.get("Content-Disposition")
+
+        self.assertEqual(body, b"fake apk payload")
+        self.assertEqual(content_type, "application/vnd.android.package-archive")
+        self.assertEqual(disposition, 'attachment; filename="Omnitrix.apk"')
+        upstream.assert_called_once()
+        forwarded_request = upstream.call_args.args[0]
+        self.assertEqual(
+            forwarded_request.full_url,
+            "https://github.com/som76377-alt/omnimatrix/releases/latest/download/Omnitrix.apk",
+        )
+
     def test_public_mobile_health_is_available_without_runtime_token(self):
         status, body = self.request("/api/mobile/health", authorized=False)
         self.assertEqual(status, 200)
