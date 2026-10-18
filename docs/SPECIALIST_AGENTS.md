@@ -1,7 +1,7 @@
 # Specialist agents and model candidates
 
 **Snapshot:** 18 October 2026  
-**Status:** Role layer implemented on the feature branch; multi-provider model adapters and empirical role benchmarks are not yet connected.
+**Status:** Role routing, a Google adapter baseline, and an opt-in OpenRouter adapter are implemented on the feature branch. The free models are configured but have not yet passed Omnitrix's own live benchmarks. Anthropic/OpenAI adapters and cross-provider premium routing remain future work.
 
 ## Design rule
 
@@ -19,7 +19,7 @@ The default live configuration has a single Google model profile, `omnitrix-prim
 | `subject_solver` | Maths, physics, chemistry, biology, and other technical/academic reasoning | Gemini 4 Argon first for the evaluation set; compare GPT-6.1 Sol and Claude Opus 5.5 | Verified solutions, correct derivations, dimensional/unit checks, edge cases, source accuracy |
 | `critic` | Try to falsify a draft, identify meaningful errors, and propose a corrected answer when needed | A different configured provider than the draft model, such as GPT-6.1 Sol reviewing a Google draft or Gemini reviewing an OpenAI/Anthropic draft | Finds planted errors, avoids false alarms, preserves correct answers, distinguishes factual verification from reasoning |
 
-These are **candidates for head-to-head evaluation, not a claim that one model always wins**. Candidate names in `config/agents.json` are preferences/aliases only. They do not register providers, fetch model weights, create API credentials, or activate paid calls.
+These are **candidates for head-to-head evaluation, not a claim that one model always wins**. Premium names in `config/agents.json` are preferences/aliases only until the relevant provider adapter and model profile are configured. The two free candidates are enabled only in the separate OpenRouter example profile; they do not change the default model profile or create credentials.
 
 ## Opt-in free candidates (snapshot: 18 October 2026)
 
@@ -73,6 +73,7 @@ Track **accuracy, verifiable pass rate, latency, input/output tokens, cost per a
 
 - `core/agents/registry.py` — validates configurable specialist definitions.
 - `core/agents/router.py` — routes roles and composes instructions.
+- `core/models/providers/openrouter.py` — opt-in Chat Completions adapter with tool-call normalization and no automatic retries.
 - `config/agents.json` — role definitions, preferences, intent and critic policies.
 - `core/orchestrator/omnitrix.py` — bounded no-tool intent/critic stages under the existing budget and journal contracts.
 - `tests/test_agents.py` and `tests/test_agent_pipeline.py` — deterministic routing/schema and scripted-call regression tests.
