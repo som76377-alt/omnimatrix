@@ -87,7 +87,7 @@ class AgentRouterTests(unittest.TestCase):
             frozenset({"reasoning"}),
         )
         self.assertEqual(plan.primary.role, "research")
-        self.assertIn("latest", plan.primary.instructions.lower())
+        self.assertIn("sources", plan.primary.instructions.lower())
 
     def test_routes_explicit_arithmetic_to_computation_specialist(self):
         plan = self.router.route("Calculate 2+2.", frozenset({"reasoning"}))
