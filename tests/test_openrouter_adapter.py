@@ -129,6 +129,7 @@ class OpenRouterAdapterTests(unittest.TestCase):
                 name="openrouter-no-key",
                 model_id="nvidia/nemotron-3-super-120b-a12b:free",
             )
+            self.assertFalse(adapter.is_available())
             with self.assertRaises(ModelAuthenticationError):
                 adapter.generate(
                     ModelRequest(messages=(ModelMessage(role=MessageRole.USER, content="Hi"),))
