@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: omnitrix-studio
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -m interfaces.web.server
+      --host 0.0.0.0
+      --port $PORT
+      --config config/mobile.models.json
+      --workspace-root .
+      --allow-public-chat
+      --allow-free-quota
+    healthCheckPath: /api/mobile/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.2
+      - key: OMNITRIX_PUBLIC_CHAT_ENABLED
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
