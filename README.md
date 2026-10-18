@@ -93,6 +93,7 @@ The core application uses the Python standard library, with one explicit runtime
 - [Recovery state machine](docs/RECOVERY_STATE_MACHINE.md) — conservative post-crash dispositions and reconciliation boundaries.
 - [Staged roadmap](docs/ROADMAP.md) — current phase gates and verified completion status.
 - [Truthfulness and capability calibration contract](docs/TRUTHFULNESS_AND_CALIBRATION.md) — persistent runtime rules, adversarial evaluation cases, release gate, and capability-claim status definitions.
+- [Rich-response formatting support](docs/FORMATTING_SUPPORT.md) — browser and Android formatting capabilities, safety boundaries, and verification.
 
 ## Omnitrix Studio — main testing app
 

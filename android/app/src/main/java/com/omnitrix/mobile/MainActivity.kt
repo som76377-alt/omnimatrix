@@ -63,6 +63,17 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
+import android.text.method.LinkMovementMethod
+import android.view.ViewGroup
+import android.widget.TextView
+import androidx.compose.ui.viewinterop.AndroidView
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.latex.JLatexMathPlugin
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.ext.tasklist.TaskListPlugin
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 
 private val Black = Color(0xFF080A07)
 private val Surface = Color(0xFF11150E)
@@ -1310,339 +1321,79 @@ private fun AppHeader(title: String, detail: String? = null) {
 }
 
 
-private data class MarkdownBlock(
-    val type: String,
-    val text: String,
-    val level: Int = 1,
-    val marker: String = ""
-)
 
-private fun parseMarkdownBlocks(source: String): List<MarkdownBlock> {
-    val lines = source.replace("\r\n", "\n").replace('\r', '\n').lines()
-    val result = mutableListOf<MarkdownBlock>()
-    val paragraph = mutableListOf<String>()
-    val fence = Char(96).toString().repeat(3)
-    var index = 0
+internal object MarkwonMathNormalizer {
+    private val fencedCode = Regex("""(?ms)^ {0,3}(`{3,}|~{3,})[^\r\n]*\r?\n[\s\S]*?^ {0,3}\1[ \t]*(?:\r?\n|$)""")
+    private val inlineCode = Regex("""(`+)[^\r\n]*?\1""")
+    private val displayMath = Regex("""\\\[([\s\S]*?)\\\]""")
+    private val inlineMath = Regex("""\\\((.+?)\\\)""")
 
-    fun flushParagraph() {
-        if (paragraph.isNotEmpty()) {
-            val value = paragraph.joinToString("\n").trim()
-            if (value.isNotEmpty()) result.add(MarkdownBlock("paragraph", value))
-            paragraph.clear()
-        }
-    }
+    fun normalize(source: String): String {
+        val protectedParts = mutableListOf<Pair<String, String>>()
 
-    fun isTableRow(line: String) =
-        line.trim().startsWith("|") && line.trim().endsWith("|") && line.count { it == '|' } >= 2
-
-    fun isTableSeparator(line: String): Boolean {
-        if (!isTableRow(line)) return false
-        return line.trim().trim('|').split('|').all { cell ->
-            cell.trim().matches(Regex(":?-{3,}:?"))
-        }
-    }
-
-    while (index < lines.size) {
-        val line = lines[index]
-        if (line.trimStart().startsWith(fence)) {
-            flushParagraph()
-            index++
-            val codeLines = mutableListOf<String>()
-            while (index < lines.size && !lines[index].trimStart().startsWith(fence)) {
-                codeLines.add(lines[index])
-                index++
-            }
-            result.add(MarkdownBlock("code", codeLines.joinToString("\n")))
-            if (index < lines.size) index++
-            continue
+        fun protect(value: String): String {
+            val token = "\uE000OMNITRIX_PROTECTED${protectedParts.size}\uE001"
+            val uniqueToken = token.replace("${protectedParts.size}", protectedParts.size.toString())
+            protectedParts.add(uniqueToken to value)
+            return uniqueToken
         }
 
-        if (line.isBlank()) {
-            flushParagraph()
-            index++
-            continue
+        var result = fencedCode.replace(source) { protect(it.value) }
+        result = inlineCode.replace(result) { protect(it.value) }
+
+        result = displayMath.replace(result) { match ->
+            "\n\n\$\$\n" + match.groupValues[1].trim('\r', '\n') + "\n\$\$\n\n"
+        }
+        result = inlineMath.replace(result) { match ->
+            "\$\$" + match.groupValues[1] + "\$\$"
         }
 
-        if (isTableRow(line) && index + 1 < lines.size && isTableSeparator(lines[index + 1])) {
-            flushParagraph()
-            val tableLines = mutableListOf(line.trim(), lines[index + 1].trim())
-            index += 2
-            while (index < lines.size && isTableRow(lines[index])) {
-                tableLines.add(lines[index].trim())
-                index++
-            }
-            result.add(MarkdownBlock("table", tableLines.joinToString("\n")))
-            continue
+        protectedParts.forEach { (token, original) ->
+            result = result.replace(token, original)
         }
-
-        val heading = Regex("""^(#{1,6})\s+(.+?)\s*#*\s*$""").matchEntire(line.trim())
-        if (heading != null) {
-            flushParagraph()
-            result.add(MarkdownBlock("heading", heading.groupValues[2], heading.groupValues[1].length))
-            index++
-            continue
-        }
-
-        if (Regex("""^\s*(---+|\*\*\*+|___+)\s*$""").matches(line)) {
-            flushParagraph()
-            result.add(MarkdownBlock("rule", ""))
-            index++
-            continue
-        }
-
-        val bullet = Regex("""^\s*[-*+]\s+(.+)$""").matchEntire(line)
-        if (bullet != null) {
-            flushParagraph()
-            result.add(MarkdownBlock("list", bullet.groupValues[1], marker = "•"))
-            index++
-            continue
-        }
-
-        val numbered = Regex("""^\s*(\d+[.)])\s+(.+)$""").matchEntire(line)
-        if (numbered != null) {
-            flushParagraph()
-            result.add(MarkdownBlock("list", numbered.groupValues[2], marker = numbered.groupValues[1]))
-            index++
-            continue
-        }
-
-        if (line.trimStart().startsWith(">")) {
-            flushParagraph()
-            val quoteLines = mutableListOf<String>()
-            while (index < lines.size && lines[index].trimStart().startsWith(">")) {
-                quoteLines.add(lines[index].trimStart().removePrefix(">").trimStart())
-                index++
-            }
-            result.add(MarkdownBlock("quote", quoteLines.joinToString("\n")))
-            continue
-        }
-
-        paragraph.add(line)
-        index++
-    }
-
-    flushParagraph()
-    return result
-}
-
-private fun parseMarkdownTable(source: String): List<List<String>> =
-    source.lines()
-        .filterNot { row ->
-            row.trim().trim('|').split('|').all { cell -> cell.trim().matches(Regex(":?-{3,}:?")) }
-        }
-        .map { row -> row.trim().trim('|').split('|').map { cell -> cell.trim() } }
-
-private val INLINE_MARKDOWN = Regex(
-    """(\[[^\]]+\]\(https?://[^)\s]+\)|\*\*.+?\*\*|__.+?__|""" +
-        Char(96) + """[^""" + Char(96) + """]+""" + Char(96) +
-        """|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))"""
-)
-
-private fun parseInlineMarkdown(source: String) = buildAnnotatedString {
-    var cursor = 0
-    for (match in INLINE_MARKDOWN.findAll(source)) {
-        if (match.range.first > cursor) append(source.substring(cursor, match.range.first))
-        val token = match.value
-        when {
-            token.startsWith("[") && token.contains("](") && token.endsWith(")") -> {
-                val split = token.indexOf("](")
-                val label = token.substring(1, split)
-                val target = token.substring(split + 2, token.length - 1)
-                pushStringAnnotation(tag = "URL", annotation = target)
-                pushStyle(SpanStyle(color = Color(0xFF9BC2FF), textDecoration = TextDecoration.Underline))
-                append(label)
-                pop()
-                pop()
-            }
-            token.startsWith("**") && token.endsWith("**") -> {
-                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                append(token.substring(2, token.length - 2))
-                pop()
-            }
-            token.startsWith("__") && token.endsWith("__") -> {
-                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                append(token.substring(2, token.length - 2))
-                pop()
-            }
-            token.first() == Char(96) && token.last() == Char(96) -> {
-                pushStyle(SpanStyle(background = SurfaceRaised, color = Green, fontFamily = Mono))
-                append(token.substring(1, token.length - 1))
-                pop()
-            }
-            (token.startsWith("*") && token.endsWith("*")) ||
-                (token.startsWith("_") && token.endsWith("_")) -> {
-                pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
-                append(token.substring(1, token.length - 1))
-                pop()
-            }
-            else -> append(token)
-        }
-        cursor = match.range.last + 1
-    }
-    if (cursor < source.length) append(source.substring(cursor))
-}
-
-@Composable
-private fun MarkdownInline(
-    content: String,
-    style: TextStyle,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val annotated = remember(content) { parseInlineMarkdown(content) }
-    ClickableText(
-        text = annotated,
-        modifier = modifier,
-        style = style,
-        onClick = { offset ->
-            annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                .firstOrNull()?.item?.let { target ->
-                    if (target.startsWith("https://") || target.startsWith("http://")) openExternal(context, target)
-                }
-        }
-    )
-}
-
-@Composable
-private fun MarkdownTable(source: String) {
-    val rows = remember(source) { parseMarkdownTable(source) }
-    if (rows.isEmpty()) return
-    Column(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-            .background(Surface, RoundedCornerShape(3.dp))
-    ) {
-        rows.forEachIndexed { rowIndex, cells ->
-            Row(
-                Modifier.background(if (rowIndex == 0) SurfaceRaised else Surface)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                cells.forEach { cell ->
-                    Box(Modifier.width(136.dp).padding(end = 8.dp)) {
-                        MarkdownInline(
-                            cell,
-                            TextStyle(
-                                color = White,
-                                fontFamily = FontFamily.Default,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp,
-                                fontWeight = if (rowIndex == 0) FontWeight.Bold else FontWeight.Normal
-                            )
-                        )
-                    }
-                }
-            }
-            if (rowIndex < rows.lastIndex) {
-                HorizontalDivider(color = Grey.copy(alpha = 0.18f), thickness = 1.dp)
-            }
-        }
+        return result
     }
 }
 
 @Composable
 private fun MarkdownMessage(content: String) {
-    val blocks = remember(content) { parseMarkdownBlocks(content) }
-    Column(
-        Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
-    ) {
-        blocks.forEach { block ->
-            when (block.type) {
-                "heading" -> {
-                    val size = when (block.level) {
-                        1 -> 23
-                        2 -> 20
-                        3 -> 18
-                        else -> 16
-                    }
-                    MarkdownInline(
-                        block.text,
-                        TextStyle(
-                            color = White,
-                            fontFamily = FontFamily.Default,
-                            fontSize = size.sp,
-                            lineHeight = (size + 5).sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        Modifier.fillMaxWidth()
-                    )
+    val context = LocalContext.current
+    val markwon = remember(context) {
+        Markwon.builder(context)
+            .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TablePlugin.create(context))
+            .usePlugin(TaskListPlugin.create(context))
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            .usePlugin(JLatexMathPlugin.create(
+                context.resources.displayMetrics.scaledDensity * 15f,
+                JLatexMathPlugin.BuilderConfigure { builder ->
+                    builder.blocksEnabled(true)
+                    builder.blocksLegacy(false)
+                    builder.inlinesEnabled(true)
                 }
-                "list" -> {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Text(
-                            block.marker,
-                            color = Green,
-                            fontFamily = Mono,
-                            fontSize = 15.sp,
-                            lineHeight = 23.sp,
-                            modifier = Modifier.width(26.dp)
-                        )
-                        MarkdownInline(
-                            block.text,
-                            TextStyle(
-                                color = White,
-                                fontFamily = FontFamily.Default,
-                                fontSize = 15.sp,
-                                lineHeight = 23.sp
-                            ),
-                            Modifier.weight(1f)
-                        )
-                    }
-                }
-                "quote" -> {
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .background(SurfaceRaised, RoundedCornerShape(3.dp))
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        MarkdownInline(
-                            block.text,
-                            TextStyle(
-                                color = Grey,
-                                fontFamily = FontFamily.Default,
-                                fontSize = 15.sp,
-                                lineHeight = 23.sp,
-                                fontStyle = FontStyle.Italic
-                            )
-                        )
-                    }
-                }
-                "code" -> {
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .background(SurfaceRaised, RoundedCornerShape(3.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            block.text,
-                            color = Green,
-                            fontFamily = Mono,
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp,
-                            softWrap = false
-                        )
-                    }
-                }
-                "table" -> MarkdownTable(block.text)
-                "rule" -> HorizontalDivider(color = Grey.copy(alpha = 0.28f), thickness = 1.dp)
-                else -> MarkdownInline(
-                    block.text,
-                    TextStyle(
-                        color = White,
-                        fontFamily = FontFamily.Default,
-                        fontSize = 15.sp,
-                        lineHeight = 23.sp
-                    ),
-                    Modifier.fillMaxWidth()
-                )
-            }
-        }
+            ))
+            .usePlugin(HtmlPlugin.create())
+            .build()
     }
+
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = { viewContext ->
+            TextView(viewContext).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setTextColor(android.graphics.Color.rgb(240, 242, 232))
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
+                setLineSpacing(0f, 1.08f)
+                setPadding(0, 0, 0, 0)
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                movementMethod = LinkMovementMethod.getInstance()
+            }
+        },
+        update = { textView -> markwon.setMarkdown(textView, MarkwonMathNormalizer.normalize(content)) }
+    )
 }
 
 @Composable

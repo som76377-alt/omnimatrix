@@ -80,6 +80,14 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.security:security-crypto:1.1.0")
+    // Maintained native Markdown rendering with inline and block LaTeX formulas.
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:inline-parser:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
+    implementation("io.noties.markwon:ext-tasklist:4.6.2")
+    implementation("io.noties.markwon:html:4.6.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
