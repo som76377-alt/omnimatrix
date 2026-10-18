@@ -30,12 +30,12 @@
         "reasoning"
       ],
       "preferred_models": [
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
         "nvidia/nemotron-3-super-120b-a12b:free",
         "gemini-4-argon",
         "gpt-6-astra",
         "claude-fable-5-1",
-        "gpt-6.1-sol"
+        "gpt-6.1-sol",
+        "nvidia/nemotron-3-ultra-550b-a55b:free"
       ],
       "enabled": true,
       "instructions": "Reason from explicit premises, state material assumptions, distinguish evidence from inference, check edge cases, and give a direct answer. For multi-step work, make the plan actionable and verify the conclusion rather than merely sounding confident. Do not expose hidden chain-of-thought; give a concise explanation or derivation appropriate to the task."
