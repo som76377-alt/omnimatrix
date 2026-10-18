@@ -3,6 +3,8 @@ package com.omnitrix.mobile
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.material3.LocalTextStyle
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -50,11 +53,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 
@@ -77,6 +83,23 @@ private enum class AppTab(val title: String) {
 private data class ChatMessage(val role: String, val text: String)
 private data class RepoEntry(val name: String, val path: String, val type: String, val size: Long, val sha: String)
 private data class CiRun(val title: String, val status: String, val branch: String, val url: String, val updated: String)
+private data class GitHubRepository(
+    val fullName: String,
+    val name: String,
+    val description: String,
+    val isPrivate: Boolean,
+    val defaultBranch: String,
+    val updatedAt: String
+)
+private data class AppUpdate(
+    val versionCode: Int,
+    val versionName: String,
+    val title: String,
+    val notes: String,
+    val downloadUrl: String,
+    val sha256: String,
+    val sizeBytes: Long
+)
 private data class DeviceLogin(
     val deviceCode: String,
     val userCode: String,
@@ -132,7 +155,16 @@ internal object GitHubInputValidation {
         val parts = path.split("/")
         if (parts.any { it.isBlank() || it == "." || it == ".." || it.startsWith(".") }) return false
         if (parts.any { Regex("(secret|token|password|api[_-]?key|credential|private[_-]?key)", RegexOption.IGNORE_CASE).containsMatchIn(it) }) return false
-        return parts.first() in setOf("core", "interfaces", "tests", "docs", "config", "webapp", "android", "README.md")
+        return true
+    }
+
+    fun isSafeRepositoryFullName(fullName: String): Boolean {
+        val parts = fullName.split("/")
+        if (parts.size != 2) return false
+        return parts.all { part ->
+            part.isNotBlank() && part != "." && part != ".." &&
+                part.matches(Regex("[A-Za-z0-9_.-]+"))
+        }
     }
 }
 
@@ -243,11 +275,53 @@ private class GitHubClient(context: Context) {
         throw IOException("The sign-in code expired. Start again.")
     }
 
-    suspend fun listContents(path: String): List<RepoEntry> {
-        if (path.isNotBlank() && !GitHubInputValidation.isSafeRepoPath(path)) throw IOException("That repository path is not available in the app.")
+    suspend fun listRepositories(accountHint: String): List<GitHubRepository> {
+        val account = accountHint.trim().ifBlank { REPOSITORY.substringBefore("/") }
+        val address = if (ready()) {
+            "https://api.github.com/user/repos?visibility=public&affiliation=owner&sort=updated&per_page=100"
+        } else {
+            if (!account.matches(Regex("[A-Za-z0-9-]+"))) {
+                throw IOException("The GitHub username is not valid.")
+            }
+            "https://api.github.com/users/" + encodePathPart(account) +
+                "/repos?type=owner&sort=updated&per_page=100"
+        }
+        if (ready()) ensureValidAccessToken()
+        val parsed = withContext(Dispatchers.IO) {
+            JSONTokener(requestRaw("GET", address, null, accessToken.takeIf { ready() })).nextValue()
+        }
+        val items = parsed as? JSONArray ?: JSONArray()
+        return buildList {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val fullName = item.optString("full_name", "")
+                if (!GitHubInputValidation.isSafeRepositoryFullName(fullName)) continue
+                add(
+                    GitHubRepository(
+                        fullName = fullName,
+                        name = item.optString("name", fullName.substringAfter("/")),
+                        description = item.optString("description", "").takeUnless { it == "null" }.orEmpty(),
+                        isPrivate = item.optBoolean("private", false),
+                        defaultBranch = item.optString("default_branch", "main").ifBlank { "main" },
+                        updatedAt = item.optString("updated_at", "")
+                    )
+                )
+            }
+        }.sortedWith(compareBy<GitHubRepository> { it.isPrivate }.thenBy { it.name.lowercase() })
+    }
+
+    suspend fun listContents(repository: GitHubRepository, path: String): List<RepoEntry> {
+        if (!GitHubInputValidation.isSafeRepositoryFullName(repository.fullName)) {
+            throw IOException("That GitHub repository name is not valid.")
+        }
+        if (path.isNotBlank() && !GitHubInputValidation.isSafeRepoPath(path)) {
+            throw IOException("That repository path is not available in the app.")
+        }
         val encoded = if (path.isBlank()) "" else path.split("/").joinToString("/") { encodePathPart(it) }
-        val address = "https://api.github.com/repos/" + REPOSITORY + "/contents" +
-            (if (encoded.isBlank()) "" else "/$encoded") + "?ref=main"
+        val encodedRepo = repository.fullName.split("/").joinToString("/") { encodePathPart(it) }
+        val address = "https://api.github.com/repos/" + encodedRepo + "/contents" +
+            (if (encoded.isBlank()) "" else "/$encoded") +
+            "?ref=" + encodePathPart(repository.defaultBranch)
         if (ready()) ensureValidAccessToken()
         val parsed = withContext(Dispatchers.IO) {
             JSONTokener(requestRaw("GET", address, null, accessToken.takeIf { ready() })).nextValue()
@@ -263,16 +337,24 @@ private class GitHubClient(context: Context) {
                 val itemPath = item.optString("path", "")
                 val name = item.optString("name", "")
                 val type = item.optString("type", "")
-                if (name.isBlank() || name.startsWith(".") || !GitHubInputValidation.isSafeRepoPath(itemPath)) continue
+                if (name.isBlank() || name.startsWith(".") ||
+                    !GitHubInputValidation.isSafeRepoPath(itemPath)) continue
                 add(RepoEntry(name, itemPath, type, item.optLong("size"), item.optString("sha", "")))
             }
         }.sortedWith(compareBy<RepoEntry> { if (it.type == "dir") 0 else 1 }.thenBy { it.name.lowercase() })
     }
 
-    suspend fun readFile(path: String): Pair<String, String> {
-        if (!GitHubInputValidation.isSafeRepoPath(path)) throw IOException("That repository path is not available in the app.")
-        val encoded = path.split("/").joinToString("/") { encodePathPart(it) }
-        val json = getJson("/repos/" + REPOSITORY + "/contents/" + encoded + "?ref=main")
+    suspend fun readFile(repository: GitHubRepository, path: String): Pair<String, String> {
+        if (!GitHubInputValidation.isSafeRepositoryFullName(repository.fullName) ||
+            !GitHubInputValidation.isSafeRepoPath(path)) {
+            throw IOException("That repository path is not available in the app.")
+        }
+        val encodedPath = path.split("/").joinToString("/") { encodePathPart(it) }
+        val encodedRepo = repository.fullName.split("/").joinToString("/") { encodePathPart(it) }
+        val json = getJson(
+            "https://api.github.com/repos/" + encodedRepo + "/contents/" + encodedPath +
+                "?ref=" + encodePathPart(repository.defaultBranch)
+        )
         if (json.optString("type") != "file") throw IOException("Choose a text file.")
         if (json.optLong("size") > 65536) throw IOException("This file is larger than the mobile editor's 64 KB limit.")
         val raw = json.optString("content", "")
@@ -283,17 +365,24 @@ private class GitHubClient(context: Context) {
         return text to json.optString("sha", "")
     }
 
-    suspend fun updateFile(path: String, content: String, sha: String): String {
-        if (!GitHubInputValidation.isSafeRepoPath(path)) throw IOException("That repository path is not writable from the app.")
+    suspend fun updateFile(repository: GitHubRepository, path: String, content: String, sha: String): String {
+        if (repository.fullName != REPOSITORY) {
+            throw IOException("Edits are currently restricted to the Omnitrix repository. Other repositories are read-only here.")
+        }
+        if (!GitHubInputValidation.isSafeRepositoryFullName(repository.fullName) ||
+            !GitHubInputValidation.isSafeRepoPath(path)) {
+            throw IOException("That repository path is not writable from the app.")
+        }
         if (content.toByteArray(StandardCharsets.UTF_8).size > 65536) throw IOException("Keep mobile edits under 64 KB.")
         if (sha.isBlank()) throw IOException("No original file SHA is available. Reload before saving.")
         val encodedPath = path.split("/").joinToString("/") { encodePathPart(it) }
+        val encodedRepo = repository.fullName.split("/").joinToString("/") { encodePathPart(it) }
         val jsonBody = JSONObject()
             .put("message", "Edit " + path + " from Omnitrix Android")
             .put("content", Base64.getEncoder().encodeToString(content.toByteArray(StandardCharsets.UTF_8)))
             .put("sha", sha)
-            .put("branch", "main")
-        val result = requestJson("PUT", "/repos/" + REPOSITORY + "/contents/" + encodedPath, jsonBody)
+            .put("branch", repository.defaultBranch)
+        val result = requestJson("PUT", "/repos/" + encodedRepo + "/contents/" + encodedPath, jsonBody)
         return result.optJSONObject("content")?.optString("sha", "") ?: ""
     }
 
@@ -441,24 +530,11 @@ private class RuntimeClient(context: Context) {
     suspend fun post(route: String, body: JSONObject) = requestPrivate("POST", route, body)
 
     suspend fun connectAutomatically(): JSONObject {
-        if (ready()) {
-            try {
-                val privateHealth = requestPrivate("GET", "/api/health", null)
-                val liveModel = privateHealth.optString("provider_mode") != "offline-demo"
-                if (liveModel && privateHealth.optBoolean("gemini_key_detected")) {
-                    useHostedBackend = false
-                    return privateHealth
-                }
-            } catch (_: Exception) {
-                // A stale manual connection must not block the hosted default.
-            }
-        }
+        // Resolve only the static backend manifest. A sleeping free-tier server must not
+        // delay opening the chat; the first message itself will wake the server.
         useHostedBackend = true
-        val hostedHealth = hostedHealth()
-        if (!hostedHealth.optBoolean("chat_available")) {
-            throw IOException("Hosted AI is not ready.")
-        }
-        return hostedHealth
+        discoverHostedBase()
+        return JSONObject().put("chat_available", true).put("connection_mode", "wake-on-first-request")
     }
 
     suspend fun hostedHealth(): JSONObject {
@@ -1299,7 +1375,12 @@ private fun ChatScreen(
                     MarkdownMessage(message.text)
                 }
             }
-            if (busy) item { Text("Thinking…", color = Green, fontSize = 15.sp) }
+            if (busy) item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("WAITING FOR OMNITRIX…", color = Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("The hosted server may need to wake after idle.", color = Grey, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
         }
         Row(Modifier.fillMaxWidth().background(Surface).imePadding().padding(10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TerminalField(
@@ -1311,10 +1392,23 @@ private fun ChatScreen(
                 enabled = connected && !busy && input.isNotBlank(),
                 modifier = Modifier.height(52.dp),
                 shape = RoundedCornerShape(2.dp),
-                border = BorderStroke(1.dp, Green.copy(alpha = 0.72f)),
-                colors = ButtonDefaults.buttonColors(containerColor = Black, contentColor = White, disabledContainerColor = SurfaceRaised, disabledContentColor = Grey),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    focusedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                    disabledElevation = 0.dp
+                ),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Green,
+                    contentColor = Black,
+                    disabledContainerColor = SurfaceRaised,
+                    disabledContentColor = Grey
+                ),
                 contentPadding = PaddingValues(horizontal = 14.dp)
-            ) { Text(if (busy) "WAIT" else "SEND", fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            ) {
+                Text(if (busy) "WAIT" else "SEND", color = if (busy) Grey else Black, fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
