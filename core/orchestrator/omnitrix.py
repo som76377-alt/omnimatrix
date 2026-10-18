@@ -960,6 +960,7 @@ class Omnitrix:
             model
             for model in self.registry.list_enabled()
             if self.adapter_registry.has(model.name)
+            and self.adapter_registry.get(model.name).is_available()
             and required.issubset(model.capabilities)
             and allowed_by_runtime_budget(model)
         ]
