@@ -51,12 +51,12 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
 
-private val Black = Color(0xFF050605)
-private val Surface = Color(0xFF101210)
-private val SurfaceRaised = Color(0xFF171A16)
-private val Green = Color(0xFFB8FF42)
-private val White = Color(0xFFF1F3EC)
-private val Grey = Color(0xFF9A9E94)
+private val Black = Color(0xFF080A07)
+private val Surface = Color(0xFF11150E)
+private val SurfaceRaised = Color(0xFF1B2115)
+private val Green = Color(0xFFD0FF55)
+private val White = Color(0xFFF0F2E8)
+private val Grey = Color(0xFFA4AD98)
 private val Red = Color(0xFFFF6B6B)
 private val Mono = FontFamily.Monospace
 private val Pixel = FontFamily(Font(R.font.pixelify_sans, weight = FontWeight.Normal))
@@ -79,8 +79,8 @@ private data class DeviceLogin(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(5, 6, 5)
-        window.navigationBarColor = android.graphics.Color.rgb(5, 6, 5)
+        window.statusBarColor = android.graphics.Color.rgb(8, 10, 7)
+        window.navigationBarColor = android.graphics.Color.rgb(8, 10, 7)
         setContent { OmnitrixApp() }
     }
 }
@@ -482,9 +482,7 @@ private fun OmnitrixApp() {
     var runtimeStatus by remember { mutableStateOf<JSONObject?>(null) }
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
-    var messages by remember {
-        mutableStateOf(listOf(ChatMessage("OMNITRIX", "A little less noise. A lot more signal.")))
-    }
+    var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
     val sessionId = remember { UUID.randomUUID().toString() }
     var repoPath by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<RepoEntry>>(emptyList()) }
@@ -630,7 +628,7 @@ private fun OmnitrixApp() {
                 ) {
                     AppTab.entries.forEach { destination ->
                         Column(
-                            Modifier.weight(1f).background(if (tab == destination) SurfaceRaised else Black, RoundedCornerShape(6.dp))
+                            Modifier.weight(1f).background(if (tab == destination) SurfaceRaised else Black, RoundedCornerShape(2.dp))
                                 .clickable { tab = destination }.padding(vertical = 13.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -747,7 +745,7 @@ private fun OmnitrixApp() {
                 onDismissRequest = { confirmCommit = false },
                 containerColor = Surface,
                 title = { Text("Commit to main?", color = White, fontSize = 21.sp, fontWeight = FontWeight.Bold) },
-                text = { Text("This saves the edited file directly to the public Omnitrix repository's main branch. It creates a Git commit; it is not just a local draft.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp) },
+                text = { Text("This writes the edited file directly to the public repository's main branch and creates a Git commit.", color = Grey, fontSize = 14.sp, lineHeight = 21.sp) },
                 confirmButton = {
                     TextButton(onClick = { saveRepoFile() }) { Text("COMMIT FILE", color = Green, fontSize = 14.sp) }
                 },
@@ -761,19 +759,17 @@ private fun OmnitrixApp() {
 }
 
 @Composable
-private fun AppHeader(title: String, detail: String? = null, state: String? = null) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 22.dp, bottom = 18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("OMNITRIX", color = Green, fontSize = 16.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
-            Spacer(Modifier.weight(1f))
-            if (!state.isNullOrBlank()) Text(state, color = if (state == "ONLINE" || state == "LINKED") Green else Grey, fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(title, color = White, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
+private fun AppHeader(title: String, detail: String? = null) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp, bottom = 14.dp)) {
+        Text("OMNITRIX", color = Green, fontSize = 13.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        Spacer(Modifier.height(12.dp))
+        Text(title, color = White, fontSize = 25.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
         if (!detail.isNullOrBlank()) {
-            Spacer(Modifier.height(5.dp))
-            Text(detail, color = Grey, fontSize = 14.sp, lineHeight = 20.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(detail, color = Grey, fontSize = 13.sp, lineHeight = 18.sp)
         }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Green.copy(alpha = 0.28f)))
     }
 }
 
@@ -783,14 +779,12 @@ private fun ChatScreen(
     onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Chat", state = if (connected) "ONLINE" else "OFFLINE")
+        AppHeader("Chat")
         if (!connected) {
-            Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().background(Surface, RoundedCornerShape(8.dp)).padding(17.dp)) {
-                Text("CHAT RUNTIME NOT CONNECTED", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(7.dp))
-                Text("GitHub sign-in connects the repository. Live AI chat separately needs the Python Studio runtime.", color = Grey, fontSize = 14.sp, lineHeight = 21.sp)
-                Spacer(Modifier.height(12.dp))
-                PrimaryButton("SET UP CHAT", onConnect)
+            Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().padding(bottom = 8.dp)) {
+                Text("Not connected", color = Grey, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                PrimaryButton("CONNECT CHAT", onConnect)
             }
         }
         LazyColumn(
@@ -816,7 +810,7 @@ private fun ChatScreen(
                 onClick = onSend,
                 enabled = connected && !busy && input.isNotBlank(),
                 modifier = Modifier.height(52.dp),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(2.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black, disabledContainerColor = SurfaceRaised, disabledContentColor = Grey),
                 contentPadding = PaddingValues(horizontal = 14.dp)
             ) { Text(if (busy) "WAIT" else "SEND", fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
@@ -831,14 +825,10 @@ private fun RepoScreen(
     onDraft: (String) -> Unit, onCommit: () -> Unit, onSignIn: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Repository", if (selected != null) selected.path else "som76377-alt / omnimatrix", if (connected) "LINKED" else "SIGN IN")
+        AppHeader("Repository", if (selected != null) selected.path else "som76377-alt/omnimatrix")
         when {
-            !connected -> Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().background(Surface, RoundedCornerShape(8.dp)).padding(18.dp)) {
-                Text("Your code, directly from GitHub.", color = White, fontSize = 19.sp, lineHeight = 25.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("Sign in once. Browse tracked files and edit them without a Codespaces URL.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp)
-                Spacer(Modifier.height(16.dp))
-                PrimaryButton("GO TO ACCOUNT", onSignIn)
+            !connected -> Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth()) {
+                PrimaryButton("SIGN IN WITH GITHUB", onSignIn)
             }
             selected != null -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -848,10 +838,9 @@ private fun RepoScreen(
                 }
                 TerminalField(
                     value = draft, onValueChange = onDraft, placeholder = "",
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp).background(Surface, RoundedCornerShape(6.dp)),
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp).background(Surface, RoundedCornerShape(2.dp)),
                     singleLine = false, enabled = !busy, large = false
                 )
-                Text("Edits are drafts until you commit them.", color = Grey, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp))
                 PrimaryButton(if (busy) "SAVING…" else "COMMIT TO MAIN", onCommit, enabled = !busy && draft != original, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
             }
             else -> {
@@ -882,14 +871,10 @@ private fun StatusScreen(
     onRefresh: () -> Unit, onOpen: (String) -> Unit, onSignIn: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Runs", "Continuous integration from GitHub", if (connected) "LINKED" else "SIGN IN")
+        AppHeader("Runs")
         if (!connected) {
-            Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().background(Surface, RoundedCornerShape(8.dp)).padding(18.dp)) {
-                Text("See what actually passed.", color = White, fontSize = 19.sp)
-                Spacer(Modifier.height(7.dp))
-                Text("This view shows real GitHub Actions runs, not a made-up local status.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp)
-                Spacer(Modifier.height(15.dp))
-                PrimaryButton("GO TO ACCOUNT", onSignIn)
+            Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth()) {
+                PrimaryButton("SIGN IN WITH GITHUB", onSignIn)
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -923,36 +908,33 @@ private fun AccountScreen(
     onRegisterApp: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        AppHeader("Account", "One sign-in for the repository", if (connected) "LINKED" else "NOT LINKED")
+        AppHeader("Account")
         Column(Modifier.padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
             if (connected) {
-                Text("Connected as @" + username, color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("Repository access is stored securely on this device.", color = Grey, fontSize = 14.sp, lineHeight = 21.sp)
+                Text("@" + username, color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 QuietButton("SIGN OUT", onSignOut)
             } else if (device != null) {
                 Text("AUTHORIZE THIS DEVICE", color = Green, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text(device.userCode, color = Green, fontSize = 34.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Black, fontFamily = Pixel)
-                Text("Open GitHub, enter this code, and approve Omnitrix. Return here after approval.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp)
+                Text("Enter this code on GitHub.", color = Grey, fontSize = 14.sp)
                 PrimaryButton(if (busy) "WAITING FOR GITHUB…" else "OPEN GITHUB & CONTINUE", onAuthorize, enabled = !busy)
             } else {
-                Text("GitHub sign-in", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Your first sign-in needs a GitHub OAuth App Client ID. This is public app configuration, not your password or a secret token.", color = Grey, fontSize = 15.sp, lineHeight = 22.sp)
-                TerminalField(clientId, onClientId, "OAuth App Client ID", singleLine = true, capitalization = KeyboardCapitalization.None)
-                QuietButton("OPEN GITHUB APP SETTINGS", onRegisterApp)
-                Text("Request only the access you understand. Omnitrix uses public-repository access to read files and make commits to this repository.", color = Grey, fontSize = 14.sp, lineHeight = 21.sp)
+                Text("GitHub Client ID", color = Grey, fontSize = 13.sp)
+                TerminalField(clientId, onClientId, "Client ID", singleLine = true, capitalization = KeyboardCapitalization.None)
+                QuietButton("GITHUB APP SETTINGS", onRegisterApp)
                 PrimaryButton(if (busy) "PREPARING…" else "SIGN IN WITH GITHUB", onBeginSignIn, enabled = !busy && clientId.isNotBlank())
             }
             if (message.isNotBlank()) Text(message, color = Green, fontSize = 14.sp, lineHeight = 20.sp)
             if (error.isNotBlank()) Text(error, color = Red, fontSize = 14.sp, lineHeight = 20.sp)
 
             Spacer(Modifier.height(8.dp))
-            Text("CHAT RUNTIME", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text(if (runtimeConnected) "Python Studio is connected." else "This is separate from GitHub repository access. The runtime needs to be running for chat.", color = Grey, fontSize = 14.sp, lineHeight = 21.sp)
-            QuietButton(if (showRuntimeSetup) "HIDE RUNTIME SETTINGS" else "ADVANCED RUNTIME SETTINGS", onToggleRuntime)
+            Text("Chat backend", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(if (runtimeConnected) "Connected" else "Not connected", color = Grey, fontSize = 13.sp)
+            QuietButton(if (showRuntimeSetup) "HIDE CHAT SETTINGS" else "CHAT SETTINGS", onToggleRuntime)
             if (showRuntimeSetup) {
-                Text("Studio port 8000 URL", color = Grey, fontSize = 14.sp)
-                TerminalField(runtimeUrl, onRuntimeUrl, "https://…-8000.app.github.dev", singleLine = true, capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Uri)
-                Text("Runtime token", color = Grey, fontSize = 14.sp)
+                Text("Backend URL", color = Grey, fontSize = 13.sp)
+                TerminalField(runtimeUrl, onRuntimeUrl, "HTTPS backend URL", singleLine = true, capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Uri)
+                Text("Access token", color = Grey, fontSize = 13.sp)
                 TerminalField(
                     runtimeToken, onRuntimeToken, "Token from the running Studio", singleLine = true,
                     visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
@@ -977,7 +959,7 @@ private fun TerminalField(
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
     Row(
-        modifier.fillMaxWidth().background(Surface, RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 13.dp),
+        modifier.fillMaxWidth().background(Surface, RoundedCornerShape(2.dp)).padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BasicTextField(
@@ -1007,7 +989,7 @@ private fun PrimaryButton(
 ) {
     Button(
         onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(2.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Green, contentColor = Black,
             disabledContainerColor = SurfaceRaised, disabledContentColor = Grey
