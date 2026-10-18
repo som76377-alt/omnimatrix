@@ -76,6 +76,23 @@ jobs:
           python -m compileall -q core interfaces tests
           python -m unittest discover -s tests -v
 
+      - name: Fetch original Omnitrix icon artwork
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/res/drawable-nodpi
+          curl --fail --location --retry 3 --retry-all-errors \\
+            --output android/app/src/main/res/drawable-nodpi/omnitrix_logo.png \\
+            https://upload.wikimedia.org/wikipedia/commons/3/3d/Ben_10_Omnitrix.png
+          python - <<'PY'
+          import struct
+          from pathlib import Path
+          icon = Path("android/app/src/main/res/drawable-nodpi/omnitrix_logo.png").read_bytes()
+          assert icon[:8] == b"\\x89PNG\\r\\n\\x1a\\n", "Downloaded icon is not a PNG"
+          width, height = struct.unpack(">II", icon[16:24])
+          assert (width, height) == (512, 512), f"Unexpected icon dimensions: {width}x{height}"
+          print(f"Verified original Wikimedia Omnitrix artwork: {width}x{height} PNG ({len(icon)} bytes)")
+          PY
+
       - name: Compile Kotlin, run JVM tests, and assemble APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
