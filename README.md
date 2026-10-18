@@ -142,7 +142,7 @@ Repository Pages publishing must be configured once at **Settings → Pages → 
 | Path | Purpose |
 | --- | --- |
 | `core/orchestrator/` | Planning, validation, task lifecycle, and orchestration |
-| `core/agents/` | Configurable specialist roles, adaptive intent briefs, and critique stages |
+| `core/agents/` | Seven configurable roles: intent engineering, reasoning, coding, subject solving, research, computation, and critique |
 | `core/models/` | Model types, registry, configuration loader, and provider adapters |
 | `core/tools/` | Tool contracts, permissions, registry, and execution |
 | `core/application/` | Chat application layer |
