@@ -91,7 +91,72 @@ private const val HOSTED_BACKEND_DISCOVERY_URL =
 private enum class AppTab(val title: String) {
     CHAT("Chat"), REPO("Repo"), STATUS("Runs"), ACCOUNT("Account")
 }
-private data class ChatMessage(val role: String, val text: String)
+private data class ChatMessage(val role: String, val text: String, val modelLabel: String? = null)
+
+internal object ModelActivityLabelFormatter {
+    fun fromInFlight(activity: JSONObject?): String {
+        if (activity == null) return "ROUTING · MODEL NOT SELECTED YET"
+        val status = activity.optString("status")
+        val identitySource = activity.optString("identity_source")
+        val model = if (identitySource == "provider_response") {
+            activity.optString("model")
+        } else {
+            activity.optString("configured_model")
+        }
+        val provider = activity.optString("provider")
+        val role = activity.optString("role")
+        val stage = activity.optString("stage")
+        val provenance = when (identitySource) {
+            "provider_response" -> "provider-reported"
+            "configured_id_pending_provider_response" -> "requested route"
+            "configured_fallback" -> "configured fallback; provider omitted ID"
+            "adapter_metadata" -> "adapter metadata; not provider-confirmed"
+            else -> "identity not confirmed"
+        }
+        val prefix = if (status == "response_received") "MODEL RESPONSE RECEIVED" else "THINKING"
+        val effort = activity.optString("reasoning_effort_requested")
+            .takeIf { it.isNotBlank() && it != "null" }
+            ?.let { "$it effort requested" }
+        return listOf(prefix, role, stage, provider, model, provenance, effort)
+            .filter { !it.isNullOrBlank() && it != "null" }
+            .joinToString(" · ")
+    }
+
+    fun fromTrace(trace: JSONObject?): String {
+        val records = trace?.optJSONArray("activity")
+            ?: return "MODEL ID UNAVAILABLE · no execution trace returned"
+        var selected: JSONObject? = null
+        for (index in records.length() - 1 downTo 0) {
+            val record = records.optJSONObject(index) ?: continue
+            if (selected == null) selected = record
+            if (record.optString("stage") == "answer_generation") {
+                selected = record
+                break
+            }
+        }
+        val record = selected ?: return "MODEL ID UNAVAILABLE · no model call recorded"
+        val identitySource = record.optString("identity_source")
+        val model = if (identitySource == "provider_response") {
+            record.optString("model")
+        } else {
+            record.optString("configured_model")
+        }.ifBlank { "model ID missing" }
+        val provider = record.optString("provider").ifBlank { "provider unknown" }
+        val role = record.optString("role").ifBlank { "role unknown" }
+        val provenance = when (identitySource) {
+            "provider_response" -> "provider-reported"
+            "configured_fallback" -> "configured fallback; provider omitted ID"
+            "adapter_metadata" -> "adapter metadata; not provider-confirmed"
+            else -> "identity not confirmed"
+        }
+        val effort = record.optString("reasoning_effort_requested")
+            .takeIf { it.isNotBlank() && it != "null" }
+            ?.let { "$it effort requested" }
+        return listOf("LAST ANSWER", role, provider, model, provenance, effort)
+            .filter { !it.isNullOrBlank() && it != "null" }
+            .joinToString(" · ")
+    }
+}
 private data class RepoEntry(val name: String, val path: String, val type: String, val size: Long, val sha: String)
 private data class CiRun(val title: String, val status: String, val branch: String, val url: String, val updated: String)
 private data class GitHubRepository(
@@ -572,6 +637,15 @@ private class RuntimeClient(context: Context) {
         return requestPublic("POST", discoverHostedBase() + "/api/mobile/chat", body)
     }
 
+    suspend fun activity(sessionId: String): JSONObject {
+        val encodedSession = URLEncoder.encode(sessionId, StandardCharsets.UTF_8.name())
+        return requestPublic(
+            "GET",
+            discoverHostedBase() + "/api/mobile/activity?session_id=" + encodedSession,
+            null
+        )
+    }
+
     private suspend fun discoverHostedBase(): String {
         if (hostedBase.isNotBlank()) return hostedBase
         val manifest = requestPublic("GET", HOSTED_BACKEND_DISCOVERY_URL, null)
@@ -841,6 +915,7 @@ private fun OmnitrixApp() {
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
+    var modelActivityLabel by remember { mutableStateOf("IDLE · no inference running") }
     val sessionId = remember { UUID.randomUUID().toString() }
     var repoPath by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<RepoEntry>>(emptyList()) }
@@ -1111,7 +1186,7 @@ private fun OmnitrixApp() {
             Box(Modifier.fillMaxSize().padding(insets).background(Black)) {
                 when (tab) {
                     AppTab.CHAT -> ChatScreen(
-                        messages, chatInput, runtimeConnected, chatBusy, runtimeMessage,
+                        messages, chatInput, runtimeConnected, chatBusy, runtimeMessage, modelActivityLabel,
                         { chatInput = it },
                         {
                             val prompt = chatInput.trim()
@@ -1120,15 +1195,44 @@ private fun OmnitrixApp() {
                                 chatInput = ""
                                 chatBusy = true
                                 scope.launch {
+                                    modelActivityLabel = "ROUTING · MODEL NOT SELECTED YET"
+                                    val activityPoller = launch {
+                                        while (true) {
+                                            try {
+                                                val status = runtime.activity(sessionId)
+                                                modelActivityLabel = if (status.optBoolean("active")) {
+                                                    ModelActivityLabelFormatter.fromInFlight(status.optJSONObject("activity"))
+                                                } else {
+                                                    "ROUTING · waiting for this session's model selection"
+                                                }
+                                            } catch (_: kotlinx.coroutines.CancellationException) {
+                                                throw
+                                            } catch (_: Exception) {
+                                                // Do not invent a model while the activity endpoint is unavailable.
+                                                modelActivityLabel = "INFERENCE RUNNING · model identity not yet available"
+                                            }
+                                            delay(700)
+                                        }
+                                    }
                                     try {
                                         val response = runtime.sendChat(
                                             JSONObject().put("message", prompt).put("session_id", sessionId)
                                         )
-                                        messages = messages + ChatMessage("OMNITRIX", response.optString("reply", "No response text returned."))
+                                        val modelLabel = ModelActivityLabelFormatter.fromTrace(response.optJSONObject("execution_trace"))
+                                        messages = messages + ChatMessage(
+                                            "OMNITRIX",
+                                            response.optString("reply", "No response text returned."),
+                                            modelLabel
+                                        )
+                                        modelActivityLabel = modelLabel
                                     } catch (e: Exception) {
                                         runtimeConnected = false
                                         runtimeMessage = e.message ?: "Chat request failed."
-                                    } finally { chatBusy = false }
+                                        modelActivityLabel = "REQUEST FAILED · no completed model response"
+                                    } finally {
+                                        activityPoller.cancel()
+                                        chatBusy = false
+                                    }
                                 }
                             }
                         },
@@ -1306,9 +1410,19 @@ private fun OmnitrixApp() {
 }
 
 @Composable
-private fun AppHeader(title: String, detail: String? = null) {
+private fun AppHeader(title: String, detail: String? = null, activityLabel: String? = null) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 10.dp, bottom = 12.dp)) {
         Text("OMNITRIX", color = Green, fontSize = 12.sp, letterSpacing = 2.4.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        if (!activityLabel.isNullOrBlank()) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                activityLabel,
+                color = if (activityLabel.startsWith("THINKING") || activityLabel.startsWith("MODEL RESPONSE")) Green else Grey,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                fontFamily = Mono
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Text(title, color = White, fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
         if (!detail.isNullOrBlank()) {
@@ -1399,10 +1513,10 @@ private fun MarkdownMessage(content: String) {
 @Composable
 private fun ChatScreen(
     messages: List<ChatMessage>, input: String, connected: Boolean, busy: Boolean, connectionMessage: String,
-    onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
+    activityLabel: String, onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Chat")
+        AppHeader("Chat", activityLabel = activityLabel)
         if (!connected) {
             Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().padding(bottom = 8.dp)) {
                 Text("Not connected", color = Grey, fontSize = 13.sp)
@@ -1440,6 +1554,16 @@ private fun ChatScreen(
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono
                     )
+                    if (!isUserMessage && !message.modelLabel.isNullOrBlank()) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            message.modelLabel,
+                            color = Grey,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            fontFamily = Mono
+                        )
+                    }
                     Spacer(Modifier.height(7.dp))
                     MarkdownMessage(message.text)
                 }
