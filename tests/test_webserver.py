@@ -101,14 +101,22 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
-    def test_hosted_mobile_model_profile_uses_current_free_quota_model(self):
+    def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(config["models"]), 1)
-        model = config["models"][0]
-        self.assertEqual(model["provider"], "google")
-        self.assertEqual(model["model_id"], "gemini-3.8-flash")
-        self.assertEqual(model["metadata"]["cost_class"], "user_provided_free_quota")
-        self.assertEqual(model["metadata"]["estimated_cost_usd"], 0)
+        models = {model["name"]: model for model in config["models"]}
+        self.assertEqual(set(models), {"omnitrix-primary", "reasoning-nemotron-super-free"})
+
+        baseline = models["omnitrix-primary"]
+        self.assertEqual(baseline["provider"], "google")
+        self.assertEqual(baseline["model_id"], "gemini-3.8-flash")
+        self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
+        self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
+
+        reasoning = models["reasoning-nemotron-super-free"]
+        self.assertEqual(reasoning["provider"], "openrouter")
+        self.assertEqual(reasoning["model_id"], "nvidia/nemotron-3-super-120b-a12b:free")
+        self.assertEqual(reasoning["metadata"]["api_key_env"], "OPENROUTER_API_KEY")
+        self.assertEqual(reasoning["metadata"]["estimated_cost_usd"], 0)
 
     def test_mobile_backend_discovery_points_to_hosted_service(self):
         manifest = json.loads((ROOT / "config" / "mobile-backend.json").read_text(encoding="utf-8"))
