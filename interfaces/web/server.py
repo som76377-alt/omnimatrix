@@ -342,6 +342,25 @@ class StudioRuntime:
             }
             for item in self.omnitrix.registry.list_enabled()
         ]
+        agent_registry = getattr(self.omnitrix, "agent_registry", None)
+        agents = [
+            {
+                "name": agent.name,
+                "role": agent.role,
+                "stage": agent.stage,
+                "purpose": agent.purpose,
+                "capabilities": sorted(agent.capabilities),
+                "preferred_models": list(agent.preferred_models),
+                "enabled": agent.enabled,
+            }
+            for agent in agent_registry.list_enabled()
+        ] if agent_registry is not None else []
+        specialists_configured = bool(
+            agent_registry is not None and agent_registry.enabled and agents
+        )
+        live_provider_configured = any(
+            model["provider"] != "demo" for model in models
+        )
         tool_details = []
         for tool in self.omnitrix.tool_registry.list():
             tool_details.append(
@@ -378,7 +397,18 @@ class StudioRuntime:
                 else "configured-model"
             ),
             "gemini_key_detected": bool(os.getenv("GEMINI_API_KEY")),
+            "openrouter_key_detected": bool(os.getenv("OPENROUTER_API_KEY")),
             "public_chat_enabled": self.public_chat_enabled,
+            "specialists_configured": specialists_configured,
+            "specialist_runtime_active": specialists_configured and live_provider_configured,
+            "specialist_settings": (
+                {
+                    "intent_mode": agent_registry.intent_mode,
+                    "critic_mode": agent_registry.critic_mode,
+                }
+                if agent_registry is not None else None
+            ),
+            "agents": agents,
             "models": models,
             "tools": tool_details,
             "checked_at": utc_now(),
