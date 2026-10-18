@@ -6,7 +6,7 @@ routes, but it is not a substitute for a private port or an OS sandbox.
 from __future__ import annotations
 
 import argparse
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from core.application import ChatApplication
+from core.contracts import BudgetLimits
 from core.conversation import Conversation
 from core.orchestrator.omnitrix import Omnitrix
 from core.tools.bootstrap import build_tool_registry
@@ -42,6 +43,9 @@ MAX_SESSIONS = 32
 MAX_TEST_OUTPUT_BYTES = 64 * 1024
 MAX_WORKSPACE_WRITE_BYTES = 64 * 1024
 TEST_TIMEOUT_SECONDS = 180
+PUBLIC_CHAT_PER_MINUTE = 6
+PUBLIC_CHAT_PER_DAY = 40
+PUBLIC_CHAT_GLOBAL_PER_DAY = 300
 SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{16,128}$")
 SECRET_NAME_PATTERN = re.compile(
     r"(secret|token|password|api[_-]?key|credential|private[_-]?key)",
@@ -262,6 +266,10 @@ def write_workspace_file(
         os.close(parent_fd)
 
 
+class PublicChatRateLimitError(RuntimeError):
+    """The anonymous mobile chat endpoint has reached a conservative request limit."""
+
+
 class StudioRuntime:
     """Own the configured orchestrator, per-browser conversations, and evidence."""
 
@@ -278,6 +286,7 @@ class StudioRuntime:
         allowed_paths: list[str] | None,
         workspace_write_enabled: bool = False,
         tests_enabled: bool,
+        public_chat_enabled: bool = False,
         test_timeout_seconds: int = TEST_TIMEOUT_SECONDS,
         code_root: Path | None = None,
         auto_sync_main: bool = False,
@@ -306,6 +315,13 @@ class StudioRuntime:
         self.allowed_paths = allowed_paths
         self.tests_enabled = tests_enabled
         self.test_timeout_seconds = test_timeout_seconds
+        self.public_chat_enabled = public_chat_enabled
+        self.public_chat_per_minute_limit = PUBLIC_CHAT_PER_MINUTE
+        self.public_chat_per_day_limit = PUBLIC_CHAT_PER_DAY
+        self.public_chat_global_per_day_limit = PUBLIC_CHAT_GLOBAL_PER_DAY
+        self.public_chat_lock = threading.Lock()
+        self.public_chat_events: dict[str, deque[float]] = {}
+        self.public_chat_global_events: deque[float] = deque()
         self.sessions: OrderedDict[str, Conversation] = OrderedDict()
         self.sessions_lock = threading.Lock()
         self.test_lock = threading.Lock()
@@ -359,6 +375,7 @@ class StudioRuntime:
                 else "configured-model"
             ),
             "gemini_key_detected": bool(os.getenv("GEMINI_API_KEY")),
+            "public_chat_enabled": self.public_chat_enabled,
             "models": models,
             "tools": tool_details,
             "checked_at": utc_now(),
@@ -508,6 +525,75 @@ class StudioRuntime:
             conversation = Conversation()
             self.sessions[session_id] = conversation
             return conversation
+
+    def mobile_health(self) -> dict[str, Any]:
+        """Return only non-sensitive readiness for the native app's hosted-chat link."""
+        google_model_enabled = any(
+            model.provider == "google" and model.enabled
+            for model in self.omnitrix.registry.list_enabled()
+        )
+        key_present = bool(os.getenv("GEMINI_API_KEY"))
+        available = self.public_chat_enabled and google_model_enabled and key_present
+        if not self.public_chat_enabled:
+            reason = "public_chat_disabled"
+        elif not google_model_enabled:
+            reason = "model_not_configured"
+        elif not key_present:
+            reason = "provider_key_missing"
+        else:
+            reason = None
+        return {
+            "ok": True,
+            "service": "omnitrix-mobile-api",
+            "chat_available": available,
+            "reason": reason,
+            "model": "gemini-3.8-flash" if available else None,
+        }
+
+    def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
+        """Rate-limited public chat only; this path cannot access workspace or test APIs."""
+        if not self.public_chat_enabled:
+            raise PermissionError("Hosted mobile chat is not enabled on this service.")
+        readiness = self.mobile_health()
+        if not readiness["chat_available"]:
+            raise RuntimeError("Hosted AI is not configured. The backend model key and model profile must be set before chatting.")
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object.")
+        session_id = payload.get("session_id")
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("session_id must be 16–128 letters, numbers, underscores or hyphens.")
+        if not isinstance(client_ip, str):
+            client_ip = ""
+        client_ip = client_ip.strip()[:128] or "unknown"
+        client_key = hashlib.sha256(
+            (self.access_token + "\\0" + client_ip).encode("utf-8")
+        ).hexdigest()
+        now = time.monotonic()
+        with self.public_chat_lock:
+            minute_cutoff = now - 60
+            day_cutoff = now - 86_400
+            client_events = self.public_chat_events.setdefault(client_key, deque())
+            while client_events and client_events[0] <= day_cutoff:
+                client_events.popleft()
+            while self.public_chat_global_events and self.public_chat_global_events[0] <= day_cutoff:
+                self.public_chat_global_events.popleft()
+            recent_minute_count = sum(1 for stamp in client_events if stamp > minute_cutoff)
+            if recent_minute_count >= self.public_chat_per_minute_limit:
+                raise PublicChatRateLimitError("Chat rate limit reached. Try again in a minute.")
+            if len(client_events) >= self.public_chat_per_day_limit:
+                raise PublicChatRateLimitError("This connection has reached its daily chat limit.")
+            if len(self.public_chat_global_events) >= self.public_chat_global_per_day_limit:
+                raise PublicChatRateLimitError("Omnitrix has reached its hosted daily chat limit.")
+            client_events.append(now)
+            self.public_chat_global_events.append(now)
+
+        # Namespace caller-provided session IDs by the rate-limit identity so one client
+        # cannot intentionally reuse another client's predictable conversation ID.
+        safe_payload = dict(payload)
+        safe_payload["session_id"] = "public_" + hashlib.sha256(
+            (client_key + "\\0" + session_id).encode("utf-8")
+        ).hexdigest()[:48]
+        return self.chat(safe_payload)
 
     def chat(self, payload: Any) -> dict[str, Any]:
         """Send a real turn through ChatApplication/Omnitrix."""
@@ -713,6 +799,9 @@ def make_handler(
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
             route = parsed.path
+            if route == "/api/mobile/health":
+                self._send_json(runtime.mobile_health())
+                return
             if route.startswith("/api/"):
                 if not self._authorized():
                     self._send_json(
@@ -773,7 +862,8 @@ def make_handler(
             if not route.startswith("/api/"):
                 self._send_json({"ok": False, "error": "API route not found."}, 404)
                 return
-            if not self._authorized():
+            public_mobile_chat = route == "/api/mobile/chat"
+            if not public_mobile_chat and not self._authorized():
                 self._send_json(
                     {
                         "ok": False,
@@ -794,6 +884,10 @@ def make_handler(
             try:
                 if route == "/api/chat":
                     self._send_json(runtime.chat(payload))
+                elif route == "/api/mobile/chat":
+                    forwarded = self.headers.get("X-Forwarded-For", "")
+                    client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                    self._send_json(runtime.chat_public(payload, client_ip))
                 elif route == "/api/workspace/write":
                     self._workspace_write(payload)
                 elif route == "/api/tests/run":
@@ -802,6 +896,8 @@ def make_handler(
                     self._send_json(
                         {"ok": False, "error": "API route not found."}, 404
                     )
+            except PublicChatRateLimitError as exc:
+                self._send_json({"ok": False, "error": str(exc), "code": "rate_limited"}, 429)
             except PermissionError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 403)
             except ValueError as exc:
@@ -920,10 +1016,16 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
     capabilities = {"calculation"}
     if args.allow_workspace_read:
         capabilities.add("workspace.read")
+    spend_mode = (
+        "user_provided_free_quota"
+        if args.allow_free_quota
+        else "zero_cost_only"
+    )
     omnitrix = Omnitrix.from_config(
         config_path,
         tool_registry=registry,
         tool_permission=ToolPermission.from_capabilities(capabilities),
+        budget_limits=BudgetLimits(spend_mode=spend_mode),
     )
     return StudioRuntime(
         root=root,
@@ -936,6 +1038,10 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
         allowed_paths=args.workspace_allow,
         workspace_write_enabled=args.allow_workspace_write,
         tests_enabled=args.allow_test_run,
+        public_chat_enabled=(
+            args.allow_public_chat
+            and os.getenv("OMNITRIX_PUBLIC_CHAT_ENABLED", "").strip().lower() == "true"
+        ),
         test_timeout_seconds=args.test_timeout,
         code_root=Path(__file__).resolve().parents[2],
         auto_sync_main=args.auto_sync_main,
@@ -970,6 +1076,16 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-test-run",
         action="store_true",
         help="Enable the fixed Python unittest discovery command.",
+    )
+    parser.add_argument(
+        "--allow-public-chat",
+        action="store_true",
+        help="Enable the narrow public mobile chat endpoint; rate limits apply and workspace/test APIs remain authenticated.",
+    )
+    parser.add_argument(
+        "--allow-free-quota",
+        action="store_true",
+        help="Allow only a provider account the operator has configured for free-quota use; does not prevent billing if that provider key has billing enabled.",
     )
     parser.add_argument("--test-timeout", type=int, default=TEST_TIMEOUT_SECONDS)
     parser.add_argument(
