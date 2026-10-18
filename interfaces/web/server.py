@@ -339,6 +339,10 @@ class StudioRuntime:
                 "provider": item.provider,
                 "model_id": item.model_id,
                 "capabilities": sorted(item.capabilities),
+                "adapter_available": (
+                    self.omnitrix.adapter_registry.has(item.name)
+                    and self.omnitrix.adapter_registry.get(item.name).is_available()
+                ),
             }
             for item in self.omnitrix.registry.list_enabled()
         ]
@@ -359,7 +363,8 @@ class StudioRuntime:
             agent_registry is not None and agent_registry.enabled and agents
         )
         live_provider_configured = any(
-            model["provider"] != "demo" for model in models
+            model["provider"] != "demo" and model["adapter_available"]
+            for model in models
         )
         tool_details = []
         for tool in self.omnitrix.tool_registry.list():
