@@ -101,6 +101,43 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
+    def test_public_mobile_health_is_available_without_runtime_token(self):
+        status, body = self.request("/api/mobile/health", authorized=False)
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["service"], "omnitrix-mobile-api")
+        self.assertFalse(body["chat_available"])
+        self.assertNotIn(self.token, json.dumps(body))
+        self.assertNotIn(str(self.workspace), json.dumps(body))
+
+    def test_public_mobile_chat_is_disabled_by_default(self):
+        status, body = self.request(
+            "/api/mobile/chat",
+            method="POST",
+            body={"session_id": "test-session-12345678", "message": "Hello"},
+            authorized=False,
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("not enabled", body["error"].lower())
+
+    def test_public_mobile_chat_rate_limit_is_enforced(self):
+        from unittest.mock import patch
+
+        self.runtime.public_chat_enabled = True
+        self.runtime.public_chat_per_minute_limit = 1
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
+            with patch.object(self.runtime, "mobile_health", return_value={"chat_available": True}):
+                first = self.runtime.chat_public(
+                    {"session_id": "test-session-12345678", "message": "Hello"},
+                    "203.0.113.10",
+                )
+                self.assertTrue(first["ok"])
+                with self.assertRaisesRegex(RuntimeError, "rate limit"):
+                    self.runtime.chat_public(
+                        {"session_id": "test-session-abcdefgh", "message": "Again"},
+                        "203.0.113.10",
+                    )
+
     def test_api_rejects_missing_or_wrong_token(self):
         status, body = self.request("/api/health", authorized=False)
         self.assertEqual(status, 401)
