@@ -6,12 +6,12 @@ contract, not a guarantee; rendering is also covered by UI tests.
 
 from __future__ import annotations
 
-RESPONSE_FORMATTING_POLICY_VERSION = "OMNI-RENDER-1.0"
+RESPONSE_FORMATTING_POLICY_VERSION = "OMNI-RENDER-1.1"
 RESPONSE_FORMATTING_POLICY_MARKER = (
-    "[OMNITRIX RESPONSE FORMATTING CONTRACT: OMNI-RENDER-1.0]"
+    "[OMNITRIX RESPONSE FORMATTING CONTRACT: OMNI-RENDER-1.1]"
 )
 
-RESPONSE_FORMATTING_CONTRACT = r"""[OMNITRIX RESPONSE FORMATTING CONTRACT: OMNI-RENDER-1.0]
+RESPONSE_FORMATTING_CONTRACT = r"""[OMNITRIX RESPONSE FORMATTING CONTRACT: OMNI-RENDER-1.1]
 Use readable, semantically structured output that the actual Omnitrix chat renderer supports. Do not force special rendering into every answer; choose it when it makes the answer clearer.
 
 1. GENERAL STRUCTURE
@@ -29,6 +29,8 @@ Use readable, semantically structured output that the actual Omnitrix chat rende
 
 3. DIAGRAMS
 - Use a fenced Mermaid block when a flow, dependency graph, sequence, state transition, data relationship, timeline, or other supported diagram is more informative than prose.
+- Fenced math, latex, tex, katex, or equation blocks contain the equation itself and are rendered in display mode; do not wrap the contents in a second delimiter pair.
+- For a direct browser-compatible media file only, use a fenced audio, video, or media JSON block with an HTTPS src. Playback is user-controlled; never autoplay. Do not invent media URLs or use iframe/platform watch-page embeds.
 - Keep Mermaid syntax valid and minimal. Prefer flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, mindmap, or timeline forms when they fit the task.
 - Do not claim a diagram rendered successfully unless the renderer/preview was actually checked. If uncertain about Mermaid syntax, provide a simple valid diagram or describe the limitation.
 
