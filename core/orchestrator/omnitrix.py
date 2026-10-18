@@ -930,27 +930,48 @@ class Omnitrix:
     ):
         """Choose a configured adapter without silently changing spend policy."""
         required = agent.capabilities.union(required_capabilities)
+        allowed_zero_cost = {"local", "demo", "zero_cost", "free"}
+        if self.budget_limits.spend_mode == "zero_cost_only":
+            allowed_cost_classes = allowed_zero_cost
+        elif self.budget_limits.spend_mode == "user_provided_free_quota":
+            allowed_cost_classes = allowed_zero_cost | {"user_provided_free_quota"}
+        else:
+            allowed_cost_classes = None
+
+        def declared_cost(model) -> tuple[str, object]:
+            cost = model.metadata.get(
+                "cost_class",
+                "demo" if model.provider in {"demo", "test"} else "unknown",
+            )
+            return cost, model.metadata.get("estimated_cost_usd")
+
+        def allowed_by_runtime_budget(model) -> bool:
+            cost, estimate = declared_cost(model)
+            if self.budget_limits.spend_mode == "paid_allowed":
+                return (
+                    isinstance(estimate, (int, float))
+                    and not isinstance(estimate, bool)
+                    and estimate >= 0
+                    and estimate <= self.budget_limits.max_estimated_cost_usd
+                )
+            return cost in allowed_cost_classes and estimate in (None, 0, 0.0)
+
         candidates = [
             model
             for model in self.registry.list_enabled()
             if self.adapter_registry.has(model.name)
             and required.issubset(model.capabilities)
+            and allowed_by_runtime_budget(model)
         ]
 
-        fallback_cost = fallback_model.metadata.get(
-            "cost_class",
-            "demo" if fallback_model.provider in {"demo", "test"} else "unknown",
-        )
+        fallback_cost, _ = declared_cost(fallback_model)
         eligible = []
         for model in candidates:
-            candidate_cost = model.metadata.get(
-                "cost_class",
-                "demo" if model.provider in {"demo", "test"} else "unknown",
-            )
+            candidate_cost, _ = declared_cost(model)
             explicitly_approved = model.metadata.get("agent_approved_cost") is True
             if model.name != fallback_model.name and candidate_cost != fallback_cost:
-                # The specialist router is not a billing-policy bypass. A new model
-                # with a different cost class must be explicitly approved in config.
+                # Candidate metadata is not a budget override: both the explicit
+                # approval and the active runtime budget mode must allow the model.
                 if not explicitly_approved:
                     continue
             eligible.append(model)
