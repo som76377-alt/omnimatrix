@@ -106,8 +106,9 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("renderChartBlocks(target)", self.js)
         self.assertIn('["bar", "line", "scatter", "pie"]', self.js)
         self.assertIn("600 total points", self.js)
+        self.assertIn("Use either numeric x-values or categorical x-values", self.js)
+        self.assertIn("Math.abs(value) <= 1e100", self.js)
         self.assertIn('document.createElementNS(CHART_SVG_NS', self.js)
-        self.assertIn("JSON.parse(code.textContent || \\"\\" )", self.js.replace('JSON.parse(code.textContent || "")','JSON.parse(code.textContent || "")')) if False else None
         self.assertIn("renderMermaidBlocks(target)", self.js)
         self.assertIn('securityLevel: "strict"', self.js)
         self.assertIn('const bubble = node("div", "message-bubble");', self.js)
