@@ -1348,6 +1348,10 @@ internal object MarkwonMathNormalizer {
             "\$\$" + match.groupValues[1] + "\$\$"
         }
 
+        val alertMarker = Regex("""(?m)^([ \\t]*>[ \\t]*)\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\][ \\t]*(.*)$""", RegexOption.IGNORE_CASE)
+        result = alertMarker.replace(result) { match ->
+            match.groupValues[1] + "**" + match.groupValues[2].uppercase() + "**  " + match.groupValues[3]
+        }
         protectedParts.forEach { (token, original) ->
             result = result.replace(token, original)
         }
