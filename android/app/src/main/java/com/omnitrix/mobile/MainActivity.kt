@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -1038,9 +1039,9 @@ private fun parseMarkdownTable(source: String): List<List<String>> =
         .map { row -> row.trim().trim('|').split('|').map { cell -> cell.trim() } }
 
 private val INLINE_MARKDOWN = Regex(
-    "(\\\\[[^\\\\]]+\\\\]\\\\(https?://[^)\\\\s]+\\\\)|\\\\*\\\\*.+?\\\\*\\\\*|__.+?__|" +
-        Char(96) + "[^" + Char(96) + "]+" + Char(96) +
-        "|(?<!\\\\*)\\\\*[^*\\\\n]+\\\\*(?!\\\\*)|(?<!_)_[^_\\\\n]+_(?!_))"
+    """(\[[^\]]+\]\(https?://[^)\s]+\)|\*\*.+?\*\*|__.+?__|""" +
+        Char(96) + """[^""" + Char(96) + """]+""" + Char(96) +
+        """|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))"""
 )
 
 private fun parseInlineMarkdown(source: String) = buildAnnotatedString {
