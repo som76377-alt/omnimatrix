@@ -111,10 +111,35 @@ class OpenRouterAdapterTests(unittest.TestCase):
                 ModelRequest(messages=(ModelMessage(role=MessageRole.USER, content="Read README."),))
             )
         self.assertEqual(response.provider, "openrouter")
+        self.assertEqual(response.model_identity_source, "provider_response")
+        self.assertEqual(response.model, self.adapter._model_id)
         self.assertEqual(response.content, "Calling a tool.")
         self.assertEqual(response.tool_calls[0].arguments, {"path": "README.md"})
         self.assertEqual(response.usage["prompt_tokens"], 23)
         self.assertIsNone(response.continuation)
+
+    def test_reasoning_effort_is_sent_and_reasoning_text_is_excluded(self):
+        adapter = OpenRouterAdapter(
+            name="reasoning-profile",
+            model_id="nvidia/nemotron-3-super-120b-a12b:free",
+            api_key="test-key",
+            reasoning_effort="high",
+            exclude_reasoning=True,
+        )
+        request = ModelRequest(
+            messages=(ModelMessage(role=MessageRole.USER, content="Reason carefully."),)
+        )
+        payload = adapter._build_payload(request)
+        self.assertEqual(payload["reasoning"], {"effort": "high", "exclude": True})
+
+    def test_rejects_invalid_reasoning_effort(self):
+        with self.assertRaisesRegex(ValueError, "reasoning_effort"):
+            OpenRouterAdapter(
+                name="bad-reasoning-profile",
+                model_id="nvidia/nemotron-3-super-120b-a12b:free",
+                api_key="test-key",
+                reasoning_effort="impossible",
+            )
 
     def test_rejects_non_object_tool_arguments(self):
         with self.assertRaisesRegex(ModelResponseError, "arguments must be a JSON object"):
