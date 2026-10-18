@@ -8,6 +8,7 @@ from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
 from core.models.messages import ModelRequest
 from core.models.registry import ModelDefinition, ModelRegistry
+from core.contracts import BudgetLimits
 from core.orchestrator.omnitrix import Omnitrix
 
 
@@ -16,17 +17,19 @@ AGENT_CONFIG = ROOT / "config" / "agents.json"
 
 
 class ScriptedAdapter(ModelAdapter):
-    def __init__(self, responses):
+    def __init__(self, responses, name="test-live-model", provider="test"):
         self.responses = list(responses)
         self.requests: list[ModelRequest] = []
+        self._name = name
+        self._provider = provider
 
     @property
     def name(self) -> str:
-        return "test-live-model"
+        return self._name
 
     @property
     def provider(self) -> str:
-        return "test"
+        return self._provider
 
     def generate(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
@@ -107,6 +110,46 @@ class SpecialistPipelineTests(unittest.TestCase):
 
     def test_malformed_intent_json_is_rejected(self):
         self.assertIsNone(Omnitrix._validate_intent_brief("not json"))
+
+    def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
+        models = ModelRegistry()
+        models.register(ModelDefinition(
+            name="openrouter-free",
+            provider="openrouter",
+            model_id="nvidia/nemotron-3-super-120b-a12b:free",
+            capabilities=frozenset({"reasoning", "coding"}),
+            metadata={"cost_class": "free", "estimated_cost_usd": 0},
+        ))
+        models.register(ModelDefinition(
+            name="google-free-quota",
+            provider="google",
+            model_id="gemini-3.8-flash",
+            capabilities=frozenset({"reasoning", "coding"}),
+            metadata={
+                "cost_class": "user_provided_free_quota",
+                "estimated_cost_usd": 0,
+                "agent_approved_cost": True,
+            },
+        ))
+        adapters = AdapterRegistry()
+        adapters.register(ScriptedAdapter([], name="openrouter-free", provider="openrouter"))
+        adapters.register(ScriptedAdapter([], name="google-free-quota", provider="google"))
+        omnitrix = Omnitrix(
+            registry=models,
+            adapter_registry=adapters,
+            agent_registry=AgentRegistry.load(AGENT_CONFIG),
+            budget_limits=BudgetLimits(spend_mode="zero_cost_only"),
+        )
+        critic = omnitrix.agent_registry.get("critic")
+        selected = omnitrix._select_agent_model(
+            critic,
+            models.get("openrouter-free"),
+            required_capabilities=frozenset({"reasoning"}),
+            prefer_independent_provider=True,
+        )
+        # An explicit cross-model approval is not allowed to bypass the active
+        # runtime spend mode. Google free-quota access is not zero-cost-only.
+        self.assertEqual(selected.name, "openrouter-free")
 
     def test_invalid_critic_payload_preserves_original_answer(self):
         answer, status = Omnitrix._apply_critic_result(
