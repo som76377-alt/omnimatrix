@@ -26,6 +26,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.request import Request as URLRequest, urlopen as urlopen_url
 
 from core.application import ChatApplication
 from core.contracts import BudgetLimits
@@ -38,6 +39,8 @@ from core.tools.permissions import ToolPermission
 
 LOGGER = logging.getLogger("omnitrix.studio")
 MAX_BODY_BYTES = 16 * 1024
+APK_DOWNLOAD_URL = "https://github.com/som76377-alt/omnimatrix/releases/latest/download/Omnitrix.apk"
+MAX_PUBLIC_DOWNLOAD_BYTES = 25 * 1024 * 1024
 MAX_CHAT_CHARS = 8_000
 MAX_SESSIONS = 32
 MAX_TEST_OUTPUT_BYTES = 64 * 1024
@@ -802,9 +805,63 @@ def make_handler(
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise ValueError("Request body must be valid UTF-8 JSON.") from exc
 
+        def _serve_apk_download(self) -> None:
+            """Stream the current APK from a fixed, trusted GitHub release URL."""
+            request = URLRequest(
+                APK_DOWNLOAD_URL,
+                headers={
+                    "User-Agent": "Omnitrix-APK-Download/1.0",
+                    "Accept": "application/octet-stream",
+                },
+            )
+            headers_sent = False
+            try:
+                with urlopen_url(request, timeout=60) as upstream:
+                    raw_length = upstream.headers.get("Content-Length", "")
+                    try:
+                        length = int(raw_length)
+                    except (TypeError, ValueError):
+                        length = 0
+                    if length <= 0 or length > MAX_PUBLIC_DOWNLOAD_BYTES:
+                        self._send_json(
+                            {"ok": False, "error": "APK download source returned an invalid file size."},
+                            502,
+                        )
+                        return
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.android.package-archive")
+                    self.send_header("Content-Disposition", 'attachment; filename="Omnitrix.apk"')
+                    self.send_header("Content-Length", str(length))
+                    self.send_header("Cache-Control", "public, max-age=300")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    headers_sent = True
+
+                    remaining = length
+                    while remaining > 0:
+                        chunk = upstream.read(min(256 * 1024, remaining))
+                        if not chunk:
+                            raise OSError("APK source ended before Content-Length bytes were received")
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                    self.wfile.flush()
+            except Exception as exc:
+                LOGGER.warning("APK download proxy failed: %s", type(exc).__name__)
+                if not headers_sent:
+                    self._send_json(
+                        {"ok": False, "error": "APK download is temporarily unavailable. Retry shortly."},
+                        502,
+                    )
+                else:
+                    self.close_connection = True
+
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
             route = parsed.path
+            if route == "/downloads/Omnitrix.apk":
+                self._serve_apk_download()
+                return
             if route == "/api/mobile/health":
                 self._send_json(runtime.mobile_health())
                 return
