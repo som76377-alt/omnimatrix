@@ -80,14 +80,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android/app/src/main/res/drawable-nodpi
-          curl --fail --location --retry 3 --retry-all-errors \\
-            --output android/app/src/main/res/drawable-nodpi/omnitrix_logo.png \\
-            https://upload.wikimedia.org/wikipedia/commons/3/3d/Ben_10_Omnitrix.png
+          curl --fail --location --retry 3 --retry-all-errors --output android/app/src/main/res/drawable-nodpi/omnitrix_logo.png https://upload.wikimedia.org/wikipedia/commons/3/3d/Ben_10_Omnitrix.png
           python - <<'PY'
           import struct
           from pathlib import Path
           icon = Path("android/app/src/main/res/drawable-nodpi/omnitrix_logo.png").read_bytes()
-          assert icon[:8] == b"\\x89PNG\\r\\n\\x1a\\n", "Downloaded icon is not a PNG"
+          assert icon[:8] == bytes.fromhex("89504e470d0a1a0a"), "Downloaded icon is not a PNG"
           width, height = struct.unpack(">II", icon[16:24])
           assert (width, height) == (512, 512), f"Unexpected icon dimensions: {width}x{height}"
           print(f"Verified original Wikimedia Omnitrix artwork: {width}x{height} PNG ({len(icon)} bytes)")
