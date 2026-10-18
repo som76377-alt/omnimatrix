@@ -110,11 +110,11 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(model["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(model["metadata"]["estimated_cost_usd"], 0)
 
-    def test_mobile_backend_discovery_is_disabled_until_deployed(self):
+    def test_mobile_backend_discovery_points_to_hosted_service(self):
         manifest = json.loads((ROOT / "config" / "mobile-backend.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["version"], 1)
-        self.assertFalse(manifest["chat_enabled"])
-        self.assertEqual(manifest["base_url"], "")
+        self.assertTrue(manifest["chat_enabled"])
+        self.assertEqual(manifest["base_url"], "https://omnitrix-studio.onrender.com")
 
     def test_public_mobile_health_is_available_without_runtime_token(self):
         status, body = self.request("/api/mobile/health", authorized=False)
