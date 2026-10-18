@@ -1442,6 +1442,11 @@ class Omnitrix:
                     request_sha256=request_sha256,
                 )
                 task.metadata["model_transcript_sequence"] = sequence + 1
+            self._set_active_model(
+                stage="primary_inference",
+                agent_role=task.metadata.get("primary_agent_role", "default"),
+                configured_model=selected_model,
+            )
             model_started_at = time.perf_counter()
             response = adapter.generate(request)
             self._record_model_activity(
