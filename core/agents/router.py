@@ -49,6 +49,12 @@ _VAGUE_ACTIONS = re.compile(
     r"make it good|handle this|sort this out)\b",
     re.IGNORECASE,
 )
+_ACADEMIC_EXERCISE_TERMS = re.compile(
+    r"\b(jee(?:\s+advanced)?|neet|olympiad|multiple[- ]choice|answer choices|"
+    r"solve for|find the value|find the maximum|find the minimum|roots of|"
+    r"evaluate the integral|evaluate the limit|maximum value|minimum value)\b",
+    re.IGNORECASE,
+)
 
 _ACTION_REQUESTS = re.compile(
     r"\b(build|make|create|design|write|implement|develop|generate|fix|improve|"
@@ -151,11 +157,29 @@ class AgentRouter:
         vague_short_prompt = word_count <= 12 and bool(_VAGUE_ACTIONS.search(objective))
         short_action_request = word_count <= 28 and bool(_ACTION_REQUESTS.search(objective))
         intent_mode = self.registry.intent_mode
+        explicit_academic_exercise = bool(_ACADEMIC_EXERCISE_TERMS.search(objective)) or (
+            len(re.findall(r"(?:\d|[=+*/^]|\\frac|\\int|√|∫)", objective)) >= 4
+            and bool(re.search(
+                r"\b(solve|find|determine|calculate|derive|evaluate|prove)\b",
+                objective,
+                re.IGNORECASE,
+            ))
+        )
+        # A standalone model call just to restate a well-posed exam problem adds
+        # latency without adding a distinct solution check. The primary solver
+        # still gets intent-engineering instructions, and complex problems still
+        # keep their separate critic pass.
         needs_preflight = (
             intent_mode == "always"
             or (
                 intent_mode == "adaptive"
-                and (complex_task or vague_short_prompt or short_action_request)
+                and (
+                    vague_short_prompt
+                    or (
+                        not explicit_academic_exercise
+                        and (complex_task or short_action_request)
+                    )
+                )
             )
         )
         critic_mode = self.registry.critic_mode
