@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from core.multimodal.router import EvidenceItem, FailureKind, TaskResult
-from core.multimodal.workflow import analyze_single_attachment
+from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
 class SingleAttachmentWorkflowTests(unittest.TestCase):
@@ -80,6 +80,42 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertEqual(result["status"], "partial")
         self.assertIn("Transcript only", result["context"])
         self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["audio_transcription"])
+
+    def test_multi_file_flow_keeps_batching_then_falls_back_in_order(self):
+        records = [
+            dict(self.record, id="1" * 32, name="one.png"),
+            dict(self.record, id="2" * 32, name="two.png"),
+            dict(self.record, id="3" * 32, name="three.png"),
+        ]
+        batch_result = {"status": "partial", "count": 3, "analyzed": 1,
+                        "context": "Gemini completed first file.", "error": "quota"}
+        local_result = {"status": "partial", "count": 1, "analyzed": 1,
+                        "context": "OCR text for second file.", "error": "limited",
+                        "worker": "paddleocr.local", "model": "local:paddleocr"}
+        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result), \\
+             patch("core.multimodal.workflow._try_local_extraction",
+                   side_effect=[local_result, None]) as fallback:
+            result = analyze_multiple_attachments(records, "Describe all")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["analyzed"], 2)
+        self.assertIn("Gemini completed first file", result["context"])
+        self.assertIn("OCR text for second file", result["context"])
+        self.assertEqual(fallback.call_count, 2)
+        self.assertEqual(fallback.call_args_list[0].args[0]["name"], "two.png")
+        self.assertEqual(fallback.call_args_list[1].args[0]["name"], "three.png")
+        self.assertEqual(result["worker"], "mixed")
+        self.assertEqual(result["model"], "multiple")
+
+    def test_complete_multi_file_batch_does_not_reprocess_files(self):
+        records = [self.record, dict(self.record, id="b" * 32, name="two.png")]
+        batch_result = {"status": "complete", "count": 2, "analyzed": 2,
+                        "context": "Both files completed.", "error": None}
+        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result), \\
+             patch("core.multimodal.workflow._try_local_extraction") as fallback:
+            result = analyze_multiple_attachments(records, "Describe all")
+        self.assertEqual(result["worker"], "gemini.multimodal")
+        self.assertEqual(result["analyzed"], 2)
+        fallback.assert_not_called()
 
     def test_unknown_image_subtype_is_still_routed_as_image(self):
         record = dict(self.record, mime_type="image/tiff")
