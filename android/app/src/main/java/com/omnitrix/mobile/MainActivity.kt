@@ -1946,6 +1946,12 @@ private fun ChatScreen(
                     fontFamily = Mono
                 )
             }
+            Text(
+                "Files are staged in Omnitrix. Pressing SEND may share them with Google Gemini for analysis.",
+                color = Grey,
+                fontSize = 8.sp,
+                lineHeight = 11.sp
+            )
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TerminalField(
                     value = input, onValueChange = onInput, placeholder = "Message Omnitrix",
