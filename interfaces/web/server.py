@@ -570,9 +570,20 @@ class StudioRuntime:
 
     def mobile_health(self) -> dict[str, Any]:
         """Return only non-sensitive readiness for the native app's hosted-chat link."""
+        enabled_models = self.omnitrix.registry.list_enabled()
         google_model_enabled = any(
             model.provider == "google" and model.enabled
-            for model in self.omnitrix.registry.list_enabled()
+            for model in enabled_models
+        )
+        openrouter_models = [
+            model for model in enabled_models
+            if model.provider == "openrouter" and "reasoning" in model.capabilities
+        ]
+        reasoning_model = openrouter_models[0] if openrouter_models else None
+        reasoning_adapter_available = bool(
+            reasoning_model is not None
+            and self.omnitrix.adapter_registry.has(reasoning_model.name)
+            and self.omnitrix.adapter_registry.get(reasoning_model.name).is_available()
         )
         key_present = bool(os.getenv("GEMINI_API_KEY"))
         available = self.public_chat_enabled and google_model_enabled and key_present
@@ -590,6 +601,16 @@ class StudioRuntime:
             "chat_available": available,
             "reason": reason,
             "model": "gemini-3.8-flash" if available else None,
+            "reasoning_specialist_available": reasoning_adapter_available,
+            "preferred_reasoning_model": (
+                reasoning_model.model_id or reasoning_model.name
+                if reasoning_model is not None else None
+            ),
+            "reasoning_route_status": (
+                "ready" if reasoning_adapter_available
+                else "provider_key_missing" if reasoning_model is not None
+                else "model_not_configured"
+            ),
         }
 
     def _public_session_id(self, session_id: str, client_ip: str) -> str:
