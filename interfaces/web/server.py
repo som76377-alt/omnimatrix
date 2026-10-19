@@ -795,8 +795,10 @@ class StudioRuntime:
             self.active_chat_session_id = session_id
         try:
             reply = self.app.send_message(conversation, message.strip())
-        except Exception:
-            LOGGER.warning("chat turn failed; provider exception type withheld from client")
+        except Exception as exc:
+            # Keep provider details and user content out of the client response, but
+            # record a safe exception class so production failures are diagnosable.
+            LOGGER.error("chat turn failed; exception_type=%s", type(exc).__name__)
             raise RuntimeError(
                 "Omnitrix could not complete this turn. Check the configured model, "
                 "provider credentials, budget policy, and server terminal output."
