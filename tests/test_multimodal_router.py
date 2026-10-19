@@ -90,6 +90,23 @@ class MultimodalRouterTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertNotIn("fake-secret", result.safe_message or "")
 
+    def test_toolchain_status_never_exposes_secret_values_or_fake_health(self):
+        import os
+        from unittest.mock import patch
+        from core.multimodal.adapters import toolchain_status
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "test-secret-value",
+            "OPENROUTER_API_KEY": "another-test-secret",
+        }):
+            status = toolchain_status()
+        serialized = str(status)
+        self.assertNotIn("test-secret-value", serialized)
+        self.assertNotIn("another-test-secret", serialized)
+        self.assertTrue(status["gemini"]["configured"])
+        self.assertFalse(status["gemini"]["runtime_health_checked"])
+        self.assertFalse(status["qwen3_omni"]["available"])
+        self.assertFalse(status["qwen3_vl"]["adapter_implemented"])
+
     def test_provider_registry_only_advertises_explicit_capabilities(self):
         from core.multimodal.providers import build_provider_registry
         registry = build_provider_registry()
