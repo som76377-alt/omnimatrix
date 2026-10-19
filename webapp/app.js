@@ -1141,11 +1141,36 @@
       byId("chat-form").requestSubmit();
     }
   });
-  byId("new-chat").addEventListener("click", () => {
+  byId("new-chat").addEventListener("click", async () => {
+    if (state.busyChat || state.busyUploads > 0) {
+      toast("Wait for the current chat and uploads to finish before starting a new chat.");
+      return;
+    }
+    if (state.connected) {
+      for (const item of [...state.attachments]) {
+        if (!item.attachmentId) continue;
+        try {
+          await apiRequest("/attachments/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId, attachment_id: item.attachmentId }),
+          });
+        } catch (error) {
+          toast("Could not safely discard staged files. New chat was not started.");
+          return;
+        }
+      }
+    } else if (state.attachments.some((item) => item.attachmentId)) {
+      toast("Runtime is disconnected; staged files remain in the old session until the runtime can clean them.");
+    }
+    state.attachments.forEach(clearLocalAttachment);
+    state.attachments = [];
+    renderChatAttachments();
     sessionId = (window.crypto && typeof window.crypto.randomUUID === "function")
       ? window.crypto.randomUUID()
       : "session_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 18);
     sessionStorage.setItem(SESSION_KEY, sessionId);
+    state.attachmentSessionLoaded = sessionId;
     showInitialChat();
     addActivity("CHAT", "Started a new in-memory conversation session.");
   });
