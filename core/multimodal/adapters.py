@@ -2,6 +2,7 @@
 from __future__ import annotations
 import importlib.util
 import os
+from pathlib import Path
 import shutil
 import subprocess
 from typing import Any
@@ -12,10 +13,10 @@ OPTIONAL_TOOLCHAIN: dict[str, dict[str, Any]] = {
     "openrouter": {"kind":"provider","env":"OPENROUTER_API_KEY","capabilities":["text_reasoning","critique"]},
     "qwen3_omni": {"kind":"local_model","module":"transformers","capabilities":["image_understanding","audio_understanding","video_understanding"]},
     "qwen3_vl": {"kind":"local_model","module":"transformers","capabilities":["image_understanding"]},
-    "paddleocr": {"kind":"python_tool","module":"paddleocr","capabilities":["ocr","document_layout"]},
-    "docling": {"kind":"python_tool","module":"docling","capabilities":["document_layout","pdf_extraction"]},
+    "paddleocr": {"kind":"python_tool","module":"paddleocr","enable_env":"OMNITRIX_ENABLE_PADDLEOCR","capabilities":["ocr","document_layout"]},
+    "docling": {"kind":"python_tool","module":"docling","enable_env":"OMNITRIX_ENABLE_DOCLING","capabilities":["document_layout","pdf_extraction"]},
     "qwen3_asr": {"kind":"local_model","module":"transformers","capabilities":["audio_transcription"]},
-    "faster_whisper": {"kind":"python_tool","module":"faster_whisper","capabilities":["audio_transcription"]},
+    "faster_whisper": {"kind":"python_tool","module":"faster_whisper","enable_env":"OMNITRIX_ENABLE_FASTER_WHISPER","model_env":"OMNITRIX_WHISPER_MODEL_PATH","download_env":"OMNITRIX_ALLOW_MODEL_DOWNLOAD","capabilities":["audio_transcription"]},
     "ffmpeg": {"kind":"system_tool","executable":"ffmpeg","capabilities":["media_conversion"]},
     "pyscenedetect": {"kind":"python_tool","module":"scenedetect","capabilities":["video_scene_detection"]},
 }
@@ -39,6 +40,8 @@ def toolchain_status() -> dict[str, dict[str, Any]]:
     implemented = {"gemini", "openrouter", "ffmpeg", "paddleocr", "docling", "faster_whisper", "pyscenedetect"}
     for name, spec in OPTIONAL_TOOLCHAIN.items():
         configured = False
+        explicitly_enabled = not bool(spec.get("enable_env"))
+        model_ready = True
         dependency_installed = False
         if spec["kind"] == "provider":
             configured = bool(os.environ.get(spec["env"], "").strip())
@@ -49,14 +52,26 @@ def toolchain_status() -> dict[str, dict[str, Any]]:
                 dependency_installed = importlib.util.find_spec(spec["module"]) is not None
             except (ImportError, ValueError, ModuleNotFoundError):
                 dependency_installed = False
+        if spec.get("enable_env"):
+            explicitly_enabled = os.environ.get(spec["enable_env"], "").strip() == "1"
+        if spec.get("model_env"):
+            model_path = os.environ.get(spec["model_env"], "").strip()
+            local_model_ready = bool(model_path and Path(model_path).expanduser().is_dir())
+            download_allowed = os.environ.get(spec.get("download_env", ""), "").strip() == "1"
+            model_ready = local_model_ready or download_allowed
+            configured = local_model_ready
         # This is adapter readiness, not provider health or model correctness.
         adapter_ready = name in implemented and (
             configured if spec["kind"] == "provider" else
-            dependency_installed if spec["kind"] in {"system_tool", "python_tool"} else False
+            dependency_installed if spec["kind"] == "system_tool" else
+            (dependency_installed and explicitly_enabled and model_ready)
+            if spec["kind"] == "python_tool" else False
         )
         status[name] = {
             "kind": spec["kind"],
             "configured": configured,
+            "explicit_opt_in": explicitly_enabled,
+            "model_ready": model_ready,
             "dependency_installed": dependency_installed,
             "adapter_implemented": name in implemented,
             "available": adapter_ready,
