@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 from core.multimodal.router import WorkerCapability, WorkerSpec
 
@@ -103,5 +104,17 @@ def run_ffmpeg(arguments: list[str], *, timeout_seconds: int = 60) -> subprocess
         raise ValueError("FFmpeg timeout must be between 1 and 600 seconds.")
     if not arguments or any(not isinstance(arg, str) or "\x00" in arg for arg in arguments):
         raise ValueError("Invalid FFmpeg arguments.")
-    return subprocess.run([binary, "-nostdin", "-hide_banner", *arguments],
-        capture_output=True, text=True, timeout=timeout_seconds, check=False, shell=False)
+    command = [binary, "-nostdin", "-hide_banner", "-loglevel", "error", *arguments]
+    # FFmpeg output is normally written to a caller-supplied file. Discard stdout
+    # to avoid an unbounded in-memory buffer if a caller chooses stdout as output.
+    with tempfile.TemporaryFile(mode="w+b") as stderr_file:
+        completed = subprocess.run(
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr_file,
+            timeout=timeout_seconds, check=False, shell=False,
+        )
+        stderr_file.seek(0)
+        raw_stderr = stderr_file.read(64 * 1024 + 1)
+        stderr_text = raw_stderr[:64 * 1024].decode("utf-8", errors="replace")
+        if len(raw_stderr) > 64 * 1024:
+            stderr_text += "\\n[FFmpeg stderr truncated]"
+        return subprocess.CompletedProcess(completed.args, completed.returncode, "", stderr_text)
