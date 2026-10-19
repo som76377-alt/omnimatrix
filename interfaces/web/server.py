@@ -37,6 +37,7 @@ from core.orchestrator.omnitrix import Omnitrix
 from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
+from core.multimodal.adapters import toolchain_status
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
@@ -437,6 +438,7 @@ class StudioRuntime:
             "agents": agents,
             "models": models,
             "tools": tool_details,
+            "multimodal_toolchain": toolchain_status(),
             "active_execution": getattr(self.omnitrix, "active_execution", None),
             "checked_at": utc_now(),
         }
