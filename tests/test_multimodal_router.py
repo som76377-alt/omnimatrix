@@ -1,11 +1,22 @@
 """Offline tests for multimodal routing and context-preserving failover."""
 import unittest
 from core.multimodal.router import (
-    EvidenceItem, FailureKind, TaskRequest, TaskResult, WorkerCapability,
+    EvidenceItem, FailureKind, TaskRequest, TaskResult, WorkerCapability, classify_provider_failure,
     WorkerRegistry, WorkerSpec, route_with_failover,
 )
 
 class MultimodalRouterTests(unittest.TestCase):
+    def test_provider_failure_classifier_recognizes_quota_and_auth(self):
+        class ProviderError(Exception):
+            def __init__(self, message, status_code):
+                super().__init__(message)
+                self.status_code = status_code
+        self.assertEqual(classify_provider_failure(ProviderError("busy", 429)), FailureKind.QUOTA)
+        self.assertEqual(classify_provider_failure(ProviderError("no", 401)), FailureKind.AUTH)
+        self.assertEqual(classify_provider_failure(TimeoutError()), FailureKind.TIMEOUT)
+        self.assertEqual(classify_provider_failure(ProviderError("secret upstream payload", 503)),
+                         FailureKind.TRANSIENT)
+
     def test_quota_failover_preserves_evidence_and_progress(self):
         registry = WorkerRegistry()
         cap = WorkerCapability.IMAGE_UNDERSTANDING
