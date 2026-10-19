@@ -34,9 +34,11 @@ jobs:
 
       - name: Validate model configuration
         run: python -m json.tool config/demo.models.json > /dev/null
+          python -m json.tool config/creative-studio-tools.json > /dev/null
+          python -m json.tool config/creative-studio-agents.json > /dev/null
 
       - name: Validate browser JavaScript syntax
-        run: node --check webapp/app.js && node --check webapp/sw.js
+        run: node --check webapp/app.js && node --check webapp/creative-studio.js && node --check webapp/sw.js
 
       - name: Run unit and web-console tests
         shell: bash

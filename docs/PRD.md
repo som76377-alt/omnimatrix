@@ -2,9 +2,9 @@
 
 # Product Requirements Document & Engineering Blueprint
 
-**Version:** 1.31 — Truthfulness and capability calibration contract  
-**Research / snapshot date:** 18 October 2026  
-**Implementation status snapshot:** 18 October 2026; PRs #34–#40 are merged into `main`. The core remains a Python CLI prototype. This branch adds a private Codespaces-hosted browser interface backed by the existing Python core, plus conservative clean-main auto-sync and a static GitHub Pages preview. All verification claims must match the latest branch head  
+**Version:** 1.32 — Creative Studio foundation and local-first editing  
+**Research / snapshot date:** 19 October 2026  
+**Implementation status snapshot:** 19 October 2026; Creative Studio foundation is on the feature branch `studio/creative-studio-foundation` and remains unmerged until branch checks are verified. The existing core and Studio remain separate from the local-first creative editor page. Do not treat this feature branch as deployed or live until CI and the target URL are independently checked.  
 **Status:** Research-audited specification; owner decisions remain subject to explicit review, and every implementation claim must be supported by repository evidence  
 **Intended reader:** Product owner, coding assistants, reviewers, future contributors  
 **Primary repository:** `som76377-alt/omnimatrix` — `main`  
@@ -1902,3 +1902,44 @@ The Android client uses a restrained green-on-black, square-corner terminal them
 Added a Render Blueprint (`render.yaml`), a dedicated Google Gemini mobile model profile (`config/mobile.models.json`), a public mobile-chat endpoint protected by strict route separation, per-IP/global in-memory rate caps, and explicit free-quota spend-mode selection. The Android app now auto-discovers a hosted endpoint from `config/mobile-backend.json` and calls only the narrow mobile chat route by default. Workspace access, commits and test execution remain outside that public route.
 
 **Deployment gate remains open:** the Render service has not been created/deployed, its server-side `GEMINI_API_KEY` is not configured, and the discovery manifest deliberately remains disabled with no backend URL. A Render account connection and a user-owned, Free Tier provider key are still required. Render's free service sleeps after inactivity, and the in-memory rate limits reset on process restart; this is a zero-cost alpha deployment path, not a production-grade always-on/authenticated service. Do not label the app internet-only until deployment and real chat smoke tests succeed.
+
+
+# Version 1.32 — Creative Studio first milestone
+
+**Decision:** Creative production is the current top implementation priority. Build a reference-aware, phone-friendly editor inside Omnitrix before expanding unrelated integrations. Preserve the existing Omnitrix orchestration core and introduce creative tools as capability-limited components rather than replacing the core or inventing disconnected agent personas.
+
+## User-facing outcome
+
+The first milestone is a browser-based Creative Studio with a persistent local asset library, multiple-image/video import, per-shot timeline, editable title overlays, framing and basic pan/zoom presets, canvas preview, and local WebM draft export where the browser supports MediaRecorder and Web Audio. The project manifest stores stable source asset IDs and editable decisions; it does not embed the original media. The page must disclose that its originals reside in local browser storage and that browser cleanup, device changes and quotas can affect persistence.
+
+## Truthful capability boundaries
+
+The media librarian and timeline executor are deterministic browser functionality and may be labeled active only while those operations are available. Visual analysis, the creative director, motion designer and visual critic are not live until the respective model/tool adapter is connected, has a consent boundary, returns structured results tied to stable media IDs, and passes the relevant tests. The application must never claim to have visually analysed a source, evaluated a rendered frame, or used a model when it has not done so.
+
+The initial timeline is sequential and supports cuts, a single title/subtitle treatment per shot, basic cover/contain framing, and a small set of pan/zoom presets. It is not yet a full professional multitrack editor. Dedicated audio tracks, precise keyframes, true transitions, editable vector layers, masks, compositing, colour grading, asset bundles, AI-generated visual changes, a persistent render queue and cloud rendering remain explicit later milestones.
+
+## Toolchain and cost policy
+
+The integrated first increment uses browser IndexedDB, native image/video decoding, Canvas 2D, MediaRecorder and Web Audio. These avoid mandatory third-party inference and heavy initial downloads. FFmpeg.wasm is a deferred candidate pending memory/performance tests on mobile devices. Native FFmpeg is the likely later background encoding engine. Video Ware is a research candidate only: assess its AGPL-3.0-only obligations and nontrivial runtime dependencies before integration. Blender and Motion Canvas are separate render adapters for later specialist motion-graphics work.
+
+The $0-spend default remains in force. GitHub Actions is used for continuous integration, not an unlimited interactive render farm. Codespaces is for development and interactive testing; its configured resources and time allowances are finite. Free GPU demos and notebook runtimes may be used for controlled experiments but must never be described as guaranteed production compute. Every future remote render job must be authenticated, size/time/quota limited, cancellable, and cleaned up according to a documented retention policy.
+
+## Acceptance gates
+
+1. All new HTML-local assets exist; browser JavaScript parses; offline/unit tests continue to pass.
+2. Multi-file imports are processed sequentially and stored locally; invalid formats and storage failures produce a visible error rather than false success.
+3. Projects survive a page reload in the same browser profile when the browser retains IndexedDB storage.
+4. Reordering, title/font/color/position, framing, trim-in and duration edits affect the rendered preview and exported draft, while originals remain unchanged.
+5. The output file is reported successful only after the browser's MediaRecorder finishes and returns a nonempty blob.
+6. AI-labelled capabilities remain marked not connected until actual provider calls and visual-output verification are proven.
+7. The same feature is tested on Android Chrome with large images and video clips before a mobile release claim. CI passing alone is not proof that a phone export works.
+
+## Next phases
+
+- Stabilise import/reload/edit/export behaviour and add asset deletion, undo/redo, accessible progress and low-memory recovery.
+- Add exportable media packages with checksums, not only a project manifest.
+- Introduce an authenticated multitrack engine adapter and dedicated audio/music/narration lanes.
+- Add independent vector graphic layers, typography systems, keyframes, easing, masks and a motion-graphics render adapter.
+- Connect the existing Omnitrix orchestrator to a constrained creative API; permit remote AI analysis only for media the user explicitly selects for external processing.
+- Make the visual critic inspect frames sampled from the actual rendered output, compare to the storyboard/reference roles, and suggest actionable changes that the user may accept or reject.
+- Add a separately deployed remote render worker only after a real hosting target, quotas, artifact storage, status reporting and security controls are verified.

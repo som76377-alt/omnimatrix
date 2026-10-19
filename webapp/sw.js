@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "omnitrix-shell-v1";
+const CACHE_NAME = "omnitrix-shell-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,9 @@ const SHELL = [
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./creative-studio.html",
+  "./creative-studio.css",
+  "./creative-studio.js",
 ];
 
 self.addEventListener("install", (event) => {

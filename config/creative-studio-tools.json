@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "product": "Omnitrix Creative Studio",
+  "default_spend_mode": "zero_cost",
+  "principles": [
+    "Prefer local deterministic operations before model calls.",
+    "Never upload a user's media to a model provider without explicit per-project consent.",
+    "Treat browser storage as device-local, quota-limited, and not a backup.",
+    "Only label a capability active after a real endpoint or tool is available and verified."
+  ],
+  "engines": [
+    {
+      "id": "browser-media-library",
+      "label": "Browser media library",
+      "status": "integrated",
+      "runtime": "browser",
+      "cost_class": "zero_incremental_cost",
+      "capabilities": ["multi-file-import", "image-thumbnailing", "video-metadata", "local-indexeddb"],
+      "notes": "Original media and generated thumbnails are stored in browser IndexedDB. Browser storage can be cleared or quota-limited."
+    },
+    {
+      "id": "canvas-compositor",
+      "label": "Canvas compositor",
+      "status": "integrated",
+      "runtime": "browser",
+      "cost_class": "zero_incremental_cost",
+      "capabilities": ["image-and-video-preview", "crop-fit", "title-overlays", "slow-zoom", "pan-presets", "webm-render"],
+      "notes": "Current implementation uses sequential cuts and a single title/subtitle treatment per shot. Separate audio tracks, masks, colour grading and transitions are not yet implemented."
+    },
+    {
+      "id": "web-audio",
+      "label": "Web Audio source-audio capture",
+      "status": "integrated",
+      "runtime": "browser",
+      "cost_class": "zero_incremental_cost",
+      "capabilities": ["capture-source-video-audio"],
+      "notes": "Captures audio that belongs to source video clips. It is not yet a multitrack music or narration mixer."
+    },
+    {
+      "id": "ffmpeg-wasm",
+      "label": "FFmpeg.wasm",
+      "status": "evaluated-deferred",
+      "runtime": "browser-webassembly",
+      "cost_class": "zero_price_but_high_device_compute",
+      "source": "https://github.com/ffmpegwasm/ffmpeg.wasm",
+      "license": "MIT",
+      "capabilities": ["format-conversion", "filter-graphs", "transcoding"],
+      "decision": "Do not load a large WASM core on the phone by default. Native browser recording is the initial render path; benchmark FFmpeg.wasm on real target devices before adding it."
+    },
+    {
+      "id": "video-ware",
+      "label": "Video Ware",
+      "status": "research-candidate-not-integrated",
+      "runtime": "self-hosted-web-app-and-worker",
+      "cost_class": "open_source_but_requires_hosting",
+      "source": "https://github.com/make-ware/video-ware",
+      "license": "AGPL-3.0-only",
+      "capabilities": ["agent-editable-multitrack-timeline", "proxy-generation", "searchable-footage", "rendering"],
+      "decision": "Do not install yet. It needs Node.js 22+, Yarn 4, FFmpeg, Redis and PocketBase; its optional visual analysis calls Google Cloud Video Intelligence. Evaluate its licensing, resource cost, and deployment fit before adoption."
+    },
+    {
+      "id": "ffmpeg-native-worker",
+      "label": "Native FFmpeg background worker",
+      "status": "planned-not-deployed",
+      "runtime": "remote-cpu-worker",
+      "cost_class": "compute-quota-dependent",
+      "capabilities": ["higher-quality-encoding", "filter-graphs", "proxy-generation", "audio-mix"],
+      "decision": "Use only after a persistent worker and authenticated job/file storage are provisioned. GitHub Actions is CI, not a guaranteed interactive rendering service."
+    },
+    {
+      "id": "blender",
+      "label": "Blender render adapter",
+      "status": "planned-not-integrated",
+      "runtime": "optional-remote-worker",
+      "cost_class": "compute-quota-dependent",
+      "source": "https://www.blender.org/",
+      "license": "GPL-3.0-or-later",
+      "capabilities": ["3d-motion-graphics", "compositing", "scientific-animation"],
+      "decision": "Reserve for a later motion-graphics milestone. Do not assume Blender is installed on the hosted runtime until a deployment check confirms it."
+    },
+    {
+      "id": "motion-canvas",
+      "label": "Motion Canvas",
+      "status": "planned-not-integrated",
+      "runtime": "typescript-animation-project",
+      "source": "https://motioncanvas.io/",
+      "license": "MIT",
+      "capabilities": ["vector-explainer-animation", "narration-synchronisation", "keyframed-graphics"],
+      "decision": "Use as an optional specialised renderer for explanatory graphics after the core timeline contract stabilises."
+    }
+  ]
+}

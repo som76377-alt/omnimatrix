@@ -466,3 +466,9 @@ h2,h3,p{margin-top:0}
   .chat-thread-header small{max-width:52vw;font-size:8px}
   .message-model-identity{font-size:7px}
 }
+
+
+/* Creative Studio route is available from desktop and bottom mobile navigation. */
+.main-nav a.nav-item{text-decoration:none}
+.mobile-nav-item{text-decoration:none}
+@media(max-width:620px){.mobile-nav{grid-template-columns:repeat(6,minmax(0,1fr))}.creative-mobile-link{color:var(--acid);font-weight:700}}
