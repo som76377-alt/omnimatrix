@@ -34,17 +34,35 @@ _MAPPING = {
 }
 
 def toolchain_status() -> dict[str, dict[str, Any]]:
-    """Report configured/installed booleans without exposing secret values."""
-    status = {}
+    """Safe inventory: configuration/dependency presence is not a live health check."""
+    status: dict[str, dict[str, Any]] = {}
+    implemented = {"gemini", "openrouter", "ffmpeg"}
     for name, spec in OPTIONAL_TOOLCHAIN.items():
+        configured = False
+        dependency_installed = False
         if spec["kind"] == "provider":
-            available = bool(os.environ.get(spec["env"], "").strip())
+            configured = bool(os.environ.get(spec["env"], "").strip())
         elif spec["kind"] == "system_tool":
-            available = shutil.which(spec["executable"]) is not None
+            dependency_installed = shutil.which(spec["executable"]) is not None
         else:
-            available = importlib.util.find_spec(spec["module"]) is not None
-        status[name] = {"configured": available, "available": available,
-                        "kind": spec["kind"], "capabilities": list(spec["capabilities"])}
+            try:
+                dependency_installed = importlib.util.find_spec(spec["module"]) is not None
+            except (ImportError, ValueError, ModuleNotFoundError):
+                dependency_installed = False
+        # This is adapter readiness, not provider health or model correctness.
+        adapter_ready = name in implemented and (
+            configured if spec["kind"] == "provider" else
+            dependency_installed if spec["kind"] == "system_tool" else False
+        )
+        status[name] = {
+            "kind": spec["kind"],
+            "configured": configured,
+            "dependency_installed": dependency_installed,
+            "adapter_implemented": name in implemented,
+            "available": adapter_ready,
+            "runtime_health_checked": False,
+            "capabilities": list(spec["capabilities"]),
+        }
     return status
 
 def discover_worker_specs() -> list[WorkerSpec]:
