@@ -7,7 +7,7 @@
   const MAX_FILES_PER_IMPORT = 500;
   const $ = (id) => document.getElementById(id);
   const state = {
-    db: null, assets: [], project: null, selectedAssetId: null, selectedClipId: null,
+    db: null, assets: [], project: null, selectedAssetId: null, selectedClipId: null, selectedGraphicLayerId: null,
     loadedMedia: null, mediaLoadToken: 0, objectUrls: new Map(), thumbUrls: new Map(),
     isPlaying: false, exporting: false, recorder: null, chunks: [], raf: 0,
     playhead: 0, playStartedAt: 0, saveTimer: 0, audioContext: null,
@@ -155,7 +155,7 @@
       id: crypto.randomUUID(), assetId: asset.id, name: asset.name,
       sourceIn: 0, duration: asset.type.startsWith("video/") ? Math.max(0.5, Math.min(asset.duration || 5, 600)) : 4,
       fit: "cover", motion: "none", title: "", subtitle: "",
-      titlePosition: "bottom", titleColor: "#d6fa62", titleSize: 44, titleFont: "sans"
+      titlePosition: "bottom", titleColor: "#d6fa62", titleSize: 44, titleFont: "sans", layers: []
     };
   }
 
@@ -572,6 +572,140 @@
     $("shot-font-size").value = clip.titleSize || 44;
     $("shot-font-value").textContent = (clip.titleSize || 44) + " px";
     $("shot-font").value = clip.titleFont || "sans";
+    if (!Array.isArray(clip.layers)) clip.layers = [];
+    if (!clip.layers.some((layer) => layer.id === state.selectedGraphicLayerId)) {
+      state.selectedGraphicLayerId = clip.layers[0] ? clip.layers[0].id : null;
+    }
+    renderGraphicLayers();
+  }
+
+  function selectedGraphicLayer() {
+    const clip = selectedClip();
+    if (!clip) return null;
+    if (!Array.isArray(clip.layers)) clip.layers = [];
+    return clip.layers.find((layer) => layer.id === state.selectedGraphicLayerId) || null;
+  }
+
+  function newGraphicLayer(type) {
+    const count = (selectedClip() && selectedClip().layers || []).length + 1;
+    return {
+      id: crypto.randomUUID(),
+      type: type,
+      name: (type === "text" ? "Text" : type === "rect" ? "Rectangle" : "Circle") + " " + count,
+      text: type === "text" ? "New graphic" : "",
+      x: 50, y: type === "text" ? 76 : 50,
+      width: type === "text" ? 70 : 22,
+      height: type === "text" ? 12 : 16,
+      color: "#d6fa62", opacity: 1, font: "sans", animation: "fade-in"
+    };
+  }
+
+  function renderGraphicLayers() {
+    const clip = selectedClip();
+    const target = $("graphic-layer-list");
+    target.replaceChildren();
+    const layers = clip && Array.isArray(clip.layers) ? clip.layers : [];
+    $("graphic-layer-count").textContent = String(layers.length);
+    if (!layers.length) {
+      const empty = document.createElement("div");
+      empty.className = "layer-empty";
+      empty.textContent = "Add text and shapes to build the composition.";
+      target.append(empty);
+    }
+    layers.forEach((layer, index) => {
+      const row = document.createElement("div");
+      row.className = "graphic-layer-row" + (layer.id === state.selectedGraphicLayerId ? " selected" : "");
+      const select = document.createElement("button");
+      select.type = "button";
+      select.className = "graphic-layer-select";
+      select.textContent = (layer.type === "text" ? "T" : layer.type === "rect" ? "▰" : "●") + "  " + (layer.name || "Graphic layer");
+      select.addEventListener("click", () => {
+        state.selectedGraphicLayerId = layer.id;
+        renderGraphicLayers();
+      });
+      const up = document.createElement("button");
+      up.type = "button"; up.className = "layer-order-button"; up.textContent = "↑"; up.title = "Move layer up"; up.disabled = index === 0;
+      up.addEventListener("click", () => {
+        if (index < 1) return;
+        const item = layers.splice(index, 1)[0];
+        layers.splice(index - 1, 0, item);
+        renderGraphicLayers(); scheduleSave(); drawFrame();
+      });
+      const down = document.createElement("button");
+      down.type = "button"; down.className = "layer-order-button"; down.textContent = "↓"; down.title = "Move layer down"; down.disabled = index === layers.length - 1;
+      down.addEventListener("click", () => {
+        if (index >= layers.length - 1) return;
+        const item = layers.splice(index, 1)[0];
+        layers.splice(index + 1, 0, item);
+        renderGraphicLayers(); scheduleSave(); drawFrame();
+      });
+      row.append(select, up, down);
+      target.append(row);
+    });
+    const layer = selectedGraphicLayer();
+    $("graphic-layer-controls").hidden = !layer;
+    if (!layer) return;
+    $("graphic-layer-name").value = layer.name || "";
+    $("graphic-layer-text").value = layer.text || "";
+    $("graphic-layer-x").value = Number(layer.x ?? 50);
+    $("graphic-layer-y").value = Number(layer.y ?? 50);
+    $("graphic-layer-width").value = Number(layer.width ?? 22);
+    $("graphic-layer-height").value = Number(layer.height ?? 16);
+    $("graphic-layer-colour").value = /^#[0-9a-f]{6}$/i.test(layer.color || "") ? layer.color : "#d6fa62";
+    $("graphic-layer-opacity").value = Number(layer.opacity ?? 1);
+    $("graphic-layer-font").value = layer.font || "sans";
+    $("graphic-layer-animation").value = layer.animation || "none";
+    const isText = layer.type === "text";
+    $("graphic-text-wrap").hidden = !isText;
+    $("graphic-font-wrap").hidden = !isText;
+  }
+
+  function addGraphicLayer(type) {
+    const clip = selectedClip();
+    if (!clip) { toast("Select a shot before adding graphic layers."); return; }
+    if (!Array.isArray(clip.layers)) clip.layers = [];
+    const layer = newGraphicLayer(type);
+    clip.layers.push(layer);
+    state.selectedGraphicLayerId = layer.id;
+    renderGraphicLayers();
+    scheduleSave();
+    drawFrame();
+  }
+
+  function bindGraphicLayers() {
+    $("add-text-layer").addEventListener("click", () => addGraphicLayer("text"));
+    $("add-rect-layer").addEventListener("click", () => addGraphicLayer("rect"));
+    $("add-circle-layer").addEventListener("click", () => addGraphicLayer("circle"));
+    const fields = {
+      "graphic-layer-name": ["name", (v) => v.slice(0, 100)],
+      "graphic-layer-text": ["text", (v) => v.slice(0, 300)],
+      "graphic-layer-x": ["x", (v) => Math.min(100, Math.max(0, Number(v) || 0))],
+      "graphic-layer-y": ["y", (v) => Math.min(100, Math.max(0, Number(v) || 0))],
+      "graphic-layer-width": ["width", (v) => Math.min(100, Math.max(1, Number(v) || 1))],
+      "graphic-layer-height": ["height", (v) => Math.min(100, Math.max(1, Number(v) || 1))],
+      "graphic-layer-colour": ["color", (v) => /^#[0-9a-f]{6}$/i.test(v) ? v : "#d6fa62"],
+      "graphic-layer-opacity": ["opacity", (v) => Math.min(1, Math.max(0, Number(v) || 0))],
+      "graphic-layer-font": ["font", (v) => v],
+      "graphic-layer-animation": ["animation", (v) => v]
+    };
+    Object.entries(fields).forEach(([id, field]) => {
+      $(id).addEventListener("input", () => {
+        const layer = selectedGraphicLayer();
+        if (!layer) return;
+        layer[field[0]] = field[1]($(id).value);
+        if (id === "graphic-layer-name") renderGraphicLayers();
+        scheduleSave();
+        drawFrame();
+      });
+    });
+    $("delete-graphic-layer").addEventListener("click", () => {
+      const clip = selectedClip();
+      const layer = selectedGraphicLayer();
+      if (!clip || !layer) return;
+      clip.layers = clip.layers.filter((item) => item.id !== layer.id);
+      state.selectedGraphicLayerId = clip.layers.length ? clip.layers[0].id : null;
+      renderGraphicLayers(); scheduleSave(); drawFrame();
+    });
   }
 
   function bindInspector() {
@@ -720,6 +854,7 @@
     }
     const progress = Math.min(1, localTime / Math.max(0.1, Number(clip.duration) || 4));
     if (clip.title || clip.subtitle) drawGraphicOverlay(clip);
+    drawGraphicLayers(clip, localTime);
     ctx.restore();
     updateTransport();
   }
@@ -772,6 +907,46 @@
       ctx.fillRect(W * 0.46, lineY + titleSize * 0.57, W * 0.08, Math.max(1, W * 0.0015));
     }
     ctx.restore();
+  }
+
+  function drawGraphicLayers(clip, localTime) {
+    const layers = Array.isArray(clip.layers) ? clip.layers : [];
+    const W = canvas.width;
+    const H = canvas.height;
+    layers.forEach((layer) => {
+      const animationProgress = Math.min(1, Math.max(0, (Number(localTime) || 0) / 0.65));
+      const eased = 1 - Math.pow(1 - animationProgress, 3);
+      let alpha = Number.isFinite(Number(layer.opacity)) ? Math.min(1, Math.max(0, Number(layer.opacity))) : 1;
+      let dx = 0;
+      let dy = 0;
+      let scale = 1;
+      if (layer.animation === "fade-in") alpha *= eased;
+      else if (layer.animation === "slide-up") { alpha *= eased; dy = (1 - eased) * H * 0.08; }
+      else if (layer.animation === "slide-left") { alpha *= eased; dx = (1 - eased) * W * 0.12; }
+      else if (layer.animation === "scale-in") { alpha *= eased; scale = 0.78 + 0.22 * eased; }
+      const x = (Math.min(100, Math.max(0, Number(layer.x ?? 50))) / 100) * W + dx;
+      const y = (Math.min(100, Math.max(0, Number(layer.y ?? 50))) / 100) * H + dy;
+      const width = (Math.min(100, Math.max(1, Number(layer.width ?? 22))) / 100) * W * scale;
+      const height = (Math.min(100, Math.max(1, Number(layer.height ?? 16))) / 100) * H * scale;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = /^#[0-9a-f]{6}$/i.test(layer.color || "") ? layer.color : "#d6fa62";
+      if (layer.type === "rect") {
+        ctx.fillRect(x - width / 2, y - height / 2, width, height);
+      } else if (layer.type === "circle") {
+        ctx.beginPath();
+        ctx.ellipse(x, y, width / 2, height / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (layer.type === "text" && layer.text) {
+        const fontSize = Math.max(10, Math.round((Number(layer.fontSize) || 44) * W / 960));
+        const family = layer.font === "serif" ? 'Georgia, "Times New Roman", serif'
+          : layer.font === "mono" ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
+          : 'Inter, "DM Sans", system-ui, sans-serif';
+        const weight = layer.fontWeight === "regular" ? "500" : "750";
+        drawTextBlock(layer.text, x, y, width, weight + " " + fontSize + "px " + family, ctx.fillStyle, "center", 1.12);
+      }
+      ctx.restore();
+    });
   }
 
   async function loadMediaForPreview(assetId, clip) {
@@ -1026,7 +1201,8 @@
           id: clip.id, assetId: clip.assetId, name: clip.name,
           sourceIn: clip.sourceIn, duration: clip.duration, fit: clip.fit, motion: clip.motion,
           title: clip.title, subtitle: clip.subtitle, titlePosition: clip.titlePosition,
-          titleColor: clip.titleColor, titleSize: clip.titleSize, titleFont: clip.titleFont
+          titleColor: clip.titleColor, titleSize: clip.titleSize, titleFont: clip.titleFont,
+          layers: Array.isArray(clip.layers) ? clip.layers.map((layer) => Object.assign({}, layer)) : []
         }))
       },
       media: state.assets.map((asset) => ({
@@ -1137,6 +1313,7 @@
       updateStats(); drawFrame();
     });
     bindInspector();
+    bindGraphicLayers();
   }
 
   async function init() {
