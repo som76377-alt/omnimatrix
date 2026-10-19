@@ -87,7 +87,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertIn("indexedDB", self.creative_js)
         self.assertIn("MediaRecorder", self.creative_js)
-        self.assertIn("No model has been called", self.creative_html)
+        self.assertIn("no model has been called", self.creative_html.lower())
         self.assertIn("configured-not-connected", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
         self.assertIn('"status": "integrated"', (ROOT / "config/creative-studio-tools.json").read_text(encoding="utf-8"))
         self.assertNotIn("fetch(", self.creative_js)
