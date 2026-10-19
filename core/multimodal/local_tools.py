@@ -130,10 +130,24 @@ def transcribe_audio(path: str, *, model_size: str = "small", language: str | No
         from faster_whisper import WhisperModel
     except ImportError:
         raise RuntimeError("faster-whisper is not installed; transcription is unavailable.") from None
+    local_model_path = os.environ.get("OMNITRIX_WHISPER_MODEL_PATH", "").strip()
+    allow_download = os.environ.get("OMNITRIX_ALLOW_MODEL_DOWNLOAD", "").strip() == "1"
+    if local_model_path:
+        model_source = Path(local_model_path).expanduser()
+        if not model_source.is_dir():
+            raise RuntimeError("Configured Whisper model path does not exist.")
+        model_source = str(model_source)
+    elif allow_download:
+        model_source = model_size
+    else:
+        raise RuntimeError(
+            "Whisper weights are not configured. Set OMNITRIX_WHISPER_MODEL_PATH to local weights "
+            "or explicitly set OMNITRIX_ALLOW_MODEL_DOWNLOAD=1."
+        )
     device = os.environ.get("OMNITRIX_WHISPER_DEVICE", "cpu")
     compute_type = os.environ.get("OMNITRIX_WHISPER_COMPUTE_TYPE", "int8")
     try:
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        model = WhisperModel(model_source, device=device, compute_type=compute_type)
         segments, info = model.transcribe(str(source), language=language, vad_filter=True)
         output = []
         chars = 0
