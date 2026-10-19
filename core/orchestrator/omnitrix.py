@@ -1418,6 +1418,7 @@ class Omnitrix:
         )
 
         tool_iterations = 0
+        fallback_attempted = False
 
         while True:
             # Fail closed if a future refactor drops the persistent behavioral contract.
@@ -1463,7 +1464,51 @@ class Omnitrix:
                 configured_model=selected_model,
             )
             model_started_at = time.perf_counter()
-            response = adapter.generate(request)
+            try:
+                response = adapter.generate(request)
+            except Exception as exc:
+                # One bounded cross-provider fallback keeps transient provider
+                # failures from turning a chat turn into a hard failure. A
+                # durable journal remains fail-closed to preserve transcript order.
+                fallback_model = None
+                if (
+                    self.journal is None
+                    and not fallback_attempted
+                    and request.continuation is None
+                    and tool_iterations == 0
+                ):
+                    if default_model.name != selected_model.name:
+                        fallback_model = default_model
+                    elif agent_plan is not None:
+                        candidate = self._select_agent_model(
+                            agent_plan.primary,
+                            default_model,
+                            required_capabilities=task.requirements.capabilities,
+                            prefer_fallback=False,
+                        )
+                        if candidate.name != selected_model.name:
+                            fallback_model = candidate
+
+                if fallback_model is None:
+                    raise
+
+                _log_safely(
+                    logging.WARNING,
+                    "model_provider_fallback_started",
+                    failed_model=selected_model.name,
+                    fallback_model=fallback_model.name,
+                    error_type=type(exc).__name__,
+                )
+                fallback_attempted = True
+                selected_model = fallback_model
+                adapter = self.adapter_registry.get(selected_model.name)
+                self._set_active_model(
+                    stage="primary_inference",
+                    agent_role=task.metadata.get("primary_agent_role", "default"),
+                    configured_model=selected_model,
+                )
+                continue
+
             self._record_model_activity(
                 task,
                 stage="tool_call_decision" if response.tool_calls else "answer_generation",
