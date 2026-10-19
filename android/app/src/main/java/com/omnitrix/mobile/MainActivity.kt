@@ -91,35 +91,107 @@ private const val HOSTED_BACKEND_DISCOVERY_URL =
 private enum class AppTab(val title: String) {
     CHAT("Chat"), REPO("Repo"), STATUS("Runs"), ACCOUNT("Account")
 }
-private data class ChatMessage(val role: String, val text: String, val modelLabel: String? = null)
+private data class ChatMessage(
+    val role: String,
+    val text: String,
+    val modelLabel: String? = null,
+    val activityLines: List<String> = emptyList()
+)
 
 internal object ModelActivityLabelFormatter {
-    fun fromInFlight(activity: JSONObject?): String {
-        if (activity == null) return "ROUTING · MODEL NOT SELECTED YET"
-        val status = activity.optString("status")
-        val identitySource = activity.optString("identity_source")
-        val model = if (identitySource == "provider_response") {
-            activity.optString("model")
-        } else {
-            activity.optString("configured_model")
+    private fun roleName(role: String): String = when (role.lowercase()) {
+        "intent_engineer" -> "INTENT ENGINEER"
+        "reasoning" -> "REASONING"
+        "subject_solver" -> "SUBJECT SOLVER"
+        "computation" -> "COMPUTATION"
+        "coding" -> "CODING"
+        "research" -> "RESEARCH"
+        "critic" -> "CRITIC"
+        "default" -> "OMNITRIX CORE"
+        else -> role.replace('_', ' ').uppercase().ifBlank { "OMNITRIX CORE" }
+    }
+
+    private fun stepName(role: String, stage: String, completed: Boolean): String {
+        val verb = when (stage) {
+            "intent_engineer" -> if (completed) "task understood" else "clarifying the request"
+            "critic" -> if (completed) "review finished" else "checking the draft for errors"
+            "primary_inference" -> when (role) {
+                "subject_solver" -> "solving the subject problem"
+                "reasoning" -> "working through the reasoning"
+                "computation" -> "checking the calculation"
+                "coding" -> "working through the implementation"
+                "research" -> "evaluating research evidence"
+                else -> "working on the answer"
+            }
+            "tool_call_decision" -> if (completed) "tool decision complete" else "checking whether a permitted tool is needed"
+            "answer_generation" -> if (completed) "solution draft prepared" else "drafting the solution"
+            else -> if (completed) "stage complete" else "working"
         }
-        val provider = activity.optString("provider")
+        return "${roleName(role)} · $verb"
+    }
+
+    private fun sourceLabel(identitySource: String): String = when (identitySource) {
+        "provider_response" -> "provider-reported ID"
+        "configured_id_pending_provider_response" -> "configured route; response ID pending"
+        "configured_fallback" -> "configured fallback; provider omitted ID"
+        "adapter_metadata" -> "adapter metadata; not provider-confirmed"
+        else -> "identity not confirmed"
+    }
+
+    private fun modelLabel(record: JSONObject): String {
+        val identitySource = record.optString("identity_source")
+        val selectedModel = if (identitySource == "provider_response") {
+            record.optString("model")
+        } else {
+            record.optString("configured_model")
+        }
+        val model = selectedModel.ifBlank { "model ID unavailable" }
+        val provider = record.optString("provider").ifBlank { "provider unknown" }
+        return "$provider · $model · ${sourceLabel(identitySource)}"
+    }
+
+    fun fromInFlight(activity: JSONObject?): String {
+        if (activity == null) return "ROUTING · SELECTING SPECIALIST"
+        val status = activity.optString("status")
         val role = activity.optString("role")
         val stage = activity.optString("stage")
-        val provenance = when (identitySource) {
-            "provider_response" -> "provider-reported"
-            "configured_id_pending_provider_response" -> "requested route"
-            "configured_fallback" -> "configured fallback; provider omitted ID"
-            "adapter_metadata" -> "adapter metadata; not provider-confirmed"
-            else -> "identity not confirmed"
+        val prefix = if (status == "response_received") "STEP COMPLETE" else "WORKING"
+        return "$prefix · ${stepName(role, stage, status == "response_received")} · ${modelLabel(activity)}"
+    }
+
+    fun progressLines(payload: JSONObject): List<String> {
+        val output = linkedSetOf<String>()
+        val history = payload.optJSONArray("activity_history")
+        if (history != null) {
+            for (index in 0 until history.length()) {
+                val record = history.optJSONObject(index) ?: continue
+                output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)} · ${modelLabel(record)}")
+            }
         }
-        val prefix = if (status == "response_received") "MODEL RESPONSE RECEIVED" else "THINKING"
-        val effort = activity.optString("reasoning_effort_requested")
-            .takeIf { it.isNotBlank() && it != "null" }
-            ?.let { "$it effort requested" }
-        return listOf(prefix, role, stage, provider, model, provenance, effort)
-            .filter { !it.isNullOrBlank() && it != "null" }
-            .joinToString(" · ")
+        val current = payload.optJSONObject("activity")
+        if (current != null && current.optString("status") == "request_in_flight") {
+            output.add("● ${stepName(current.optString("role"), current.optString("stage"), false)} · ${modelLabel(current)}")
+        }
+        if (output.isEmpty() && payload.optBoolean("active")) {
+            val plan = payload.optJSONObject("plan")
+            val role = plan?.optString("primary_agent_role").orEmpty()
+            if (role.isNotBlank() && role != "null") {
+                output.add("● ${roleName(role)} · preparing its model request")
+            } else {
+                output.add("● OMNITRIX CORE · selecting the specialist")
+            }
+        }
+        return output.toList().takeLast(6)
+    }
+
+    fun linesFromTrace(trace: JSONObject?): List<String> {
+        val records = trace?.optJSONArray("activity") ?: return emptyList()
+        val output = mutableListOf<String>()
+        for (index in 0 until records.length()) {
+            val record = records.optJSONObject(index) ?: continue
+            output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)} · ${modelLabel(record)}")
+        }
+        return output.takeLast(6)
     }
 
     fun fromTrace(trace: JSONObject?): String {
@@ -607,11 +679,10 @@ private class RuntimeClient(context: Context) {
     suspend fun post(route: String, body: JSONObject) = requestPrivate("POST", route, body)
 
     suspend fun connectAutomatically(): JSONObject {
-        // Resolve only the static backend manifest. A sleeping free-tier server must not
-        // delay opening the chat; the first message itself will wake the server.
+        // Perform one real readiness request at connection time instead of showing
+        // the app as connected after only downloading a static manifest.
         useHostedBackend = true
-        discoverHostedBase()
-        return JSONObject().put("chat_available", true).put("connection_mode", "wake-on-first-request")
+        return hostedHealth().put("connection_mode", "health-checked")
     }
 
     suspend fun hostedHealth(): JSONObject {
