@@ -99,9 +99,30 @@ class AgentRouter:
     def _is_complex(objective: str, domain: str) -> bool:
         words = re.findall(r"\b\w+\b", objective)
         lower = objective.lower()
+        normalized = re.sub(r"[\s.!?]+", " ", lower).strip()
+
+        # Keep short social turns fast; "How are you?" is not a reasoning task.
+        if re.fullmatch(
+            r"(?:hi|hello|hey|yo|good morning|good afternoon|good evening|"
+            r"how are you(?: doing)?(?: today| right now)?|thanks|thank you|"
+            r"ok|okay|got it|nice to meet you)(?: omnitrix| there)?",
+            normalized,
+        ):
+            return False
+
         return (
             len(words) >= 35
             or bool(_COMPLEX_TERMS.search(objective))
+            or bool(_REASONING_REQUEST_TERMS.search(objective))
+            or (
+                domain in {"subject", "computation"}
+                and bool(re.search(
+                    r"\b(solve|calculate|compute|derive|prove|evaluate|determine|"
+                    r"integrate|differentiate|analyze|analyse)\b",
+                    objective,
+                    re.IGNORECASE,
+                ))
+            )
             or (domain != "general" and len(words) >= 24)
             or bool(_VAGUE_ACTIONS.search(objective))
             or any(phrase in lower for phrase in (
