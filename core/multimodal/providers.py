@@ -167,4 +167,8 @@ def build_provider_registry() -> WorkerRegistry:
         priority=20, requires_api_key="OPENROUTER_API_KEY", privacy_tier="external",
         description="OpenRouter text-only reasoning; media requires prior extracted evidence.",
     ), openrouter_text_worker)
+    # Optional local workers join the same capability-aware router, but are enabled
+    # only when their dependency is installed. They never require remote credentials.
+    from core.multimodal.local_workers import register_local_workers
+    register_local_workers(registry)
     return registry
