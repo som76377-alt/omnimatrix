@@ -81,6 +81,25 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertIn("Transcript only", result["context"])
         self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["audio_transcription"])
 
+    def test_video_uses_metadata_only_as_last_local_fallback(self):
+        record = dict(self.record, name="clip.mp4", mime_type="video/mp4")
+        failure = TaskResult(False, "coordinator", "none",
+            failure_kind=FailureKind.DEPENDENCY_MISSING,
+            safe_message="No local scene detector.")
+        evidence = EvidenceItem("clip.mp4", "media_metadata", '{"duration_seconds":12}',
+                                "ffprobe.system", "ffprobe")
+        metadata_success = TaskResult(True, "ffprobe.system", "ffprobe", evidence=(evidence,))
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   side_effect=[(failure, None), (metadata_success, None)]) as execute:
+            result = analyze_single_attachment(record, "Summarize this video")
+        self.assertEqual(result["status"], "partial")
+        self.assertIn("Technical stream metadata only", result["context"])
+        self.assertEqual(
+            [x.value for x in execute.call_args_list[1].args[0].required_capabilities],
+            ["media_metadata"],
+        )
+        self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
+
     def test_multi_file_flow_keeps_batching_then_falls_back_in_order(self):
         records = [
             dict(self.record, id="1" * 32, name="one.png"),
