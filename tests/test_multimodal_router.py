@@ -5,6 +5,12 @@ from core.multimodal.router import (
     WorkerRegistry, WorkerSpec, route_with_failover,
 )
 
+def route_packet(task):
+    from core.multimodal.router import HandoffPacket
+    return HandoffPacket(task.task_id, task.user_request, task.source_name, task.source_type,
+                         dict(task.payload), remaining_capabilities=task.required_capabilities)
+
+
 class MultimodalRouterTests(unittest.TestCase):
     def test_provider_failure_classifier_recognizes_quota_and_auth(self):
         class ProviderError(Exception):
@@ -83,6 +89,46 @@ class MultimodalRouterTests(unittest.TestCase):
         result, _ = route_with_failover(TaskRequest("Reason", (cap,)), registry)
         self.assertTrue(result.success)
         self.assertNotIn("fake-secret", result.safe_message or "")
+
+    def test_provider_registry_only_advertises_explicit_capabilities(self):
+        from core.multimodal.providers import build_provider_registry
+        registry = build_provider_registry()
+        specs = registry.describe()
+        by_id = {item["worker_id"]: item for item in specs}
+        self.assertIn("image_understanding", by_id["gemini.multimodal"]["capabilities"])
+        self.assertIn("text_reasoning", by_id["openrouter.text"]["capabilities"])
+        self.assertNotIn("image_understanding", by_id["openrouter.text"]["capabilities"])
+
+    def test_execute_provider_task_reports_missing_keys_without_network(self):
+        import os
+        from unittest.mock import patch
+        from core.multimodal.execute import execute_provider_task
+        task = TaskRequest("Explain this text", (WorkerCapability.TEXT_REASONING,))
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "", "OPENROUTER_API_KEY": ""}):
+            result, packet = execute_provider_task(task)
+        self.assertFalse(result.success)
+        self.assertEqual(result.failure_kind, FailureKind.DEPENDENCY_MISSING)
+        self.assertEqual(packet.attempted_workers, ())
+
+    def test_openrouter_worker_parses_response_with_mocked_transport(self):
+        import io
+        import json
+        import os
+        from unittest.mock import patch
+        from core.multimodal.providers import openrouter_text_worker
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self, limit=-1):
+                return json.dumps({"choices":[{"message":{"content":"Grounded answer."}}]}).encode()
+        task = TaskRequest("Explain", (WorkerCapability.TEXT_REASONING,))
+        handoff = route_packet(task)
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY":"test-only-not-a-real-key"}):
+            with patch("core.multimodal.providers.urlopen", return_value=Response()):
+                result = openrouter_text_worker(task, handoff)
+        self.assertTrue(result.success)
+        self.assertEqual(result.evidence[0].content, "Grounded answer.")
+        self.assertEqual(result.model_id, "openrouter/free")
 
 if __name__ == "__main__":
     unittest.main()
