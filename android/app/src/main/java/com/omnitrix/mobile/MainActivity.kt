@@ -130,33 +130,38 @@ internal object ModelActivityLabelFormatter {
         return "${roleName(role)} · $verb"
     }
 
-    private fun sourceLabel(identitySource: String): String = when (identitySource) {
-        "provider_response" -> "provider-reported ID"
-        "configured_id_pending_provider_response" -> "configured route; response ID pending"
-        "configured_fallback" -> "configured fallback; provider omitted ID"
-        "adapter_metadata" -> "adapter metadata; not provider-confirmed"
-        else -> "identity not confirmed"
-    }
-
-    private fun modelLabel(record: JSONObject): String {
-        val identitySource = record.optString("identity_source")
-        val selectedModel = if (identitySource == "provider_response") {
-            record.optString("model")
-        } else {
-            record.optString("configured_model")
-        }
-        val model = selectedModel.ifBlank { "model ID unavailable" }
-        val provider = record.optString("provider").ifBlank { "provider unknown" }
-        return "$provider · $model · ${sourceLabel(identitySource)}"
+    private fun failureReasonLabel(code: String): String = when {
+        code.startsWith("auth_http_") -> "authentication rejected"
+        code == "authentication_error" -> "authentication failed"
+        code == "http_400_bad_request" -> "HTTP 400"
+        code == "http_429_rate_limited" -> "rate limited"
+        code.startsWith("http_5") -> "provider server error"
+        code == "timeout" -> "timeout"
+        code == "connection_error" -> "connection error"
+        code == "invalid_provider_response" -> "invalid response"
+        code.isBlank() || code == "null" -> "provider error"
+        else -> code.replace('_', ' ')
     }
 
     fun fromInFlight(activity: JSONObject?): String {
-        if (activity == null) return "ROUTING · SELECTING SPECIALIST"
+        if (activity == null) return "ROUTING · SELECTING MODEL"
         val status = activity.optString("status")
-        val role = activity.optString("role")
-        val stage = activity.optString("stage")
-        val prefix = if (status == "response_received") "STEP COMPLETE" else "WORKING"
-        return "$prefix · ${stepName(role, stage, status == "response_received")} · ${modelLabel(activity)}"
+        val model = activity.optString("configured_model")
+            .ifBlank { activity.optString("model") }
+            .ifBlank { "model unknown" }
+        val provider = activity.optString("provider").ifBlank { "provider unknown" }
+        val role = roleName(activity.optString("role")).lowercase()
+        val fallbackFrom = activity.optString("fallback_from_model")
+        val fallbackReason = activity.optString("fallback_reason")
+        if (fallbackFrom.isNotBlank() && fallbackFrom != "null") {
+            val prefix = if (status == "response_received") "USED" else "FALLBACK"
+            return "$prefix · $model · ${provider.lowercase()} · from $fallbackFrom (${failureReasonLabel(fallbackReason)})"
+        }
+        return if (status == "response_received") {
+            "USED · $model · ${provider.lowercase()} · $role"
+        } else {
+            "THINKING · $model · $role"
+        }
     }
 
     fun progressLines(payload: JSONObject): List<String> {
@@ -165,23 +170,23 @@ internal object ModelActivityLabelFormatter {
         if (history != null) {
             for (index in 0 until history.length()) {
                 val record = history.optJSONObject(index) ?: continue
-                output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)} · ${modelLabel(record)}")
+                output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)}")
             }
         }
         val current = payload.optJSONObject("activity")
         if (current != null && current.optString("status") == "request_in_flight") {
-            output.add("● ${stepName(current.optString("role"), current.optString("stage"), false)} · ${modelLabel(current)}")
+            output.add("● ${stepName(current.optString("role"), current.optString("stage"), false)}")
         }
         if (output.isEmpty() && payload.optBoolean("active")) {
             val plan = payload.optJSONObject("plan")
             val role = plan?.optString("primary_agent_role").orEmpty()
             if (role.isNotBlank() && role != "null") {
-                output.add("● ${roleName(role)} · preparing its model request")
+                output.add("● ${roleName(role)} · preparing request")
             } else {
-                output.add("● OMNITRIX CORE · selecting the specialist")
+                output.add("● OMNITRIX CORE · routing request")
             }
         }
-        return output.toList().takeLast(6)
+        return output.toList().takeLast(3)
     }
 
     fun linesFromTrace(trace: JSONObject?): List<String> {
@@ -189,14 +194,14 @@ internal object ModelActivityLabelFormatter {
         val output = mutableListOf<String>()
         for (index in 0 until records.length()) {
             val record = records.optJSONObject(index) ?: continue
-            output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)} · ${modelLabel(record)}")
+            output.add("✓ ${stepName(record.optString("role"), record.optString("stage"), true)}")
         }
-        return output.takeLast(6)
+        return output.takeLast(3)
     }
 
     fun fromTrace(trace: JSONObject?): String {
         val records = trace?.optJSONArray("activity")
-            ?: return "MODEL ID UNAVAILABLE · no execution trace returned"
+            ?: return "model identity unavailable"
         var selected: JSONObject? = null
         for (index in records.length() - 1 downTo 0) {
             val record = records.optJSONObject(index) ?: continue
@@ -206,29 +211,33 @@ internal object ModelActivityLabelFormatter {
                 break
             }
         }
-        val record = selected ?: return "MODEL ID UNAVAILABLE · no model call recorded"
+        val record = selected ?: return "model identity unavailable"
         val identitySource = record.optString("identity_source")
         val reportedModel = if (identitySource == "provider_response") {
             record.optString("model")
         } else {
             record.optString("configured_model")
         }
-        val model = reportedModel.ifBlank { "model ID missing" }
+        val model = reportedModel.ifBlank { "model ID unavailable" }
         val provider = record.optString("provider").ifBlank { "provider unknown" }
-        val role = record.optString("role").ifBlank { "role unknown" }
-        val provenance = when (identitySource) {
-            "provider_response" -> "provider-reported"
-            "configured_fallback" -> "configured fallback; provider omitted ID"
-            "adapter_metadata" -> "adapter metadata; not provider-confirmed"
-            else -> "identity not confirmed"
+        val role = roleName(record.optString("role")).lowercase()
+        val fields = mutableListOf(model, provider, role)
+        val fallbacks = trace.optJSONArray("provider_fallbacks")
+        val lastFallback = if (fallbacks != null && fallbacks.length() > 0) {
+            fallbacks.optJSONObject(fallbacks.length() - 1)
+        } else null
+        if (lastFallback != null) {
+            val fromModel = lastFallback.optString("from_model")
+            val reason = failureReasonLabel(lastFallback.optString("reason_code"))
+            if (fromModel.isNotBlank() && fromModel != "null") {
+                fields.add("fallback: $fromModel failed ($reason)")
+            } else {
+                fields.add("fallback ($reason)")
+            }
+        } else if (identitySource != "provider_response") {
+            fields.add("identity not provider-confirmed")
         }
-        val effort = record.optString("reasoning_effort_requested")
-            .takeIf { it.isNotBlank() && it != "null" }
-            ?.let { "$it effort requested" }
-        val specialist = roleName(role)
-        return listOf("ANSWER MODEL", specialist, provider, model, provenance, effort)
-            .filter { !it.isNullOrBlank() && it != "null" }
-            .joinToString(" · ")
+        return fields.filter { it.isNotBlank() && it != "null" }.joinToString(" · ")
     }
 }
 private data class RepoEntry(val name: String, val path: String, val type: String, val size: Long, val sha: String)
@@ -1323,15 +1332,13 @@ private fun OmnitrixApp() {
                                         )
                                         val trace = response.optJSONObject("execution_trace")
                                         val modelLabel = ModelActivityLabelFormatter.fromTrace(trace)
-                                        val completedLines = ModelActivityLabelFormatter.linesFromTrace(trace)
                                         messages = messages + ChatMessage(
                                             "OMNITRIX",
                                             response.optString("reply", "No response text returned."),
-                                            modelLabel,
-                                            completedLines
+                                            modelLabel
                                         )
-                                        modelActivityLines = completedLines
-                                        modelActivityLabel = modelLabel
+                                        modelActivityLines = emptyList()
+                                        modelActivityLabel = ""
                                     } catch (e: Exception) {
                                         val error = e.message ?: "This attempt failed."
                                         messages = messages + ChatMessage(
@@ -1627,7 +1634,7 @@ private fun ChatScreen(
     onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppHeader("Chat", activityLabel = activityLabel)
+        AppHeader("Chat", activityLabel = activityLabel.takeIf { busy })
         if (!connected) {
             Column(Modifier.padding(horizontal = 22.dp).fillMaxWidth().padding(bottom = 8.dp)) {
                 Text("Not connected", color = Grey, fontSize = 13.sp)
@@ -1665,18 +1672,6 @@ private fun ChatScreen(
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono
                     )
-                    if (!isUserMessage && message.activityLines.isNotEmpty()) {
-                        Spacer(Modifier.height(3.dp))
-                        message.activityLines.forEach { line ->
-                            Text(
-                                line,
-                                color = Grey,
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp,
-                                fontFamily = Mono
-                            )
-                        }
-                    }
                     if (!isUserMessage && !message.modelLabel.isNullOrBlank()) {
                         Spacer(Modifier.height(3.dp))
                         Text(
@@ -1695,7 +1690,7 @@ private fun ChatScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("OMNITRIX IS WORKING", color = Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text(activityLabel, color = White, fontSize = 12.sp, lineHeight = 17.sp)
-                    activityLines.takeLast(5).forEach { line ->
+                    activityLines.takeLast(2).forEach { line ->
                         Text(line, color = Grey, fontSize = 11.sp, lineHeight = 15.sp)
                     }
                 }

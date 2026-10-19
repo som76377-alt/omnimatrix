@@ -77,6 +77,84 @@ jobs:
           print("PASS: Render reports the OpenRouter reasoning route as available.")
           PY
 
+      - name: Verify ordinary chat uses Gemini (one live greeting)
+        env:
+          HEALTH_URL: https://omnitrix-studio.onrender.com/api/mobile/health
+          CHAT_URL: https://omnitrix-studio.onrender.com/api/mobile/chat
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import uuid
+          from urllib.request import Request, urlopen
+
+          health_url = os.environ["HEALTH_URL"]
+          chat_url = os.environ["CHAT_URL"]
+          expected = os.environ["EXPECTED_REVISION"][:7]
+          health = {}
+          # Render deploys asynchronously after a push. Do not test stale code.
+          for attempt in range(36):
+              try:
+                  with urlopen(health_url, timeout=8) as response:
+                      health = json.loads(response.read().decode("utf-8"))
+                  revision = str(health.get("revision", ""))
+                  if revision.startswith(expected):
+                      break
+              except Exception as exc:
+                  if attempt == 35:
+                      raise SystemExit(f"FAIL: hosted health did not become ready ({type(exc).__name__}).")
+              time.sleep(5)
+          else:
+              raise SystemExit(
+                  f"FAIL: Render did not serve expected revision {expected}; "
+                  f"last revision was {health.get('revision', 'unknown')}."
+              )
+
+          session_id = "smoke_" + uuid.uuid4().hex
+          body = json.dumps({
+              "session_id": session_id,
+              "message": "Hello",
+          }).encode("utf-8")
+          request = Request(
+              chat_url,
+              data=body,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urlopen(request, timeout=75) as response:
+              result = json.loads(response.read().decode("utf-8"))
+
+          trace = result.get("execution_trace") or {}
+          activities = trace.get("activity") or []
+          answer = next(
+              (item for item in reversed(activities)
+               if item.get("stage") == "answer_generation"),
+              activities[-1] if activities else {},
+          )
+          print("Deployed revision:", health.get("revision"))
+          print("Greeting answer provider:", answer.get("provider", "unknown"))
+          print("Greeting answer model:", answer.get("model", answer.get("configured_model", "unknown")))
+          for fallback in trace.get("provider_fallbacks") or []:
+              print(
+                  "Fallback diagnostic:",
+                  fallback.get("from_provider", "unknown"),
+                  fallback.get("from_model", "unknown"),
+                  "->",
+                  fallback.get("to_provider", "unknown"),
+                  fallback.get("to_model", "unknown"),
+                  "reason=" + str(fallback.get("reason_code", "unknown")),
+                  "exception=" + str(fallback.get("exception_type", "unknown")),
+              )
+          if answer.get("provider") != "google":
+              raise SystemExit(
+                  "FAIL: ordinary greeting did not use Gemini. "
+                  "See the safe fallback diagnostic above."
+              )
+          print("PASS: ordinary greeting used the configured Gemini route.")
+          PY
+
       - name: Run live smoke benchmark
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

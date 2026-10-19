@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 import time
 from datetime import datetime, timezone
@@ -85,6 +86,31 @@ def _log_safely(level: int, event: str, **metadata: object) -> None:
     except Exception:
         # Diagnostics must never interrupt task execution.
         pass
+
+def _safe_provider_failure_reason(exc: Exception) -> str:
+    """Categorize provider errors without recording prompts or raw error bodies."""
+    message = str(exc).lower()
+    match = re.search(r"(?:failed\s+\(|http(?: error)?\s+)(\d{3})\)?", message)
+    if match is not None:
+        status = int(match.group(1))
+        if status in (401, 403):
+            return f"auth_http_{status}"
+        if status == 429:
+            return "http_429_rate_limited"
+        if status == 400:
+            return "http_400_bad_request"
+        if status >= 500:
+            return f"http_{status}_upstream"
+        return f"http_{status}"
+    if "timed out" in message or isinstance(exc, TimeoutError):
+        return "timeout"
+    if "connection failed" in message or "urlopen error" in message:
+        return "connection_error"
+    if type(exc).__name__ == "ModelAuthenticationError" or "authentication failed" in message:
+        return "authentication_error"
+    if type(exc).__name__ == "ModelResponseError" or "invalid json" in message:
+        return "invalid_provider_response"
+    return "provider_error"
 
 
 class Omnitrix:
@@ -864,8 +890,10 @@ class Omnitrix:
         stage: str,
         agent_role: str,
         configured_model,
+        fallback_from_model: str | None = None,
+        fallback_reason: str | None = None,
     ) -> None:
-        """Publish the selected route while its provider request is in flight."""
+        """Publish the selected route and any safe fallback reason while in flight."""
         self.active_execution = {
             "status": "request_in_flight",
             "stage": stage,
@@ -875,6 +903,8 @@ class Omnitrix:
             "configured_name": configured_model.name,
             "reasoning_effort_requested": configured_model.metadata.get("reasoning_effort"),
             "identity_source": "configured_id_pending_provider_response",
+            "fallback_from_model": fallback_from_model,
+            "fallback_reason": fallback_reason,
         }
 
     def _record_model_activity(
@@ -954,6 +984,10 @@ class Omnitrix:
             "domain": task.metadata.get("task_domain", "general"),
             "activity": [
                 dict(item) for item in task.metadata.get("model_activity", [])
+                if isinstance(item, dict)
+            ],
+            "provider_fallbacks": [
+                dict(item) for item in task.metadata.get("provider_fallbacks", [])
                 if isinstance(item, dict)
             ],
         }
@@ -1492,11 +1526,33 @@ class Omnitrix:
                 if fallback_model is None:
                     raise
 
+                reason_code = _safe_provider_failure_reason(exc)
+                failed_model_id = selected_model.model_id or selected_model.name
+                fallback_model_id = fallback_model.model_id or fallback_model.name
+                fallback_record = {
+                    "from_model": failed_model_id,
+                    "from_provider": selected_model.provider,
+                    "to_model": fallback_model_id,
+                    "to_provider": fallback_model.provider,
+                    "reason_code": reason_code,
+                    "exception_type": type(exc).__name__,
+                }
+                fallbacks = task.metadata.setdefault("provider_fallbacks", [])
+                if not isinstance(fallbacks, list):
+                    fallbacks = []
+                    task.metadata["provider_fallbacks"] = fallbacks
+                fallbacks.append(fallback_record)
+                # Render displays the event message, so include only safe categories
+                # and model identifiers, never arbitrary provider error bodies.
                 _log_safely(
                     logging.WARNING,
-                    "model_provider_fallback_started",
+                    (
+                        "model_provider_fallback_started "
+                        f"reason={reason_code} error_type={type(exc).__name__}"
+                    ),
                     failed_model=selected_model.name,
                     fallback_model=fallback_model.name,
+                    reason_code=reason_code,
                     error_type=type(exc).__name__,
                 )
                 fallback_attempted = True
@@ -1506,6 +1562,8 @@ class Omnitrix:
                     stage="primary_inference",
                     agent_role=task.metadata.get("primary_agent_role", "default"),
                     configured_model=selected_model,
+                    fallback_from_model=failed_model_id,
+                    fallback_reason=reason_code,
                 )
                 continue
 

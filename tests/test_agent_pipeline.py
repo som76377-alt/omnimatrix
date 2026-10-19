@@ -225,6 +225,12 @@ class SpecialistPipelineTests(unittest.TestCase):
             activity[-1]["configured_name"],
             "reasoning-nemotron-super-free",
         )
+        fallbacks = omnitrix.last_execution_trace["provider_fallbacks"]
+        self.assertEqual(len(fallbacks), 1)
+        self.assertEqual(fallbacks[0]["from_provider"], "google")
+        self.assertEqual(fallbacks[0]["to_provider"], "openrouter")
+        self.assertEqual(fallbacks[0]["reason_code"], "provider_error")
+        self.assertEqual(fallbacks[0]["exception_type"], "RuntimeError")
 
     def test_complex_science_uses_specialist_once_and_lightweight_independent_review(self):
         draft = "A changing coil current creates a changing magnetic field, inducing currents in the conductive pan; electrical resistance converts energy into heat."

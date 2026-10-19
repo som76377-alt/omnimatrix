@@ -622,6 +622,7 @@ class StudioRuntime:
         return {
             "ok": True,
             "service": "omnitrix-mobile-api",
+            "revision": self._git_output(["rev-parse", "--short=7", "HEAD"]) or "unknown",
             "chat_available": available,
             "reason": reason,
             "model": (
@@ -684,6 +685,7 @@ class StudioRuntime:
         allowed_fields = (
             "status", "stage", "role", "provider", "model", "configured_model",
             "configured_name", "reasoning_effort_requested", "identity_source",
+            "fallback_from_model", "fallback_reason",
         )
 
         def safe_activity(record: Any) -> dict[str, Any] | None:
