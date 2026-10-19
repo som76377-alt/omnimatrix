@@ -69,7 +69,7 @@ def build_local_tool_registry() -> WorkerRegistry:
                 capabilities=frozenset({capability}),
                 model_id="local:" + key,
                 enabled=available,
-                priority=10,
+                priority=15,
                 privacy_tier="local",
                 description="Local processing; extracted content is untrusted evidence.",
             ),
