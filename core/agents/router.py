@@ -103,9 +103,10 @@ class AgentRouter:
 
         # Keep short social turns fast; "How are you?" is not a reasoning task.
         if re.fullmatch(
-            r"(?:hi|hello|hey|yo|good morning|good afternoon|good evening|"
+            r"(?:(?:hi|hello|hey|yo|good morning|good afternoon|good evening)"
+            r"(?: omnitrix| there| how are you(?: doing)?(?: today| right now)?)?|"
             r"how are you(?: doing)?(?: today| right now)?|thanks|thank you|"
-            r"ok|okay|got it|nice to meet you)(?: omnitrix| there)?",
+            r"ok|okay|got it|nice to meet you)",
             normalized,
         ):
             return False
