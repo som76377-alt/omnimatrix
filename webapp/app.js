@@ -1083,6 +1083,13 @@
       });
       const attachmentStatus = result.attachment_status;
       if (attachmentStatus) {
+        const workerEntries = Array.isArray(attachmentStatus.workers) ? attachmentStatus.workers : [];
+        const workerLabel = workerEntries.length
+          ? workerEntries.slice(0, 3).map((item) =>
+              String(item.worker || "worker").slice(0, 48) + " / " + String(item.model || "tool").slice(0, 72)
+            ).join(", ")
+          : [attachmentStatus.worker, attachmentStatus.model].filter(Boolean).map((item) => String(item).slice(0, 100)).join(" / ");
+        const usedBy = workerLabel ? " · " + workerLabel : "";
         const consumed = new Set(Array.isArray(attachmentStatus.consumed_ids) ? attachmentStatus.consumed_ids : []);
         state.attachments = state.attachments.filter((item) => {
           if (consumed.has(item.attachmentId)) {
@@ -1093,13 +1100,13 @@
         });
         renderChatAttachments();
         if (attachmentStatus.status === "complete") {
-          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + " attached file(s).");
+          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + " attached file(s)." + usedBy);
         } else if (attachmentStatus.status === "partial") {
-          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + ". Remaining files stay attached.");
+          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + ". Remaining files stay attached." + usedBy);
         } else if (attachmentStatus.status === "unavailable") {
-          toast("Files remain attached but were not analysed. Configure GEMINI_API_KEY for multimodal input.");
+          toast("Files remain attached but no compatible analysis worker was available." + usedBy);
         } else if (attachmentStatus.status === "failed") {
-          toast("Attachment analysis failed. Files remain attached so you can retry.");
+          toast("Attachment analysis failed. Files remain attached so you can retry." + usedBy);
         }
       }
       const trace = describeExecutionTrace(result.execution_trace);
