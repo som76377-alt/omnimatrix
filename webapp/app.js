@@ -289,6 +289,11 @@
       byId("runtime-summary-mode").className = "state-pill amber-pill";
     }
     byId("run-tests").disabled = !connected || !state.runtime.tests_enabled || state.busyTests;
+    updateChatComposerState();
+    if (connected && state.attachmentSessionLoaded !== sessionId) {
+      state.attachmentSessionLoaded = sessionId;
+      restoreChatAttachments();
+    }
   }
 
   async function refreshBackend() {
@@ -323,13 +328,6 @@
       } else {
         byId("connect-help").textContent = "Python API unavailable at this origin. On GitHub Pages this is expected; open the forwarded Codespaces port for the full Studio. " + error.message;
       }
-    }
-  }
-
-    updateChatComposerState();
-    if (connected && state.attachmentSessionLoaded !== sessionId) {
-      state.attachmentSessionLoaded = sessionId;
-      restoreChatAttachments();
     }
   }
 
