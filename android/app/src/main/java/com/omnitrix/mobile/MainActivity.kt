@@ -225,7 +225,8 @@ internal object ModelActivityLabelFormatter {
         val effort = record.optString("reasoning_effort_requested")
             .takeIf { it.isNotBlank() && it != "null" }
             ?.let { "$it effort requested" }
-        return listOf("LAST ANSWER", role, provider, model, provenance, effort)
+        val specialist = roleName(role)
+        return listOf("ANSWER MODEL", specialist, provider, model, provenance, effort)
             .filter { !it.isNullOrBlank() && it != "null" }
             .joinToString(" · ")
     }
@@ -995,7 +996,8 @@ private fun OmnitrixApp() {
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
-    var modelActivityLabel by remember { mutableStateOf("IDLE · no inference running") }
+    var modelActivityLabel by remember { mutableStateOf("CONNECTING · checking hosted AI") }
+    var modelActivityLines by remember { mutableStateOf(emptyList<String>()) }
     val sessionId = remember { UUID.randomUUID().toString() }
     var repoPath by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<RepoEntry>>(emptyList()) }
@@ -1203,13 +1205,26 @@ private fun OmnitrixApp() {
         scope.launch {
             chatBusy = true
             runtimeMessage = ""
+            modelActivityLabel = "CONNECTING · checking hosted AI"
             try {
-                runtime.connectAutomatically()
+                val readiness = runtime.connectAutomatically()
                 runtimeConnected = true
                 runtimeMessage = ""
+                modelActivityLabel = if (readiness.optBoolean("reasoning_specialist_available")) {
+                    "READY · Reasoning specialist route available"
+                } else {
+                    val preferred = readiness.optString("preferred_reasoning_model")
+                        .takeIf { it.isNotBlank() && it != "null" }
+                    if (preferred != null) {
+                        "READY · specialist falls back to Gemini; OPENROUTER_API_KEY missing on Render"
+                    } else {
+                        "READY · primary model configured; no separate reasoning route"
+                    }
+                }
             } catch (e: Exception) {
                 runtimeConnected = false
                 runtimeMessage = e.message ?: "Hosted chat is not available."
+                modelActivityLabel = "CONNECTION FAILED · hosted AI not ready"
             } finally { chatBusy = false }
         }
     }
@@ -1266,7 +1281,7 @@ private fun OmnitrixApp() {
             Box(Modifier.fillMaxSize().padding(insets).background(Black)) {
                 when (tab) {
                     AppTab.CHAT -> ChatScreen(
-                        messages, chatInput, runtimeConnected, chatBusy, runtimeMessage, modelActivityLabel,
+                        messages, chatInput, runtimeConnected, chatBusy, runtimeMessage, modelActivityLabel, modelActivityLines,
                         { chatInput = it },
                         {
                             val prompt = chatInput.trim()
@@ -1274,41 +1289,57 @@ private fun OmnitrixApp() {
                                 messages = messages + ChatMessage("YOU", prompt)
                                 chatInput = ""
                                 chatBusy = true
+                                modelActivityLines = emptyList()
                                 scope.launch {
-                                    modelActivityLabel = "ROUTING · MODEL NOT SELECTED YET"
+                                    modelActivityLabel = "ROUTING · selecting the right specialist"
                                     val activityPoller = launch {
                                         while (true) {
                                             try {
                                                 val status = runtime.activity(sessionId)
-                                                modelActivityLabel = if (status.optBoolean("active")) {
-                                                    ModelActivityLabelFormatter.fromInFlight(status.optJSONObject("activity"))
-                                                } else {
-                                                    "ROUTING · waiting for this session's model selection"
+                                                if (status.optBoolean("active")) {
+                                                    val lines = ModelActivityLabelFormatter.progressLines(status)
+                                                    if (lines.isNotEmpty()) {
+                                                        modelActivityLines = lines
+                                                        modelActivityLabel = lines.last()
+                                                    } else {
+                                                        modelActivityLabel = "OMNITRIX · specialist plan selected"
+                                                    }
+                                                } else if (modelActivityLines.isEmpty()) {
+                                                    modelActivityLabel = "OMNITRIX · preparing the specialist route"
                                                 }
                                             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                                 throw cancelled
                                             } catch (_: Exception) {
-                                                // Do not invent a model while the activity endpoint is unavailable.
-                                                modelActivityLabel = "INFERENCE RUNNING · model identity not yet available"
+                                                // Preserve the last trustworthy state when telemetry is briefly unavailable.
+                                                if (modelActivityLines.isEmpty()) {
+                                                    modelActivityLabel = "OMNITRIX · preparing the specialist route"
+                                                }
                                             }
-                                            delay(700)
+                                            delay(1000)
                                         }
                                     }
                                     try {
                                         val response = runtime.sendChat(
                                             JSONObject().put("message", prompt).put("session_id", sessionId)
                                         )
-                                        val modelLabel = ModelActivityLabelFormatter.fromTrace(response.optJSONObject("execution_trace"))
+                                        val trace = response.optJSONObject("execution_trace")
+                                        val modelLabel = ModelActivityLabelFormatter.fromTrace(trace)
+                                        val completedLines = ModelActivityLabelFormatter.linesFromTrace(trace)
                                         messages = messages + ChatMessage(
                                             "OMNITRIX",
                                             response.optString("reply", "No response text returned."),
-                                            modelLabel
+                                            modelLabel,
+                                            completedLines
                                         )
+                                        modelActivityLines = completedLines
                                         modelActivityLabel = modelLabel
                                     } catch (e: Exception) {
-                                        runtimeConnected = false
-                                        runtimeMessage = e.message ?: "Chat request failed."
-                                        modelActivityLabel = "REQUEST FAILED · no completed model response"
+                                        val error = e.message ?: "This attempt failed."
+                                        messages = messages + ChatMessage(
+                                            "SYSTEM",
+                                            "This attempt failed: $error\nYou can retry without reconnecting."
+                                        )
+                                        modelActivityLabel = "ATTEMPT FAILED · retry available"
                                     } finally {
                                         activityPoller.cancel()
                                         chatBusy = false
@@ -1593,7 +1624,8 @@ private fun MarkdownMessage(content: String) {
 @Composable
 private fun ChatScreen(
     messages: List<ChatMessage>, input: String, connected: Boolean, busy: Boolean, connectionMessage: String,
-    activityLabel: String, onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
+    activityLabel: String, activityLines: List<String>,
+    onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         AppHeader("Chat", activityLabel = activityLabel)
@@ -1634,6 +1666,18 @@ private fun ChatScreen(
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono
                     )
+                    if (!isUserMessage && message.activityLines.isNotEmpty()) {
+                        Spacer(Modifier.height(3.dp))
+                        message.activityLines.forEach { line ->
+                            Text(
+                                line,
+                                color = Grey,
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp,
+                                fontFamily = Mono
+                            )
+                        }
+                    }
                     if (!isUserMessage && !message.modelLabel.isNullOrBlank()) {
                         Spacer(Modifier.height(3.dp))
                         Text(
@@ -1649,9 +1693,12 @@ private fun ChatScreen(
                 }
             }
             if (busy) item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("WAITING FOR OMNITRIX…", color = Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("The hosted server may need to wake after idle.", color = Grey, fontSize = 12.sp, lineHeight = 17.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("OMNITRIX IS WORKING", color = Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(activityLabel, color = White, fontSize = 12.sp, lineHeight = 17.sp)
+                    activityLines.takeLast(5).forEach { line ->
+                        Text(line, color = Grey, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
                 }
             }
         }
