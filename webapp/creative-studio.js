@@ -379,12 +379,19 @@
       size.textContent = formatBytes(asset.size);
       meta.append(kind, size);
       info.append(name, meta);
+      const remove = document.createElement("button");
+      remove.className = "asset-delete";
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = "Remove from local media library";
+      remove.setAttribute("aria-label", "Remove " + asset.name + " from library");
+      remove.addEventListener("click", (event) => { event.stopPropagation(); deleteAsset(asset.id); });
       const add = document.createElement("button");
       add.className = "asset-quick-add";
       add.type = "button";
       add.textContent = "+ ADD TO TIMELINE";
       add.addEventListener("click", (event) => { event.stopPropagation(); addAssetToTimeline(asset.id); });
-      card.append(thumb, info, add);
+      card.append(thumb, info, add, remove);
       card.addEventListener("click", () => selectAsset(asset.id));
       card.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAsset(asset.id); }
@@ -777,6 +784,7 @@
       return;
     }
     const token = ++state.mediaLoadToken;
+    const previousMedia = state.loadedMedia;
     try {
       const row = await dbGet("assets", assetId);
       if (!row || token !== state.mediaLoadToken) return;
@@ -806,6 +814,10 @@
           image.onerror = () => reject(new Error("Could not decode image."));
           image.src = url;
         });
+      }
+      if (previousMedia && previousMedia.assetId !== assetId && state.objectUrls.has(previousMedia.assetId)) {
+        URL.revokeObjectURL(state.objectUrls.get(previousMedia.assetId));
+        state.objectUrls.delete(previousMedia.assetId);
       }
     } catch (error) {
       console.warn("Could not load preview source", error);
@@ -973,8 +985,8 @@
       };
       recorder.start(500);
       state.isPlaying = true;
-      state.playStartedAt = performance.now();
       await ensureCurrentPreviewSource();
+      state.playStartedAt = performance.now();
       state.raf = requestAnimationFrame(playbackTick);
       updateTransport();
     } catch (error) {
