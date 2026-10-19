@@ -61,6 +61,19 @@ _VAGUE_ACTIONS = re.compile(
     r"make it good|handle this|sort this out)\b",
     re.IGNORECASE,
 )
+_REASONING_REQUEST_TERMS = re.compile(
+    r"\b(?:why\s+(?:does|do|is|are|did|would|can|could|might|should)\b|"
+    r"how\s+(?:does|do|is|are|did|would|can|could|might|should)\b|"
+    r"what\s+(?:happens|would happen|causes|explains)\b|"
+    r"explain\s+(?:why|how|the mechanism|the process|the cause|the relationship|the derivation|the reasoning)\b|"
+    r"derive|prove|demonstrate|deduce|infer|compare|contrast|evaluate|analy[sz]e|diagnose|debug|"
+    r"optimi[sz]e|step[- ]by[- ]step|work through|show that|root cause|trade[- ]?offs?|"
+    r"multi[- ]step|causal|reasoning|solve for|solve this|solve the|find the error|"
+    r"calculate|compute|integrate|differentiate|estimate|predict|determine|plan|design|architecture|"
+    r"implement|refactor|audit|verify|comprehensive|thorough)\b",
+    re.IGNORECASE,
+)
+
 _WELL_POSED_PROBLEM_TERMS = re.compile(
     r"\b(solve for|find the value|find the maximum|find the minimum|roots of|"
     r"evaluate the integral|evaluate the limit|maximum value|minimum value)\b",
