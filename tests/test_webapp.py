@@ -82,7 +82,7 @@ class WebConsoleTests(unittest.TestCase):
         for asset in parser.local_assets:
             with self.subTest(asset=asset):
                 self.assertTrue((WEBAPP / asset.removeprefix("./")).is_file(), asset)
-        referenced_ids = set(re.findall(r'\\$\\("([^"]+)"\\)', self.creative_js))
+        referenced_ids = set(re.findall(r'\$\("([^"]+)"\)', self.creative_js))
         missing = sorted(referenced_ids - parser.ids)
         self.assertEqual(missing, [])
         self.assertIn("indexedDB", self.creative_js)
