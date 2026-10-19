@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from core.multimodal.adapters import toolchain_status
-from core.multimodal.local_tools import detect_scenes, extract_document, run_ocr, transcribe_audio
+from core.multimodal.local_tools import detect_scenes, extract_document, probe_media, run_ocr, transcribe_audio
 from core.multimodal.router import (
     EvidenceItem, FailureKind, TaskResult, WorkerCapability, WorkerRegistry, WorkerSpec,
 )
@@ -63,6 +63,7 @@ def register_local_workers(registry: WorkerRegistry) -> WorkerRegistry:
         ("docling.local", "docling", WorkerCapability.PDF_EXTRACTION, extract_document),
         ("faster_whisper.local", "faster_whisper", WorkerCapability.AUDIO_TRANSCRIPTION, transcribe_audio),
         ("pyscenedetect.local", "pyscenedetect", WorkerCapability.VIDEO_SCENE_DETECTION, detect_scenes),
+        ("ffprobe.system", "ffprobe", WorkerCapability.MEDIA_METADATA, probe_media),
     ]
     for worker_id, key, capability, operation in definitions:
         available = bool(status.get(key, {}).get("available"))
@@ -74,6 +75,7 @@ def register_local_workers(registry: WorkerRegistry) -> WorkerRegistry:
                 enabled=available,
                 priority=15,
                 privacy_tier="local",
+                requires_executable="ffprobe" if worker_id == "ffprobe.system" else None,
                 description="Local processing; extracted content is untrusted evidence.",
             ),
             _worker(worker_id, "local:" + key, capability, operation),
