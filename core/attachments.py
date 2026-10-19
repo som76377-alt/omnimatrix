@@ -29,6 +29,12 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 DEFAULT_MULTIMODAL_MODEL = os.environ.get(
     "OMNITRIX_MULTIMODAL_MODEL", "gemini-3.8-flash"
 )
+FILE_PROCESSING_TIMEOUT_SECONDS = max(
+    15, int(os.environ.get("OMNITRIX_FILE_PROCESSING_TIMEOUT_SECONDS", "240"))
+)
+FILE_POLL_INTERVAL_SECONDS = max(
+    1, int(os.environ.get("OMNITRIX_FILE_POLL_INTERVAL_SECONDS", "2"))
+)
 GEMINI_FILES_START_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files"
 GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
@@ -154,9 +160,71 @@ def _upload_to_gemini(path: Path, name: str, mime_type: str, api_key: str) -> di
             "uri": uri,
             "name": remote_name if isinstance(remote_name, str) else "",
             "mime_type": mime_type,
+            "state": str(file_info.get("state", "")) if isinstance(file_info, dict) else "",
         }
     finally:
         connection.close()
+
+
+def _gemini_file_state(data: Any) -> str:
+    if not isinstance(data, dict):
+        return ""
+    raw = data.get("state", "")
+    if isinstance(raw, dict):
+        raw = raw.get("name", raw.get("state", ""))
+    return str(raw).split(".")[-1].upper()
+
+
+def _wait_until_gemini_file_ready(
+    remote: dict[str, str],
+    api_key: str,
+    display_name: str,
+) -> None:
+    """Wait for provider-side media processing before asking the model to inspect it."""
+    remote_name = remote.get("name", "")
+    mime_type = remote.get("mime_type", "")
+    state = str(remote.get("state", "")).upper()
+    must_confirm_video = mime_type.startswith("video/")
+    if state == "ACTIVE":
+        return
+    if state == "FAILED":
+        raise RuntimeError(f"Google could not process {display_name} for analysis.")
+    # The Files API can return before video transcoding/frame extraction is ready.
+    if not state and not must_confirm_video:
+        return
+    if not re.fullmatch(r"files/[A-Za-z0-9_-]+", remote_name):
+        if must_confirm_video:
+            raise RuntimeError(f"Google did not return a usable processing ID for video {display_name}.")
+        return
+
+    deadline = time.monotonic() + FILE_PROCESSING_TIMEOUT_SECONDS
+    resource_url = "https://generativelanguage.googleapis.com/v1beta/" + quote(remote_name, safe="/")
+    last_state = state
+    while time.monotonic() < deadline:
+        request = Request(resource_url, headers={"x-goog-api-key": api_key}, method="GET")
+        try:
+            with urlopen(request, timeout=20) as response:
+                data: Any = json.loads(response.read(1024 * 1024).decode("utf-8"))
+        except HTTPError as exc:
+            raise RuntimeError(
+                f"Could not check provider processing status for {display_name} (HTTP {exc.code})."
+            ) from None
+        except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"Could not confirm provider readiness for {display_name} ({type(exc).__name__})."
+            ) from None
+        last_state = _gemini_file_state(data)
+        if last_state == "ACTIVE":
+            return
+        if last_state == "FAILED":
+            raise RuntimeError(f"Google could not process {display_name} for analysis.")
+        if not last_state and not must_confirm_video:
+            return
+        time.sleep(FILE_POLL_INTERVAL_SECONDS)
+    raise RuntimeError(
+        f"Google media processing did not finish for {display_name} within "
+        f"{FILE_PROCESSING_TIMEOUT_SECONDS} seconds (last state: {last_state or 'unknown'})."
+    )
 
 
 def _delete_gemini_file(remote_name: str, api_key: str) -> None:
@@ -214,6 +282,11 @@ def _analyze_batch(
             remote["display_name"] = str(record["name"])
             remote["part_type"] = media_part_type(mime)
             uploaded.append(remote)
+
+        for item in uploaded:
+            _wait_until_gemini_file_ready(
+                item, api_key, item.get("display_name", "attachment")
+            )
 
         prompt = (
             "You are Omnitrix's media-ingestion analyst. Analyze the attached user files "
