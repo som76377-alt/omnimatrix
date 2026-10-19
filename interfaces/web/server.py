@@ -38,6 +38,7 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
+from core.multimodal.workflow import analyze_single_attachment
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
@@ -1044,7 +1045,13 @@ class StudioRuntime:
         try:
             effective_message = message.strip()
             if staged:
-                attachment_result = analyze_attachments(staged, message.strip())
+                # Use capability-aware routing for a single file. Keep the existing
+                # bounded batch analyzer for multi-file turns to preserve batching.
+                attachment_result = (
+                    analyze_single_attachment(staged[0], message.strip())
+                    if len(staged) == 1
+                    else analyze_attachments(staged, message.strip())
+                )
                 context = str(attachment_result.get("context", "")).strip()
                 if context:
                     if attachment_result.get("status") != "complete":
