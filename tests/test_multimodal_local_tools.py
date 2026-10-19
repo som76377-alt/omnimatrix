@@ -55,8 +55,20 @@ class LocalToolSafetyTests(unittest.TestCase):
         self.assertIn("docling.local", by_id)
         self.assertIn("faster_whisper.local", by_id)
         self.assertIn("pyscenedetect.local", by_id)
+        self.assertIn("ffprobe.system", by_id)
         from core.multimodal.adapters import toolchain_status
         self.assertEqual(by_id["paddleocr.local"]["enabled"], toolchain_status()["paddleocr"]["available"])
+        with patch.dict("os.environ", {
+            "OMNITRIX_ENABLE_PADDLEOCR": "",
+            "OMNITRIX_ENABLE_DOCLING": "",
+            "OMNITRIX_ENABLE_FASTER_WHISPER": "",
+            "OMNITRIX_WHISPER_MODEL_PATH": "",
+            "OMNITRIX_ALLOW_MODEL_DOWNLOAD": "",
+        }):
+            status = toolchain_status()
+        self.assertFalse(status["paddleocr"]["available"])
+        self.assertFalse(status["docling"]["available"])
+        self.assertFalse(status["faster_whisper"]["available"])
 
 
 if __name__ == "__main__":
