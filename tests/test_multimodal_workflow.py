@@ -64,7 +64,7 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertIn("OCR text only", result["context"])
         self.assertIn("not full multimodal understanding", result["context"].lower())
         self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["ocr"])
-        self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
+        self.assertEqual(execute.call_args_list[2].kwargs["privacy_tier"], "local")
 
     def test_audio_uses_local_transcription_as_limited_fallback(self):
         record = dict(self.record, name="clip.wav", mime_type="audio/wav")
@@ -90,12 +90,12 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
                                 "ffprobe.system", "ffprobe")
         metadata_success = TaskResult(True, "ffprobe.system", "ffprobe", evidence=(evidence,))
         with patch("core.multimodal.workflow.execute_provider_task",
-                   side_effect=[(failure, None), (metadata_success, None)]) as execute:
+                   side_effect=[(failure, None), (failure, None), (metadata_success, None)]) as execute:
             result = analyze_single_attachment(record, "Summarize this video")
         self.assertEqual(result["status"], "partial")
         self.assertIn("Technical stream metadata only", result["context"])
         self.assertEqual(
-            [x.value for x in execute.call_args_list[1].args[0].required_capabilities],
+            [x.value for x in execute.call_args_list[2].args[0].required_capabilities],
             ["media_metadata"],
         )
         self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
@@ -142,7 +142,7 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
                 failure_kind=FailureKind.DEPENDENCY_MISSING,
                 safe_message="No compatible worker."), None)
             analyze_single_attachment(record, "Describe it")
-        task = execute.call_args.args[0]
+        task = execute.call_args_list[0].args[0]
         self.assertEqual([item.value for item in task.required_capabilities], ["image_understanding"])
 
 
