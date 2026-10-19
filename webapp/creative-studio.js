@@ -1,0 +1,1155 @@
+(function () {
+  "use strict";
+
+  const DB_NAME = "omnitrix-creative-studio";
+  const DB_VERSION = 1;
+  const PROJECT_ID = "active";
+  const MAX_FILES_PER_IMPORT = 500;
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    db: null, assets: [], project: null, selectedAssetId: null, selectedClipId: null,
+    loadedMedia: null, mediaLoadToken: 0, objectUrls: new Map(), thumbUrls: new Map(),
+    isPlaying: false, exporting: false, recorder: null, chunks: [], raf: 0,
+    playhead: 0, playStartedAt: 0, saveTimer: 0, audioContext: null,
+    audioSource: null, audioOutput: null, audioMonitor: null, lastFrameUi: 0,
+    currentClipId: null, error: null
+  };
+  const canvas = $("preview-canvas");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const sourceVideo = $("source-video");
+
+  function toast(message) {
+    const target = $("toast");
+    target.textContent = message;
+    target.classList.add("visible");
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => target.classList.remove("visible"), 2800);
+  }
+
+  function formatTime(seconds) {
+    const value = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hours = Math.floor(value / 3600);
+    const minutes = Math.floor((value % 3600) / 60);
+    const secs = value % 60;
+    return hours ? String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0") + ":" + String(secs).padStart(2, "0")
+      : String(minutes).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  }
+
+  function slug(value) {
+    return String(value || "omnitrix-cut").normalize("NFKD").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "omnitrix-cut";
+  }
+
+  function openDatabase() {
+    return new Promise((resolve, reject) => {
+      if (!("indexedDB" in window)) {
+        reject(new Error("This browser does not support local IndexedDB storage."));
+        return;
+      }
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains("assets")) db.createObjectStore("assets", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("projects")) db.createObjectStore("projects", { keyPath: "id" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Could not open local project storage."));
+    });
+  }
+
+  function requestResult(request) {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Local storage operation failed."));
+    });
+  }
+
+  async function dbGet(store, key) {
+    const tx = state.db.transaction(store, "readonly");
+    return requestResult(tx.objectStore(store).get(key));
+  }
+
+  async function dbPut(store, value) {
+    const tx = state.db.transaction(store, "readwrite");
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("Could not save to local storage."));
+      tx.onabort = () => reject(tx.error || new Error("Local save was cancelled."));
+    });
+    tx.objectStore(store).put(value);
+    await done;
+  }
+
+  async function dbDelete(store, key) {
+    const tx = state.db.transaction(store, "readwrite");
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("Could not delete from local storage."));
+      tx.onabort = () => reject(tx.error || new Error("Local deletion was cancelled."));
+    });
+    tx.objectStore(store).delete(key);
+    await done;
+  }
+
+  async function readAssetRows() {
+    const all = await dbGetAll("assets");
+    state.assets = all.map((row) => ({
+      id: row.id, name: row.name, type: row.type, size: row.size,
+      lastModified: row.lastModified, duration: row.duration || 0,
+      width: row.width || 0, height: row.height || 0, thumb: row.thumb || null,
+      importedAt: row.importedAt
+    }));
+    updateStorageLabel();
+    renderAssets();
+    updateStats();
+  }
+
+  function dbGetAll(storeName) {
+    return new Promise((resolve, reject) => {
+      const tx = state.db.transaction(storeName, "readonly");
+      const request = tx.objectStore(storeName).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error || new Error("Could not list local assets."));
+    });
+  }
+
+  function thumbUrl(asset) {
+    if (!asset || !asset.thumb) return "";
+    if (!state.thumbUrls.has(asset.id)) state.thumbUrls.set(asset.id, URL.createObjectURL(asset.thumb));
+    return state.thumbUrls.get(asset.id);
+  }
+
+  function assetById(id) {
+    return state.assets.find((item) => item.id === id) || null;
+  }
+
+  function selectedClip() {
+    return state.project.timeline.find((clip) => clip.id === state.selectedClipId) || null;
+  }
+
+  function totalDuration() {
+    return state.project.timeline.reduce((sum, clip) => sum + Math.max(0, Number(clip.duration) || 0), 0);
+  }
+
+  function clipAtTime(time) {
+    let cursor = 0;
+    for (let index = 0; index < state.project.timeline.length; index += 1) {
+      const clip = state.project.timeline[index];
+      const end = cursor + Math.max(0.1, Number(clip.duration) || 0.1);
+      if (time < end || index === state.project.timeline.length - 1) {
+        return { clip: clip, index: index, localTime: Math.max(0, time - cursor), start: cursor, end: end };
+      }
+      cursor = end;
+    }
+    return null;
+  }
+
+  function createClip(asset) {
+    return {
+      id: crypto.randomUUID(), assetId: asset.id, name: asset.name,
+      sourceIn: 0, duration: asset.type.startsWith("video/") ? Math.max(0.5, Math.min(asset.duration || 5, 600)) : 4,
+      fit: "cover", motion: "none", title: "", subtitle: "",
+      titlePosition: "bottom", titleColor: "#d6fa62", titleSize: 44, titleFont: "sans"
+    };
+  }
+
+  function defaultProject() {
+    return { id: PROJECT_ID, name: "Untitled film", brief: "", timeline: [], updatedAt: new Date().toISOString() };
+  }
+
+  async function loadProject() {
+    state.project = (await dbGet("projects", PROJECT_ID)) || defaultProject();
+    if (!Array.isArray(state.project.timeline)) state.project.timeline = [];
+    $("project-name").value = state.project.name || "Untitled film";
+    $("creative-brief").value = state.project.brief || "";
+    await readAssetRows();
+    state.selectedClipId = state.project.selectedClipId || (state.project.timeline[0] && state.project.timeline[0].id) || null;
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    drawFrame();
+    $("autosave-state").textContent = state.project.updatedAt ? "Saved " + formatTime((Date.now() - new Date(state.project.updatedAt).getTime()) / 1000) + " ago" : "Not saved yet";
+  }
+
+  async function saveProject(showToast) {
+    if (!state.project) return;
+    state.project.name = $("project-name").value.trim().slice(0, 100) || "Untitled film";
+    state.project.brief = $("creative-brief").value.slice(0, 4000);
+    state.project.selectedClipId = state.selectedClipId;
+    state.project.updatedAt = new Date().toISOString();
+    try {
+      await dbPut("projects", state.project);
+      $("autosave-state").textContent = "Saved just now";
+      if (showToast) toast("Project saved on this device.");
+    } catch (error) {
+      $("autosave-state").textContent = "Save failed";
+      showMessage("Could not save project: " + error.message, true);
+    }
+  }
+
+  function scheduleSave() {
+    $("autosave-state").textContent = "Saving…";
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(() => saveProject(false), 350);
+  }
+
+  async function updateStorageLabel() {
+    const label = $("storage-state");
+    if (!navigator.storage || !navigator.storage.estimate) {
+      label.textContent = "LOCAL WORKSPACE";
+      return;
+    }
+    try {
+      const usage = await navigator.storage.estimate();
+      const used = usage.usage || 0;
+      const quota = usage.quota || 0;
+      label.textContent = "LOCAL STORAGE · " + formatBytes(used) + (quota ? " / " + formatBytes(quota) : "");
+    } catch {
+      label.textContent = "LOCAL WORKSPACE";
+    }
+  }
+
+  function makeThumbnailFromCanvas(source, width, height) {
+    const maxW = 360;
+    const maxH = 220;
+    const scale = Math.min(maxW / Math.max(1, width), maxH / Math.max(1, height), 1);
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
+    const thumbCanvas = document.createElement("canvas");
+    thumbCanvas.width = w;
+    thumbCanvas.height = h;
+    const tctx = thumbCanvas.getContext("2d", { alpha: false });
+    tctx.fillStyle = "#10130f";
+    tctx.fillRect(0, 0, w, h);
+    const cover = Math.max(w / Math.max(1, width), h / Math.max(1, height));
+    const dw = width * cover;
+    const dh = height * cover;
+    tctx.drawImage(source, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    return new Promise((resolve) => thumbCanvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.76));
+  }
+
+  async function inspectFile(file) {
+    if (file.type.startsWith("image/")) {
+      const bitmap = await createImageBitmap(file);
+      const width = bitmap.width;
+      const height = bitmap.height;
+      const thumb = await makeThumbnailFromCanvas(bitmap, width, height);
+      if (bitmap.close) bitmap.close();
+      return { type: file.type, width: width, height: height, duration: 0, thumb: thumb };
+    }
+    if (file.type.startsWith("video/")) {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      try {
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Timed out reading video metadata.")), 15000);
+          video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+          video.onerror = () => { clearTimeout(timeout); reject(new Error("Browser could not read this video format.")); };
+          video.src = url;
+        });
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        let thumb = null;
+        if (video.videoWidth && video.videoHeight) {
+          await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, 1800);
+            video.onseeked = () => { clearTimeout(timeout); resolve(); };
+            try { video.currentTime = Math.min(0.12, Math.max(0, duration * 0.03)); } catch { clearTimeout(timeout); resolve(); }
+          });
+          if (video.readyState >= 2 && video.videoWidth) {
+            thumb = await makeThumbnailFromCanvas(video, video.videoWidth, video.videoHeight);
+          }
+        }
+        return { type: file.type, width: video.videoWidth || 0, height: video.videoHeight || 0, duration: duration, thumb: thumb };
+      } finally {
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(url);
+      }
+    }
+    throw new Error("Unsupported file type. Import images and video clips for this build.");
+  }
+
+  async function importFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    if (files.length > MAX_FILES_PER_IMPORT) {
+      showMessage("Please import up to " + MAX_FILES_PER_IMPORT + " files per batch. Your files are not modified.", true);
+      return;
+    }
+    const accepted = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+    if (accepted.length !== files.length) toast("Some files were skipped. Import image and video files in this build.");
+    if (!accepted.length) return;
+    $("upload-progress").hidden = false;
+    $("media-input").disabled = true;
+    let imported = 0;
+    let failed = 0;
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    for (let i = 0; i < accepted.length; i += 1) {
+      const file = accepted[i];
+      $("upload-progress-bar").style.width = Math.round((i / accepted.length) * 100) + "%";
+      $("upload-progress-text").textContent = "Preparing " + (i + 1) + " of " + accepted.length + " · " + file.name;
+      try {
+        const metadata = await inspectFile(file);
+        const row = {
+          id: crypto.randomUUID(), name: file.name, type: metadata.type, size: file.size,
+          lastModified: file.lastModified, duration: metadata.duration || 0,
+          width: metadata.width || 0, height: metadata.height || 0, thumb: metadata.thumb || null,
+          blob: file, importedAt: new Date().toISOString()
+        };
+        await dbPut("assets", row);
+        imported += 1;
+      } catch (error) {
+        failed += 1;
+        console.warn("Creative Studio import failed for " + file.name, error);
+      }
+    }
+    $("upload-progress-bar").style.width = "100%";
+    $("upload-progress-text").textContent = imported + " imported" + (failed ? " · " + failed + " failed" : "");
+    await readAssetRows();
+    renderAssets();
+    $("media-input").disabled = false;
+    window.setTimeout(() => { $("upload-progress").hidden = true; }, 1300);
+    toast(imported ? "Imported " + imported + " media asset" + (imported === 1 ? "" : "s") + "." : "No media assets were imported.");
+    if (failed) showMessage(failed + " file(s) could not be imported. Try a browser-supported image or video format.", true);
+  }
+
+  function renderAssets() {
+    const target = $("asset-grid");
+    const search = $("asset-search").value.trim().toLowerCase();
+    target.replaceChildren();
+    const items = state.assets.filter((asset) => asset.name.toLowerCase().includes(search));
+    $("library-count").textContent = String(state.assets.length);
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      const strong = document.createElement("strong");
+      strong.textContent = search ? "No matching files." : "Your visual library starts here.";
+      const note = document.createElement("span");
+      note.textContent = search ? "Try a different filename." : "Upload multiple images or clips at once. Originals stay in this browser profile.";
+      empty.append(strong, note);
+      target.append(empty);
+      return;
+    }
+    for (const asset of items) {
+      const card = document.createElement("article");
+      card.className = "asset-card" + (state.selectedAssetId === asset.id ? " selected" : "");
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", "Select " + asset.name);
+      const thumb = document.createElement("div");
+      thumb.className = "asset-thumb";
+      if (asset.thumb) {
+        const img = document.createElement("img");
+        img.loading = "lazy";
+        img.alt = "";
+        img.src = thumbUrl(asset);
+        thumb.append(img);
+      } else {
+        const icon = document.createElement("span");
+        icon.textContent = "VIDEO";
+        icon.style.font = "10px var(--mono)";
+        icon.style.color = "var(--green)";
+        thumb.append(icon);
+      }
+      if (asset.type.startsWith("video/")) {
+        const badge = document.createElement("span");
+        badge.className = "video-badge";
+        badge.textContent = "▶ " + formatTime(asset.duration);
+        thumb.append(badge);
+      }
+      const info = document.createElement("div");
+      info.className = "asset-info";
+      const name = document.createElement("span");
+      name.className = "asset-name";
+      name.textContent = asset.name;
+      const meta = document.createElement("div");
+      meta.className = "asset-meta";
+      const kind = document.createElement("span");
+      kind.textContent = asset.type.startsWith("video/") ? "VIDEO" : "IMAGE";
+      const size = document.createElement("span");
+      size.textContent = formatBytes(asset.size);
+      meta.append(kind, size);
+      info.append(name, meta);
+      const add = document.createElement("button");
+      add.className = "asset-quick-add";
+      add.type = "button";
+      add.textContent = "+ ADD TO TIMELINE";
+      add.addEventListener("click", (event) => { event.stopPropagation(); addAssetToTimeline(asset.id); });
+      card.append(thumb, info, add);
+      card.addEventListener("click", () => selectAsset(asset.id));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAsset(asset.id); }
+      });
+      target.append(card);
+    }
+  }
+
+  function selectAsset(id) {
+    state.selectedAssetId = id;
+    const clip = state.project.timeline.find((item) => item.assetId === id);
+    if (clip && !state.selectedClipId) state.selectedClipId = clip.id;
+    renderAssets();
+    if (!state.project.timeline.length) {
+      renderInspector();
+      loadMediaForPreview(id, null);
+      drawFrame();
+    }
+  }
+
+  function addAssetToTimeline(id) {
+    const asset = assetById(id);
+    if (!asset) return;
+    const clip = createClip(asset);
+    state.project.timeline.push(clip);
+    state.selectedAssetId = id;
+    state.selectedClipId = clip.id;
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    scheduleSave();
+    drawFrame();
+    toast("Added shot to timeline.");
+  }
+
+  function addAllAssets() {
+    const used = new Set(state.project.timeline.map((clip) => clip.assetId));
+    const missing = state.assets.filter((asset) => !used.has(asset.id));
+    if (!missing.length) { toast("Every library asset is already on the timeline."); return; }
+    missing.forEach((asset) => state.project.timeline.push(createClip(asset)));
+    if (!state.selectedClipId && state.project.timeline.length) state.selectedClipId = state.project.timeline[0].id;
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    scheduleSave();
+    drawFrame();
+    toast("Added " + missing.length + " shot(s) to the timeline.");
+  }
+
+  function renderTimeline() {
+    const target = $("timeline-list");
+    target.replaceChildren();
+    const clips = state.project.timeline;
+    $("timeline-count").textContent = clips.length + " SHOT" + (clips.length === 1 ? "" : "S");
+    if (!clips.length) {
+      const empty = document.createElement("div");
+      empty.className = "timeline-empty";
+      empty.textContent = "Add assets from the library to build your first sequence.";
+      target.append(empty);
+      return;
+    }
+    clips.forEach((clip, index) => {
+      const asset = assetById(clip.assetId);
+      const card = document.createElement("div");
+      card.className = "timeline-clip" + (clip.id === state.selectedClipId ? " selected" : "");
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", "Edit shot " + (index + 1) + " " + clip.name);
+      const thumb = document.createElement("div");
+      thumb.className = "timeline-clip-thumb";
+      if (asset && asset.thumb) {
+        const img = document.createElement("img");
+        img.loading = "lazy";
+        img.src = thumbUrl(asset);
+        img.alt = "";
+        thumb.append(img);
+      } else {
+        thumb.textContent = "SHOT " + String(index + 1).padStart(2, "0");
+      }
+      const details = document.createElement("div");
+      details.className = "timeline-clip-details";
+      const name = document.createElement("div");
+      name.className = "timeline-clip-name";
+      name.textContent = (index + 1).toString().padStart(2, "0") + " · " + (clip.title || clip.name);
+      const sub = document.createElement("div");
+      sub.className = "timeline-clip-sub";
+      sub.textContent = formatTime(clip.duration) + " · " + (clip.motion === "none" ? "STATIC" : clip.motion.toUpperCase());
+      details.append(name, sub);
+      const controls = document.createElement("div");
+      controls.className = "timeline-controls";
+      const up = document.createElement("button");
+      up.type = "button"; up.textContent = "↑"; up.title = "Move shot earlier"; up.setAttribute("aria-label", "Move shot earlier");
+      up.disabled = index === 0;
+      up.addEventListener("click", (event) => { event.stopPropagation(); moveClip(index, -1); });
+      const down = document.createElement("button");
+      down.type = "button"; down.textContent = "↓"; down.title = "Move shot later"; down.setAttribute("aria-label", "Move shot later");
+      down.disabled = index === clips.length - 1;
+      down.addEventListener("click", (event) => { event.stopPropagation(); moveClip(index, 1); });
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.textContent = "×"; remove.title = "Remove from timeline"; remove.setAttribute("aria-label", "Remove shot");
+      remove.addEventListener("click", (event) => { event.stopPropagation(); removeClip(clip.id); });
+      controls.append(up, down, remove);
+      card.append(thumb, details, controls);
+      card.addEventListener("click", () => selectClip(clip.id));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectClip(clip.id); }
+      });
+      target.append(card);
+    });
+    target.scrollTop = target.scrollHeight;
+  }
+
+  function selectClip(id) {
+    pausePreview();
+    state.selectedClipId = id;
+    const clip = selectedClip();
+    if (clip) {
+      state.selectedAssetId = clip.assetId;
+      const data = clipAtTime(clipStart(id));
+      state.playhead = data ? data.start : 0;
+      loadMediaForPreview(clip.assetId, clip);
+    }
+    renderAssets();
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    drawFrame();
+    scheduleSave();
+  }
+
+  function clipStart(id) {
+    let cursor = 0;
+    for (const clip of state.project.timeline) {
+      if (clip.id === id) return cursor;
+      cursor += Number(clip.duration) || 0;
+    }
+    return 0;
+  }
+
+  function moveClip(index, direction) {
+    const next = index + direction;
+    if (next < 0 || next >= state.project.timeline.length) return;
+    const clips = state.project.timeline;
+    const item = clips.splice(index, 1)[0];
+    clips.splice(next, 0, item);
+    renderTimeline();
+    updateStats();
+    scheduleSave();
+    drawFrame();
+  }
+
+  function removeClip(id) {
+    state.project.timeline = state.project.timeline.filter((clip) => clip.id !== id);
+    if (state.selectedClipId === id) state.selectedClipId = state.project.timeline[0] ? state.project.timeline[0].id : null;
+    state.playhead = Math.min(state.playhead, Math.max(0, totalDuration() - 0.01));
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    scheduleSave();
+    drawFrame();
+  }
+
+  function renderInspector() {
+    const clip = selectedClip();
+    $("inspector-empty").hidden = Boolean(clip);
+    $("inspector-form").hidden = !clip;
+    $("selected-shot-label").textContent = clip ? String(state.project.timeline.indexOf(clip) + 1).padStart(2, "0") : "—";
+    if (!clip) return;
+    $("shot-name").value = clip.name || "";
+    $("shot-start").value = Number(clip.sourceIn || 0);
+    $("shot-duration").value = Number(clip.duration || 4);
+    $("shot-fit").value = clip.fit || "cover";
+    $("shot-motion").value = clip.motion || "none";
+    $("shot-title").value = clip.title || "";
+    $("shot-subtitle").value = clip.subtitle || "";
+    $("shot-position").value = clip.titlePosition || "bottom";
+    $("shot-colour").value = clip.titleColor || "#d6fa62";
+    $("shot-font-size").value = clip.titleSize || 44;
+    $("shot-font-value").textContent = (clip.titleSize || 44) + " px";
+    $("shot-font").value = clip.titleFont || "sans";
+  }
+
+  function bindInspector() {
+    const fieldMap = {
+      "shot-name": ["name", (v) => v.slice(0, 120)],
+      "shot-fit": ["fit", (v) => v],
+      "shot-motion": ["motion", (v) => v],
+      "shot-title": ["title", (v) => v.slice(0, 240)],
+      "shot-subtitle": ["subtitle", (v) => v.slice(0, 300)],
+      "shot-position": ["titlePosition", (v) => v],
+      "shot-colour": ["titleColor", (v) => /^#[0-9a-f]{6}$/i.test(v) ? v : "#d6fa62"],
+      "shot-font": ["titleFont", (v) => v]
+    };
+    Object.keys(fieldMap).forEach((id) => {
+      $(id).addEventListener("input", () => {
+        const clip = selectedClip();
+        if (!clip) return;
+        const setting = fieldMap[id];
+        clip[setting[0]] = setting[1]($(id).value);
+        if (id === "shot-name") clip.name = clip.name || "Shot";
+        renderTimeline();
+        scheduleSave();
+        drawFrame();
+      });
+    });
+    $("shot-font-size").addEventListener("input", () => {
+      const clip = selectedClip();
+      if (!clip) return;
+      clip.titleSize = Number($("shot-font-size").value);
+      $("shot-font-value").textContent = clip.titleSize + " px";
+      scheduleSave(); drawFrame();
+    });
+    $("shot-start").addEventListener("change", () => {
+      const clip = selectedClip();
+      if (!clip) return;
+      const asset = assetById(clip.assetId);
+      const maxIn = asset && asset.duration ? Math.max(0, asset.duration - 0.1) : 0;
+      clip.sourceIn = Math.min(maxIn, Math.max(0, Number($("shot-start").value) || 0));
+      $("shot-start").value = clip.sourceIn;
+      const remain = asset && asset.duration ? Math.max(0.1, asset.duration - clip.sourceIn) : 600;
+      clip.duration = Math.min(Math.max(0.5, Number(clip.duration) || 4), remain);
+      $("shot-duration").value = clip.duration;
+      scheduleSave(); drawFrame();
+    });
+    $("shot-duration").addEventListener("change", () => {
+      const clip = selectedClip();
+      if (!clip) return;
+      const asset = assetById(clip.assetId);
+      const maxDuration = asset && asset.duration ? Math.max(0.5, asset.duration - Number(clip.sourceIn || 0)) : 600;
+      clip.duration = Math.min(maxDuration, Math.max(0.5, Number($("shot-duration").value) || 4));
+      $("shot-duration").value = clip.duration;
+      renderTimeline(); updateStats(); scheduleSave(); drawFrame();
+    });
+    $("reset-shot").addEventListener("click", () => {
+      const clip = selectedClip();
+      const asset = clip && assetById(clip.assetId);
+      if (!clip || !asset) return;
+      const fresh = createClip(asset);
+      fresh.id = clip.id;
+      Object.assign(clip, fresh);
+      renderInspector(); renderTimeline(); scheduleSave(); drawFrame();
+      toast("Shot design reset.");
+    });
+  }
+
+  function drawTextBlock(text, centerX, baseY, maxWidth, font, color, align, lineHeight) {
+    if (!text) return;
+    ctx.save();
+    ctx.font = font;
+    ctx.textAlign = align || "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color || "#ffffff";
+    ctx.shadowColor = "rgba(0,0,0,.8)";
+    ctx.shadowBlur = Math.max(4, canvas.width * 0.008);
+    ctx.shadowOffsetY = 2;
+    const words = String(text).split(/\s+/);
+    const lines = [];
+    let line = "";
+    words.forEach((word) => {
+      const candidate = line ? line + " " + word : word;
+      if (line && ctx.measureText(candidate).width > maxWidth) { lines.push(line); line = word; }
+      else line = candidate;
+    });
+    if (line) lines.push(line);
+    const lh = lineHeight || 1.15;
+    lines.forEach((row, i) => ctx.fillText(row, centerX, baseY + (i - (lines.length - 1) / 2) * parseFloat(ctx.font) * lh, maxWidth));
+    ctx.restore();
+  }
+
+  function drawFrame() {
+    if (!ctx || !state.project) return;
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.save();
+    ctx.fillStyle = "#090b09";
+    ctx.fillRect(0, 0, width, height);
+    let entry = state.project.timeline.length ? clipAtTime(state.playhead) : null;
+    let clip = entry && entry.clip;
+    let localTime = entry ? entry.localTime : 0;
+    if (!clip && !state.project.timeline.length && state.selectedAssetId) {
+      const asset = assetById(state.selectedAssetId);
+      if (asset) {
+        clip = { id: "library-preview", assetId: asset.id, duration: asset.duration || 4, sourceIn: 0, fit: "cover", motion: "none", title: "", subtitle: "", titlePosition: "bottom", titleColor: "#d6fa62", titleSize: 44, titleFont: "sans" };
+      }
+    }
+    if (!clip) {
+      ctx.fillStyle = "#181d14";
+      ctx.fillRect(0, 0, width, height);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#d6fa62"; ctx.font = "600 " + Math.round(width * 0.023) + "px ui-monospace, monospace";
+      ctx.fillText("OMNITRIX / CREATIVE STUDIO", width / 2, height / 2 - 10);
+      ctx.fillStyle = "#a7ad9c"; ctx.font = Math.round(width * 0.012) + "px ui-monospace, monospace";
+      ctx.fillText("IMPORT REFERENCES  ·  BUILD TIMELINE  ·  RENDER", width / 2, height / 2 + 24);
+      ctx.restore();
+      updateTransport();
+      return;
+    }
+    if (state.loadedMedia && state.loadedMedia.assetId === clip.assetId) {
+      const media = state.loadedMedia;
+      if (media.type.startsWith("video/")) {
+        const asset = assetById(clip.assetId);
+        const expected = Math.max(0, Number(clip.sourceIn || 0) + localTime);
+        if (Number.isFinite(sourceVideo.duration) && expected < sourceVideo.duration - 0.08 && (!state.isPlaying || Math.abs(sourceVideo.currentTime - expected) > 0.45)) {
+          try { sourceVideo.currentTime = expected; } catch {}
+        }
+        if (state.isPlaying && sourceVideo.paused) sourceVideo.play().catch(() => {});
+        if (!state.isPlaying && !sourceVideo.paused) sourceVideo.pause();
+        if (sourceVideo.readyState >= 2 && sourceVideo.videoWidth) {
+          drawMedia(sourceVideo, clip, localTime);
+        }
+        if (asset && localTime >= clip.duration) state.playhead = Math.min(totalDuration(), state.playhead);
+      } else if (media.image && media.image.complete && media.image.naturalWidth) {
+        drawMedia(media.image, clip, localTime);
+      }
+    } else {
+      ctx.fillStyle = "#151a12";
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#d6fa62";
+      ctx.font = "500 " + Math.round(width * 0.016) + "px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("LOADING SOURCE…", width / 2, height / 2);
+      if (state.currentClipId !== (clip.id || clip.assetId)) {
+        state.currentClipId = clip.id || clip.assetId;
+        loadMediaForPreview(clip.assetId, clip);
+      }
+    }
+    const progress = Math.min(1, localTime / Math.max(0.1, Number(clip.duration) || 4));
+    if (clip.title || clip.subtitle) drawGraphicOverlay(clip);
+    ctx.restore();
+    updateTransport();
+  }
+
+  function drawMedia(media, clip, localTime) {
+    const W = canvas.width;
+    const H = canvas.height;
+    const sw = media.videoWidth || media.naturalWidth || media.width;
+    const sh = media.videoHeight || media.naturalHeight || media.height;
+    if (!sw || !sh) return;
+    if (clip.fit === "contain") {
+      ctx.fillStyle = "#080a08"; ctx.fillRect(0, 0, W, H);
+    }
+    const scale = clip.fit === "contain" ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+    let motion = 1;
+    let px = 0;
+    let py = 0;
+    const progress = Math.min(1, Math.max(0, localTime / Math.max(0.1, Number(clip.duration) || 4)));
+    if (clip.motion === "slow-zoom") motion = 1 + 0.12 * progress;
+    else if (clip.motion === "zoom-out") motion = 1.12 - 0.12 * progress;
+    else if (clip.motion === "pan-left") px = (0.10 - 0.20 * progress) * W;
+    else if (clip.motion === "pan-right") px = (-0.10 + 0.20 * progress) * W;
+    const dw = sw * scale * motion;
+    const dh = sh * scale * motion;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    ctx.drawImage(media, (W - dw) / 2 + px, (H - dh) / 2 + py, dw, dh);
+    ctx.restore();
+  }
+
+  function drawGraphicOverlay(clip) {
+    const W = canvas.width;
+    const H = canvas.height;
+    const titleSize = Math.round((Number(clip.titleSize) || 44) * W / 960);
+    const fontFace = clip.titleFont === "serif" ? 'Georgia, "Times New Roman", serif'
+      : clip.titleFont === "mono" ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
+      : 'Inter, "DM Sans", system-ui, sans-serif';
+    const titleFont = (clip.titleFont === "serif" ? "600 " : "750 ") + titleSize + "px " + fontFace;
+    let y = clip.titlePosition === "top" ? H * 0.19 : clip.titlePosition === "center" ? H * 0.49 : H * 0.77;
+    if (clip.title) drawTextBlock(clip.title, W / 2, y, W * 0.84, titleFont, clip.titleColor || "#d6fa62", "center", 1.1);
+    if (clip.subtitle) {
+      const subtitleY = y + (clip.title ? titleSize * 1.65 : 0);
+      drawTextBlock(clip.subtitle, W / 2, subtitleY, W * 0.78, "500 " + Math.round(titleSize * 0.43) + "px " + fontFace, "#f1f3e8", "center", 1.2);
+    }
+    ctx.save();
+    const lineY = y + (clip.title ? titleSize * 0.86 : 0);
+    if (clip.title) {
+      ctx.globalAlpha = 0.86;
+      ctx.fillStyle = clip.titleColor || "#d6fa62";
+      ctx.fillRect(W * 0.46, lineY + titleSize * 0.57, W * 0.08, Math.max(1, W * 0.0015));
+    }
+    ctx.restore();
+  }
+
+  async function loadMediaForPreview(assetId, clip) {
+    if (!assetId) return;
+    if (state.loadedMedia && state.loadedMedia.assetId === assetId) {
+      if (clip && sourceVideo.readyState >= 1 && state.loadedMedia.type.startsWith("video/")) {
+        try { sourceVideo.currentTime = Math.max(0, Number(clip.sourceIn) || 0); } catch {}
+        if (state.isPlaying) sourceVideo.play().catch(() => {});
+      }
+      return;
+    }
+    const token = ++state.mediaLoadToken;
+    try {
+      const row = await dbGet("assets", assetId);
+      if (!row || token !== state.mediaLoadToken) return;
+      const url = URL.createObjectURL(row.blob);
+      state.objectUrls.set(assetId, url);
+      if (row.type.startsWith("video/")) {
+        sourceVideo.pause();
+        sourceVideo.src = url;
+        sourceVideo.muted = false;
+        sourceVideo.load();
+        state.loadedMedia = { assetId: assetId, type: row.type, url: url, image: null };
+        await new Promise((resolve) => {
+          if (sourceVideo.readyState >= 1) return resolve();
+          const timeout = setTimeout(resolve, 8000);
+          sourceVideo.addEventListener("loadedmetadata", () => { clearTimeout(timeout); resolve(); }, { once: true });
+          sourceVideo.addEventListener("error", () => { clearTimeout(timeout); resolve(); }, { once: true });
+        });
+        if (clip && Number.isFinite(sourceVideo.duration)) sourceVideo.currentTime = Math.min(Math.max(0, Number(clip.sourceIn) || 0), Math.max(0, sourceVideo.duration - 0.05));
+        if (state.isPlaying) sourceVideo.play().catch(() => {});
+      } else {
+        sourceVideo.pause();
+        const image = new Image();
+        image.decoding = "async";
+        state.loadedMedia = { assetId: assetId, type: row.type, url: url, image: image };
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = () => reject(new Error("Could not decode image."));
+          image.src = url;
+        });
+      }
+    } catch (error) {
+      console.warn("Could not load preview source", error);
+    } finally {
+      drawFrame();
+    }
+  }
+
+  function currentDuration() {
+    return totalDuration();
+  }
+
+  function updateTransport() {
+    const total = currentDuration();
+    $("playhead").max = String(Math.max(0.1, total));
+    $("playhead").value = String(Math.min(state.playhead, total || 0));
+    $("playhead-current").textContent = formatTime(state.playhead);
+    $("playhead-total").textContent = formatTime(total);
+    $("timeline-duration").textContent = formatTime(total);
+    $("export-length").textContent = formatTime(total);
+    $("export-target").textContent = "WEBM · " + canvas.width + " × " + canvas.height;
+    $("toggle-play").textContent = state.isPlaying ? "Ⅱ" : "▶";
+    $("toggle-play").setAttribute("aria-label", state.isPlaying ? "Pause preview" : "Play preview");
+    $("preview-state").textContent = state.exporting ? "RENDERING" : state.isPlaying ? "PLAYING" : "READY";
+  }
+
+  function updateStats() {
+    $("asset-count").textContent = state.assets.length + " media asset" + (state.assets.length === 1 ? "" : "s");
+    $("library-count").textContent = String(state.assets.length);
+    $("timeline-count").textContent = state.project.timeline.length + " SHOT" + (state.project.timeline.length === 1 ? "" : "S");
+    updateTransport();
+  }
+
+  async function ensureAudioGraph() {
+    if (state.audioContext) {
+      if (state.audioContext.state === "suspended") await state.audioContext.resume();
+      return;
+    }
+    if (!window.AudioContext || !sourceVideo.captureStream && !window.MediaStream) return;
+    state.audioContext = new AudioContext();
+    state.audioSource = state.audioContext.createMediaElementSource(sourceVideo);
+    state.audioOutput = state.audioContext.createMediaStreamDestination();
+    state.audioMonitor = state.audioContext.createGain();
+    state.audioMonitor.gain.value = 0;
+    state.audioSource.connect(state.audioOutput);
+    state.audioSource.connect(state.audioMonitor);
+    state.audioMonitor.connect(state.audioContext.destination);
+    await state.audioContext.resume();
+  }
+
+  function startPreview() {
+    if (state.exporting || !state.project.timeline.length) {
+      if (!state.project.timeline.length) toast("Add at least one shot to preview the sequence.");
+      return;
+    }
+    if (state.playhead >= totalDuration()) state.playhead = 0;
+    state.isPlaying = true;
+    state.playStartedAt = performance.now() - state.playhead * 1000;
+    ensureAudioGraph().catch(() => {});
+    const entry = clipAtTime(state.playhead);
+    if (entry) loadMediaForPreview(entry.clip.assetId, entry.clip);
+    sourceVideo.play().catch(() => {});
+    $("preview-state").textContent = "PLAYING";
+    state.raf = requestAnimationFrame(playbackTick);
+  }
+
+  function pausePreview() {
+    state.isPlaying = false;
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = 0;
+    sourceVideo.pause();
+    updateTransport();
+  }
+
+  function playbackTick(now) {
+    if (!state.isPlaying) return;
+    state.playhead = Math.max(0, (now - state.playStartedAt) / 1000);
+    if (state.playhead >= totalDuration()) {
+      state.playhead = totalDuration();
+      state.isPlaying = false;
+      sourceVideo.pause();
+      state.raf = 0;
+      drawFrame();
+      if (state.exporting && state.recorder && state.recorder.state !== "inactive") state.recorder.stop();
+      else updateTransport();
+      return;
+    }
+    drawFrame();
+    if (now - state.lastFrameUi > 100) {
+      updateTransport();
+      state.lastFrameUi = now;
+    }
+    state.raf = requestAnimationFrame(playbackTick);
+  }
+
+  function togglePreview() {
+    if (state.isPlaying) pausePreview();
+    else startPreview();
+  }
+
+  function showMessage(message, isError) {
+    const target = $("render-message");
+    target.textContent = message;
+    target.className = "render-message" + (isError ? " error" : " success");
+  }
+
+  async function renderVideo() {
+    if (state.exporting) return;
+    if (!state.project.timeline.length) { showMessage("Add at least one shot before rendering.", true); return; }
+    if (!("MediaRecorder" in window) || !canvas.captureStream) {
+      showMessage("This browser does not support canvas video recording. Try a current version of Chrome or Edge.", true);
+      return;
+    }
+    pausePreview();
+    const dimensions = $("preview-scale").value.split("x").map(Number);
+    const original = { width: canvas.width, height: canvas.height };
+    canvas.width = dimensions[0] || 1280;
+    canvas.height = dimensions[1] || 720;
+    state.playhead = 0;
+    state.exporting = true;
+    state.chunks = [];
+    $("render-video").disabled = true;
+    $("render-video-bottom").disabled = true;
+    showMessage("Rendering locally in this browser. Keep this tab open until the download starts.", false);
+    try {
+      await ensureAudioGraph();
+      const videoStream = canvas.captureStream(30);
+      const outputStream = new MediaStream(videoStream.getVideoTracks());
+      if (state.audioOutput) state.audioOutput.stream.getAudioTracks().forEach((track) => outputStream.addTrack(track));
+      const candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+      const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+      const recorder = new MediaRecorder(outputStream, {
+        ...(mimeType ? { mimeType: mimeType } : {}),
+        videoBitsPerSecond: dimensions[0] >= 1280 ? 5500000 : 2800000
+      });
+      state.recorder = recorder;
+      recorder.ondataavailable = (event) => { if (event.data && event.data.size) state.chunks.push(event.data); };
+      recorder.onerror = (event) => showMessage("Recorder error: " + ((event.error && event.error.message) || "unknown browser recording error"), true);
+      recorder.onstop = () => {
+        const blob = new Blob(state.chunks, { type: recorder.mimeType || "video/webm" });
+        outputStream.getTracks().forEach((track) => track.stop());
+        canvas.width = original.width;
+        canvas.height = original.height;
+        state.exporting = false;
+        state.recorder = null;
+        state.isPlaying = false;
+        sourceVideo.pause();
+        $("render-video").disabled = false;
+        $("render-video-bottom").disabled = false;
+        drawFrame();
+        if (blob.size) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = slug(state.project.name) + "-draft.webm";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          showMessage("Render complete · " + formatBytes(blob.size) + " · downloaded as WebM. Keep original source media for future edits.", false);
+        } else {
+          showMessage("The browser returned an empty video file. Try a shorter sequence or lower resolution.", true);
+        }
+        updateTransport();
+      };
+      recorder.start(500);
+      state.isPlaying = true;
+      state.playStartedAt = performance.now();
+      await ensureCurrentPreviewSource();
+      state.raf = requestAnimationFrame(playbackTick);
+      updateTransport();
+    } catch (error) {
+      state.exporting = false;
+      state.isPlaying = false;
+      canvas.width = original.width;
+      canvas.height = original.height;
+      $("render-video").disabled = false;
+      $("render-video-bottom").disabled = false;
+      drawFrame();
+      showMessage("Could not start render: " + error.message, true);
+    }
+  }
+
+  async function ensureCurrentPreviewSource() {
+    const entry = clipAtTime(0);
+    if (entry) {
+      state.currentClipId = entry.clip.id;
+      await loadMediaForPreview(entry.clip.assetId, entry.clip);
+      try {
+        if (entry.clip.sourceIn > 0 && sourceVideo.readyState >= 1) sourceVideo.currentTime = entry.clip.sourceIn;
+        if (sourceVideo.readyState >= 2) await sourceVideo.play();
+      } catch {}
+    }
+    drawFrame();
+  }
+
+  function downloadManifest() {
+    const manifest = {
+      schemaVersion: 1,
+      app: "Omnitrix Creative Studio",
+      exportedAt: new Date().toISOString(),
+      project: {
+        name: state.project.name,
+        brief: state.project.brief,
+        timeline: state.project.timeline.map((clip) => ({
+          id: clip.id, assetId: clip.assetId, name: clip.name,
+          sourceIn: clip.sourceIn, duration: clip.duration, fit: clip.fit, motion: clip.motion,
+          title: clip.title, subtitle: clip.subtitle, titlePosition: clip.titlePosition,
+          titleColor: clip.titleColor, titleSize: clip.titleSize, titleFont: clip.titleFont
+        }))
+      },
+      media: state.assets.map((asset) => ({
+        id: asset.id, name: asset.name, type: asset.type, size: asset.size,
+        duration: asset.duration, width: asset.width, height: asset.height
+      })),
+      notes: [
+        "This is an editable decision manifest, not a media archive.",
+        "Original media remains in the browser's local IndexedDB store. Back up originals separately.",
+        "Audio tracks, transitions between shots, masks and model-generated changes are not yet part of this prototype."
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = slug(state.project.name) + "-edit-manifest.json";
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showMessage("Edit manifest exported. It contains shot decisions and asset references, not the original media files.", false);
+  }
+
+  function renderProjectJson() {
+    downloadManifest();
+  }
+
+  async function deleteAsset(id) {
+    const asset = assetById(id);
+    if (!asset || !window.confirm("Delete " + asset.name + " from this browser's media library and remove its shots from the timeline?")) return;
+    state.project.timeline = state.project.timeline.filter((clip) => clip.assetId !== id);
+    await dbDelete("assets", id);
+    if (state.selectedAssetId === id) state.selectedAssetId = null;
+    if (!state.project.timeline.some((clip) => clip.id === state.selectedClipId)) {
+      state.selectedClipId = state.project.timeline[0] ? state.project.timeline[0].id : null;
+    }
+    if (state.objectUrls.has(id)) URL.revokeObjectURL(state.objectUrls.get(id));
+    if (state.thumbUrls.has(id)) URL.revokeObjectURL(state.thumbUrls.get(id));
+    state.objectUrls.delete(id); state.thumbUrls.delete(id);
+    if (state.loadedMedia && state.loadedMedia.assetId === id) state.loadedMedia = null;
+    await readAssetRows();
+    renderTimeline(); renderInspector(); updateStats(); scheduleSave(); drawFrame();
+  }
+
+  function downloadProjectJson() {
+    const used = new Set(state.project.timeline.map((clip) => clip.assetId));
+    const missing = Array.from(used).filter((id) => !assetById(id));
+    if (missing.length) showMessage("Some timeline references are missing from the local library. Re-import original media before continuing.", true);
+    renderProjectJson();
+  }
+
+  function bindUi() {
+    $("media-input").addEventListener("change", async (event) => {
+      await importFiles(event.target.files);
+      event.target.value = "";
+    });
+    const dropzone = $("dropzone");
+    ["dragenter", "dragover"].forEach((name) => dropzone.addEventListener(name, (event) => {
+      event.preventDefault(); dropzone.classList.add("drag-over");
+    }));
+    ["dragleave", "drop"].forEach((name) => dropzone.addEventListener(name, (event) => {
+      event.preventDefault(); dropzone.classList.remove("drag-over");
+    }));
+    dropzone.addEventListener("drop", (event) => importFiles(event.dataTransfer && event.dataTransfer.files));
+    $("asset-search").addEventListener("input", renderAssets);
+    $("add-all-assets").addEventListener("click", addAllAssets);
+    $("save-project").addEventListener("click", () => saveProject(true));
+    $("save-brief").addEventListener("click", () => { state.project.brief = $("creative-brief").value; scheduleSave(); toast("Director's brief saved with project."); });
+    $("project-name").addEventListener("input", scheduleSave);
+    $("creative-brief").addEventListener("input", scheduleSave);
+    $("toggle-play").addEventListener("click", togglePreview);
+    $("render-video").addEventListener("click", renderVideo);
+    $("render-video-bottom").addEventListener("click", renderVideo);
+    $("export-project").addEventListener("click", downloadProjectJson);
+    $("download-manifest").addEventListener("click", downloadManifest);
+    $("clear-timeline").addEventListener("click", () => {
+      if (!state.project.timeline.length) return;
+      if (!window.confirm("Remove every shot from the timeline? Your media library stays intact.")) return;
+      pausePreview();
+      state.project.timeline = []; state.selectedClipId = null; state.playhead = 0;
+      renderTimeline(); renderInspector(); updateStats(); scheduleSave(); drawFrame();
+    });
+    $("playhead").addEventListener("input", () => {
+      pausePreview();
+      state.playhead = Math.min(totalDuration(), Math.max(0, Number($("playhead").value) || 0));
+      const entry = clipAtTime(state.playhead);
+      if (entry) {
+        state.currentClipId = entry.clip.id;
+        loadMediaForPreview(entry.clip.assetId, entry.clip);
+      }
+      drawFrame();
+    });
+    $("previous-frame").addEventListener("click", () => {
+      pausePreview();
+      const entry = clipAtTime(state.playhead);
+      const index = entry ? entry.index - 1 : state.project.timeline.length - 1;
+      if (index >= 0 && state.project.timeline[index]) selectClip(state.project.timeline[index].id);
+      else { state.playhead = 0; drawFrame(); }
+    });
+    $("next-frame").addEventListener("click", () => {
+      pausePreview();
+      const entry = clipAtTime(state.playhead);
+      const index = entry ? Math.min(state.project.timeline.length - 1, entry.index + 1) : 0;
+      if (state.project.timeline[index]) selectClip(state.project.timeline[index].id);
+    });
+    $("preview-scale").addEventListener("change", () => {
+      const dims = $("preview-scale").value.split("x").map(Number);
+      canvas.width = dims[0] || 1280; canvas.height = dims[1] || 720;
+      updateStats(); drawFrame();
+    });
+    bindInspector();
+  }
+
+  async function init() {
+    try {
+      state.db = await openDatabase();
+      bindUi();
+      await loadProject();
+      const storedCount = state.assets.length;
+      $("agent-state").textContent = "Local editing is active. Visual analysis and AI-directed changes are not connected; no model has been called and no media has been sent to a provider.";
+      updateStorageLabel();
+      drawFrame();
+      if (storedCount) toast("Restored " + storedCount + " local media asset(s).");
+    } catch (error) {
+      $("storage-state").textContent = "LOCAL STORAGE ERROR";
+      showMessage("Studio could not initialise browser storage: " + error.message + ". Try the current Chrome browser over HTTPS.", true);
+      $("media-input").disabled = true;
+    }
+  }
+
+  window.addEventListener("pagehide", () => {
+    pausePreview();
+    state.objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    state.thumbUrls.forEach((url) => URL.revokeObjectURL(url));
+    if (state.audioContext && state.audioContext.state !== "closed") state.audioContext.close().catch(() => {});
+  });
+
+  init();
+})();
