@@ -21,6 +21,7 @@ class WorkerCapability(str, Enum):
     TEXT_REASONING = "text_reasoning"
     CRITIQUE = "critique"
     MEDIA_CONVERSION = "media_conversion"
+    MEDIA_METADATA = "media_metadata"
 
 
 class FailureKind(str, Enum):
