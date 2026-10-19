@@ -77,3 +77,16 @@ Gemini path. These worker definitions are not yet wired into every chat route. P
 execution adapters, durable task persistence, truthful runtime model labels, Android
 integration, and live provider/device tests remain separate milestones. Never label a model
 as active unless the actual adapter reports it handled the task.
+
+
+## Explicit local-tool activation
+
+The core service does not install optional workers automatically. To avoid surprise model downloads or memory pressure, the following integrations remain disabled until deliberately configured:
+
+- PaddleOCR requires the optional package plus `OMNITRIX_ENABLE_PADDLEOCR=1`.
+- Docling requires the optional package plus `OMNITRIX_ENABLE_DOCLING=1`.
+- faster-whisper requires its optional package plus `OMNITRIX_ENABLE_FASTER_WHISPER=1` and either `OMNITRIX_WHISPER_MODEL_PATH` pointing to an existing local model directory, or an explicit `OMNITRIX_ALLOW_MODEL_DOWNLOAD=1`.
+- PySceneDetect is dependency-gated and does not require model weights.
+- Qwen workers are inventory-only for now. Installing Transformers by itself does not enable them.
+
+For images, audio and video, local fallback results are explicitly labelled as limited extraction (OCR text, transcript, or scene boundaries). They are not reported as equivalent to full visual/audio/video understanding. The local-only fallback passes `privacy_tier="local"`; it does not send raw media to a text-only provider. Configure one optional tool at a time and validate on sample files before enabling it in a deployment.
