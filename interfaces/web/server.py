@@ -570,9 +570,20 @@ class StudioRuntime:
 
     def mobile_health(self) -> dict[str, Any]:
         """Return only non-sensitive readiness for the native app's hosted-chat link."""
+        enabled_models = self.omnitrix.registry.list_enabled()
         google_model_enabled = any(
             model.provider == "google" and model.enabled
-            for model in self.omnitrix.registry.list_enabled()
+            for model in enabled_models
+        )
+        openrouter_models = [
+            model for model in enabled_models
+            if model.provider == "openrouter" and "reasoning" in model.capabilities
+        ]
+        reasoning_model = openrouter_models[0] if openrouter_models else None
+        reasoning_adapter_available = bool(
+            reasoning_model is not None
+            and self.omnitrix.adapter_registry.has(reasoning_model.name)
+            and self.omnitrix.adapter_registry.get(reasoning_model.name).is_available()
         )
         key_present = bool(os.getenv("GEMINI_API_KEY"))
         available = self.public_chat_enabled and google_model_enabled and key_present
@@ -590,6 +601,16 @@ class StudioRuntime:
             "chat_available": available,
             "reason": reason,
             "model": "gemini-3.8-flash" if available else None,
+            "reasoning_specialist_available": reasoning_adapter_available,
+            "preferred_reasoning_model": (
+                reasoning_model.model_id or reasoning_model.name
+                if reasoning_model is not None else None
+            ),
+            "reasoning_route_status": (
+                "ready" if reasoning_adapter_available
+                else "provider_key_missing" if reasoning_model is not None
+                else "model_not_configured"
+            ),
         }
 
     def _public_session_id(self, session_id: str, client_ip: str) -> str:
@@ -615,19 +636,50 @@ class StudioRuntime:
             return {"ok": True, "active": False, "status": "idle"}
 
         current = getattr(self.omnitrix, "active_execution", None)
-        if not isinstance(current, dict):
-            return {"ok": True, "active": True, "activity": None}
+        task_metadata = getattr(self.omnitrix, "active_task_metadata", None)
+        if not isinstance(task_metadata, dict) and not isinstance(current, dict):
+            return {"ok": True, "active": False, "status": "idle"}
 
         allowed_fields = (
             "status", "stage", "role", "provider", "model", "configured_model",
             "configured_name", "reasoning_effort_requested", "identity_source",
         )
-        activity = {
-            key: current.get(key)
-            for key in allowed_fields
-            if current.get(key) is None or isinstance(current.get(key), (str, int, float, bool))
+
+        def safe_activity(record: Any) -> dict[str, Any] | None:
+            if not isinstance(record, dict):
+                return None
+            return {
+                key: record.get(key)
+                for key in allowed_fields + ("latency_seconds", "review_status")
+                if record.get(key) is None
+                or isinstance(record.get(key), (str, int, float, bool))
+            }
+
+        raw_history = task_metadata.get("model_activity", []) if isinstance(task_metadata, dict) else []
+        history = [
+            item for record in raw_history
+            if (item := safe_activity(record)) is not None
+        ] if isinstance(raw_history, list) else []
+        plan = {}
+        if isinstance(task_metadata, dict):
+            for key in ("primary_agent_role", "task_complexity", "task_domain"):
+                value = task_metadata.get(key)
+                if isinstance(value, str):
+                    plan[key] = value
+            agent_roles = task_metadata.get("agent_roles")
+            if isinstance(agent_roles, list):
+                plan["agent_roles"] = [
+                    role for role in agent_roles if isinstance(role, str)
+                ][:12]
+
+        return {
+            "ok": True,
+            "active": True,
+            "status": "working",
+            "activity": safe_activity(current),
+            "activity_history": history[-12:],
+            "plan": plan,
         }
-        return {"ok": True, "active": True, "activity": activity}
 
     def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
         """Rate-limited public chat only; this path cannot access workspace or test APIs."""

@@ -60,6 +60,16 @@ class AgentRouterTests(unittest.TestCase):
         self.assertTrue(plan.needs_intent_preflight)
         self.assertTrue(plan.needs_critique)
 
+    def test_well_formed_jee_exercise_skips_redundant_intent_call_but_keeps_critic(self):
+        plan = self.router.route(
+            "JEE Advanced physics: A particle moves with velocity v(t) = 3t^2 - 4t. "
+            "Find the maximum displacement between t = 0 and t = 4, and justify the result.",
+            frozenset({"reasoning"}),
+        )
+        self.assertEqual(plan.primary.role, "subject_solver")
+        self.assertFalse(plan.needs_intent_preflight)
+        self.assertTrue(plan.needs_critique)
+
     def test_routes_repository_debugging_to_coding(self):
         plan = self.router.route(
             "Debug this repository and implement a robust fix with tests.",

@@ -168,6 +168,9 @@ class StudioServerTests(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["service"], "omnitrix-mobile-api")
         self.assertFalse(body["chat_available"])
+        self.assertIn("reasoning_specialist_available", body)
+        self.assertIn("preferred_reasoning_model", body)
+        self.assertIn("reasoning_route_status", body)
         self.assertNotIn(self.token, json.dumps(body))
         self.assertNotIn(str(self.workspace), json.dumps(body))
 
@@ -275,13 +278,30 @@ class StudioServerTests(unittest.TestCase):
         self.runtime.active_chat_session_id = self.runtime._public_session_id(session_id, client_ip)
         self.runtime.omnitrix.active_execution = {
             "status": "request_in_flight",
-            "stage": "answer_generation",
-            "role": "reasoning",
+            "stage": "primary_inference",
+            "role": "subject_solver",
             "provider": "openrouter",
             "configured_model": "nvidia/nemotron-3-super-120b-a12b:free",
             "reasoning_effort_requested": "high",
             "identity_source": "configured_id_pending_provider_response",
             "private_reasoning": "must never be exposed",
+        }
+        self.runtime.omnitrix.active_task_metadata = {
+            "objective": "PRIVATE EXAM QUESTION MUST NOT LEAK",
+            "primary_agent_role": "subject_solver",
+            "task_complexity": "complex",
+            "task_domain": "subject",
+            "agent_roles": ["intent_engineer", "subject_solver", "critic"],
+            "model_activity": [{
+                "status": "response_received",
+                "stage": "intent_engineer",
+                "role": "intent_engineer",
+                "provider": "google",
+                "model": "gemini-3.8-flash",
+                "configured_model": "gemini-3.8-flash",
+                "identity_source": "provider_response",
+                "latency_seconds": 0.7,
+            }],
         }
 
         status, body = self.request(
@@ -290,15 +310,18 @@ class StudioServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200, body)
         self.assertTrue(body["active"])
-        self.assertEqual(body["activity"]["role"], "reasoning")
+        self.assertEqual(body["activity"]["role"], "subject_solver")
         self.assertEqual(body["activity"]["provider"], "openrouter")
         self.assertEqual(body["activity"]["reasoning_effort_requested"], "high")
         self.assertEqual(
             body["activity"]["identity_source"],
             "configured_id_pending_provider_response",
         )
+        self.assertEqual(body["plan"]["primary_agent_role"], "subject_solver")
+        self.assertEqual(body["activity_history"][0]["role"], "intent_engineer")
         self.assertNotIn("private_reasoning", json.dumps(body))
         self.assertNotIn("must never be exposed", json.dumps(body))
+        self.assertNotIn("PRIVATE EXAM QUESTION MUST NOT LEAK", json.dumps(body))
 
         status, other = self.request(
             "/api/mobile/activity?session_id=someone-elses-session",

@@ -150,6 +150,8 @@ class Omnitrix:
         # Populated from provider responses for the most recent successful chat turn.
         self.last_execution_trace: dict[str, object] | None = None
         self.active_execution: dict[str, object] | None = None
+        # Read-only metadata pointer for live progress endpoints. Never expose task prompts.
+        self.active_task_metadata: dict[str, object] | None = None
         self.tool_executor = ToolExecutor(self.tool_registry, journal=self.journal)
 
     @classmethod
@@ -923,6 +925,8 @@ class Omnitrix:
             objective=user_message,
             requirements=self.analyzer.analyze(user_message),
         )
+        # The API reads only allowlisted progress fields from this dict while the turn runs.
+        self.active_task_metadata = task.metadata
         run_id, next_sequence = self._journal_start_task(task, execution_kind="chat")
         task_id = task.metadata.get("task_id")
         attempt_id = task.metadata.get("attempt_id")
@@ -933,6 +937,7 @@ class Omnitrix:
             )
         except Exception as exc:
             self.active_execution = None
+            self.active_task_metadata = None
             self._journal_checkpoint(
                 task,
                 "task_failure_observed",
@@ -953,6 +958,7 @@ class Omnitrix:
             ],
         }
         self.active_execution = None
+        self.active_task_metadata = None
         self._journal_checkpoint(
             task,
             "task_result_ready",
