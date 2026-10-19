@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "product": "Omnitrix Creative Studio",
+  "execution_contract": {
+    "only_integrated_agents_may_be_labelled_active": true,
+    "remote_media_egress_requires_project_consent": true,
+    "tool_outputs_are_untrusted_until_verified": true,
+    "generated_edit_plans_must_be_reversible": true,
+    "model_private_reasoning_is_never_requested_for_display": true,
+    "zero_cost_default": true
+  },
+  "agents": [
+    {
+      "id": "media-librarian",
+      "label": "Media librarian",
+      "status": "active-local",
+      "implementation": "webapp/creative-studio.js",
+      "model_required": false,
+      "responsibilities": ["import asset metadata", "create thumbnails", "index filenames", "manage local asset IDs", "persist local project references"],
+      "cannot": ["upload media to a provider", "infer semantic contents beyond file metadata", "claim visual understanding"]
+    },
+    {
+      "id": "timeline-executor",
+      "label": "Timeline executor",
+      "status": "active-local",
+      "implementation": "webapp/creative-studio.js",
+      "model_required": false,
+      "responsibilities": ["apply deterministic shot settings", "compose text overlays", "apply supported pan and zoom presets", "record a local WebM draft"],
+      "cannot": ["edit original source files destructively", "claim support for unimplemented effects", "silently use paid compute"]
+    },
+    {
+      "id": "visual-analyst",
+      "label": "Visual analyst",
+      "status": "configured-not-connected",
+      "model_required": true,
+      "input_policy": "user-consented selected assets or generated low-resolution frames only",
+      "responsibilities": ["describe image composition and shot content", "compare references", "retrieve relevant assets for a creative brief"],
+      "release_gate": ["verified vision-model endpoint", "data-egress consent", "asset-ID grounding tests", "failure and quota tests"]
+    },
+    {
+      "id": "creative-director",
+      "label": "Creative director",
+      "status": "configured-not-connected",
+      "model_required": true,
+      "responsibilities": ["convert the brief and reference roles into a storyboard", "plan pacing and shot selection", "emit a structured editable timeline plan"],
+      "release_gate": ["schema-validated plans", "real asset IDs", "approval before applying large changes", "benchmark suite across distinct visual tasks"]
+    },
+    {
+      "id": "motion-designer",
+      "label": "Motion designer",
+      "status": "planned",
+      "model_required": true,
+      "responsibilities": ["propose typography and graphic hierarchy", "map transitions and keyframes to supported engine operations"],
+      "release_gate": ["editable layer data", "design-system constraints", "rendered-frame inspection", "safe rollback"]
+    },
+    {
+      "id": "visual-critic",
+      "label": "Visual critic",
+      "status": "configured-not-connected",
+      "model_required": true,
+      "responsibilities": ["inspect rendered frames", "compare result with brief and references", "identify actionable visual defects"],
+      "release_gate": ["real frame input/output", "critique calibration tests", "no self-reported success without render evidence"]
+    }
+  ]
+}
