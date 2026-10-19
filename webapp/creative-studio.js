@@ -596,6 +596,7 @@
       x: 50, y: type === "text" ? 76 : 50,
       width: type === "text" ? 70 : 22,
       height: type === "text" ? 12 : 16,
+      fontSize: 44,
       color: "#d6fa62", opacity: 1, font: "sans", animation: "fade-in"
     };
   }
@@ -654,10 +655,12 @@
     $("graphic-layer-colour").value = /^#[0-9a-f]{6}$/i.test(layer.color || "") ? layer.color : "#d6fa62";
     $("graphic-layer-opacity").value = Number(layer.opacity ?? 1);
     $("graphic-layer-font").value = layer.font || "sans";
+    $("graphic-layer-font-size").value = Number(layer.fontSize) || 44;
     $("graphic-layer-animation").value = layer.animation || "none";
     const isText = layer.type === "text";
     $("graphic-text-wrap").hidden = !isText;
     $("graphic-font-wrap").hidden = !isText;
+    $("graphic-font-size-wrap").hidden = !isText;
   }
 
   function addGraphicLayer(type) {
@@ -686,6 +689,7 @@
       "graphic-layer-colour": ["color", (v) => /^#[0-9a-f]{6}$/i.test(v) ? v : "#d6fa62"],
       "graphic-layer-opacity": ["opacity", (v) => Math.min(1, Math.max(0, Number(v) || 0))],
       "graphic-layer-font": ["font", (v) => v],
+      "graphic-layer-font-size": ["fontSize", (v) => Math.min(180, Math.max(10, Number(v) || 44))],
       "graphic-layer-animation": ["animation", (v) => v]
     };
     Object.entries(fields).forEach(([id, field]) => {
