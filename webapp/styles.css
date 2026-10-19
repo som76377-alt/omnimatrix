@@ -472,3 +472,25 @@ h2,h3,p{margin-top:0}
 .main-nav a.nav-item{text-decoration:none}
 .mobile-nav-item{text-decoration:none}
 @media(max-width:620px){.mobile-nav{grid-template-columns:repeat(6,minmax(0,1fr))}.creative-mobile-link{color:var(--acid);font-weight:700}}
+
+
+/* Chat attachments: no arbitrary file-count cap; runtime storage and provider limits remain explicit. */
+.chat-attachment-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px}
+.attach-button{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid #424733;border-radius:2px;background:#20231b;color:var(--acid);font:8px var(--mono);letter-spacing:.04em;cursor:pointer}
+.attach-button:hover:not(:disabled){border-color:var(--acid);background:#25291d}
+.attach-button:disabled{opacity:.45;cursor:not-allowed}
+#chat-attachment-caption{color:var(--dim);font:8px/1.5 var(--mono)}
+.chat-attachment-list{display:flex;gap:7px;flex-wrap:wrap;max-height:180px;overflow:auto;margin:0 0 8px}
+.chat-attachment-list:empty{display:none}
+.chat-attachment-item{display:flex;align-items:center;gap:8px;min-width:0;max-width:min(100%,340px);padding:7px 8px;border:1px solid #34372d;background:#13150f;border-radius:2px}
+.chat-attachment-preview{width:34px;height:34px;flex:0 0 34px;object-fit:cover;border:1px solid #34372d;background:#1d2018}
+.chat-attachment-kind{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border:1px solid #34372d;color:var(--acid);font:8px var(--mono);background:#1d2018}
+.chat-attachment-meta{display:flex;flex-direction:column;gap:4px;min-width:0}
+.chat-attachment-name{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:9px}
+.chat-attachment-status{color:var(--dim);font:7px var(--mono);letter-spacing:.03em}
+.chat-attachment-item.status-error{border-color:#754c3b}
+.chat-attachment-item.status-error .chat-attachment-status{color:var(--amber)}
+.attachment-remove{align-self:flex-start;margin-left:2px;border:0;background:transparent;color:var(--muted);font-size:15px;line-height:1;cursor:pointer}
+.attachment-remove:hover:not(:disabled){color:var(--text)}
+.attachment-remove:disabled{opacity:.35;cursor:wait}
+@media(max-width:540px){.chat-attachment-toolbar{gap:7px}.chat-attachment-list{max-height:145px}.chat-attachment-item{max-width:100%}.chat-attachment-name{max-width:190px}}
