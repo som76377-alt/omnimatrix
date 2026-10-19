@@ -222,3 +222,6 @@ input::placeholder,textarea::placeholder{color:#697160}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+.asset-card .asset-delete{position:absolute;top:6px;right:6px;width:24px;height:24px;border:1px solid #41483a;border-radius:4px;background:#090b09dd;color:#f1f3e8;font-size:16px;line-height:1;display:grid;place-items:center}
+.asset-card .asset-delete:hover{background:#3a211e;border-color:#a9524a;color:#ffaaa3}
