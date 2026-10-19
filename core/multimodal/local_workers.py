@@ -51,14 +51,13 @@ def _worker(worker_id: str, model_id: str, capability: WorkerCapability, operati
     return run
 
 
-def build_local_tool_registry() -> WorkerRegistry:
+def register_local_workers(registry: WorkerRegistry) -> WorkerRegistry:
     """Register local tools only when their Python dependencies are present."""
     status = toolchain_status()
-    registry = WorkerRegistry()
     definitions = [
         ("paddleocr.local", "paddleocr", WorkerCapability.OCR, run_ocr),
         ("docling.local", "docling", WorkerCapability.PDF_EXTRACTION, extract_document),
-        ("faster_whisper.local", "faster-whisper", WorkerCapability.AUDIO_TRANSCRIPTION, transcribe_audio),
+        ("faster_whisper.local", "faster_whisper", WorkerCapability.AUDIO_TRANSCRIPTION, transcribe_audio),
         ("pyscenedetect.local", "pyscenedetect", WorkerCapability.VIDEO_SCENE_DETECTION, detect_scenes),
     ]
     for worker_id, key, capability, operation in definitions:
