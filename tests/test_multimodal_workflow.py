@@ -48,6 +48,39 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         task = execute.call_args.args[0]
         self.assertEqual([item.value for item in task.required_capabilities], ["pdf_extraction"])
 
+    def test_image_uses_labelled_local_ocr_fallback_after_remote_failure(self):
+        failure = TaskResult(False, "coordinator", "none",
+            failure_kind=FailureKind.DEPENDENCY_MISSING,
+            safe_message="No remote visual worker.")
+        evidence = EvidenceItem("diagram.png", "ocr", '{"text":"coil"}',
+                                "paddleocr.local", "local:paddleocr")
+        local_success = TaskResult(True, "paddleocr.local", "local:paddleocr",
+                                   evidence=(evidence,))
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   side_effect=[(failure, None), (local_success, None)]) as execute:
+            result = analyze_single_attachment(self.record, "Describe it")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["analyzed"], 1)
+        self.assertIn("OCR text only", result["context"])
+        self.assertIn("not full multimodal understanding", result["context"].lower())
+        self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["ocr"])
+        self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
+
+    def test_audio_uses_local_transcription_as_limited_fallback(self):
+        record = dict(self.record, name="clip.wav", mime_type="audio/wav")
+        failure = TaskResult(False, "coordinator", "none",
+            failure_kind=FailureKind.QUOTA, safe_message="Remote quota reached.")
+        evidence = EvidenceItem("clip.wav", "transcript", '{"text":"hello"}',
+                                "faster_whisper.local", "local:faster-whisper")
+        local_success = TaskResult(True, "faster_whisper.local", "local:faster-whisper",
+                                   evidence=(evidence,))
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   side_effect=[(failure, None), (local_success, None)]) as execute:
+            result = analyze_single_attachment(record, "Transcribe")
+        self.assertEqual(result["status"], "partial")
+        self.assertIn("Transcript only", result["context"])
+        self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["audio_transcription"])
+
     def test_unknown_image_subtype_is_still_routed_as_image(self):
         record = dict(self.record, mime_type="image/tiff")
         with patch("core.multimodal.workflow.execute_provider_task") as execute:
