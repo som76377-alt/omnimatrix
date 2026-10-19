@@ -5,9 +5,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.provider.OpenableColumns
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -96,6 +99,16 @@ private data class ChatMessage(
     val text: String,
     val modelLabel: String? = null,
     val activityLines: List<String> = emptyList()
+)
+private data class ChatAttachment(
+    val localId: String,
+    val uri: Uri,
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long = 0L,
+    val attachmentId: String? = null,
+    val status: String = "UPLOADING",
+    val error: String = ""
 )
 
 internal object ModelActivityLabelFormatter {
@@ -662,6 +675,7 @@ private class GitHubClient(context: Context) {
 }
 
 private class RuntimeClient(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = EncryptedSharedPreferences.create(
         context, "omnitrix_runtime_secure",
         MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
@@ -719,6 +733,100 @@ private class RuntimeClient(context: Context) {
         }
         useHostedBackend = true
         return requestPublic("POST", discoverHostedBase() + "/api/mobile/chat", body)
+    }
+
+
+    suspend fun uploadAttachment(sessionId: String, uri: Uri): JSONObject {
+        val hosted = useHostedBackend || !ready()
+        val address = if (hosted) {
+            discoverHostedBase() + "/api/mobile/attachments/upload"
+        } else {
+            base + "/api/attachments/upload"
+        }
+        return withContext(Dispatchers.IO) {
+            val resolver = appContext.contentResolver
+            val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: "attachment"
+            val mimeType = resolver.getType(uri) ?: java.net.URLConnection.guessContentTypeFromName(displayName)
+                ?: "application/octet-stream"
+            val staged = File.createTempFile("omnitrix-attachment-", ".upload", appContext.cacheDir)
+            try {
+                var written = 0L
+                val maxBytes = 1024L * 1024L * 1024L
+                val source = resolver.openInputStream(uri) ?: throw IOException("Android could not open this file.")
+                source.use { input ->
+                    FileOutputStream(staged).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            written += count
+                            if (written > maxBytes) {
+                                throw IOException("This file exceeds the app's 1 GiB per-file transfer limit.")
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                if (written <= 0L) throw IOException("Empty files cannot be attached.")
+                val connection = URL(address).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 240000
+                connection.useCaches = false
+                connection.doOutput = true
+                connection.setFixedLengthStreamingMode(staged.length())
+                connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Content-Type", "application/octet-stream")
+                connection.setRequestProperty("X-Session-ID", sessionId)
+                connection.setRequestProperty("X-File-Name", Uri.encode(displayName))
+                connection.setRequestProperty("X-File-Mime", mimeType)
+                connection.setRequestProperty("User-Agent", "Omnitrix-Android")
+                if (!hosted) {
+                    connection.setRequestProperty(
+                        "Authorization",
+                        "Bearer " + RuntimeInputValidation.validateRuntimeToken(token)
+                    )
+                }
+                try {
+                    connection.outputStream.use { output ->
+                        staged.inputStream().use { input -> input.copyTo(output, 64 * 1024) }
+                    }
+                    val code = connection.responseCode
+                    val responseText = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    if (responseText.trimStart().startsWith("<!doctype html", ignoreCase = true) ||
+                        (connection.contentType ?: "").contains("text/html", ignoreCase = true)
+                    ) {
+                        throw IOException("The attachment server returned a web page instead of its API.")
+                    }
+                    if (code !in 200..299) {
+                        val detail = try { JSONObject(responseText).optString("error", "") } catch (_: Exception) { "" }
+                        throw IOException(if (detail.isBlank()) "Attachment upload returned HTTP $code." else detail)
+                    }
+                    try {
+                        JSONObject(responseText)
+                    } catch (_: Exception) {
+                        throw IOException("The attachment server returned invalid JSON.")
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            } finally {
+                staged.delete()
+            }
+        }
+    }
+
+    suspend fun deleteAttachment(sessionId: String, attachmentId: String): JSONObject {
+        val body = JSONObject().put("session_id", sessionId).put("attachment_id", attachmentId)
+        return if (!useHostedBackend && ready()) {
+            requestPrivate("POST", "/api/attachments/delete", body)
+        } else {
+            requestPublic("POST", discoverHostedBase() + "/api/mobile/attachments/delete", body)
+        }
     }
 
     suspend fun activity(sessionId: String): JSONObject {
@@ -1007,9 +1115,57 @@ private fun OmnitrixApp() {
     var chatBusy by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatMessage>()) }
+    var attachments by remember { mutableStateOf(emptyList<ChatAttachment>()) }
     var modelActivityLabel by remember { mutableStateOf("CONNECTING · checking hosted AI") }
     var modelActivityLines by remember { mutableStateOf(emptyList<String>()) }
     val sessionId = remember { UUID.randomUUID().toString() }
+    val attachmentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            if (!runtimeConnected || chatBusy || attachments.any { it.status == "UPLOADING" }) {
+                messages = messages + ChatMessage("SYSTEM", "Connect Omnitrix and wait for current uploads or responses before adding more files.")
+            } else {
+                val selectedItems = uris.map { uri ->
+                    val name = context.contentResolver.query(
+                        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                        ?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "attachment"
+                    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                    ChatAttachment(UUID.randomUUID().toString(), uri, name, mime)
+                }
+                attachments = attachments + selectedItems
+                scope.launch {
+                    for (selected in selectedItems) {
+                        try {
+                            val response = runtime.uploadAttachment(sessionId, selected.uri)
+                            val record = response.optJSONObject("attachment")
+                                ?: throw IOException("The server did not return an attachment record.")
+                            val remoteId = record.optString("id", "")
+                            if (remoteId.isBlank()) throw IOException("The server did not return an attachment ID.")
+                            attachments = attachments.map { item ->
+                                if (item.localId == selected.localId) item.copy(
+                                    name = record.optString("name", item.name),
+                                    mimeType = record.optString("mime_type", item.mimeType),
+                                    sizeBytes = record.optLong("size", 0L),
+                                    attachmentId = remoteId,
+                                    status = "READY",
+                                    error = ""
+                                ) else item
+                            }
+                        } catch (e: Exception) {
+                            attachments = attachments.map { item ->
+                                if (item.localId == selected.localId) item.copy(
+                                    status = "FAILED",
+                                    error = e.message ?: "Upload failed."
+                                ) else item
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     var repoPath by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<RepoEntry>>(emptyList()) }
     var selectedFile by remember { mutableStateOf<RepoEntry?>(null) }
@@ -1292,11 +1448,34 @@ private fun OmnitrixApp() {
                 when (tab) {
                     AppTab.CHAT -> ChatScreen(
                         messages, chatInput, runtimeConnected, chatBusy, runtimeMessage, modelActivityLabel, modelActivityLines,
+                        attachments,
                         { chatInput = it },
+                        { attachmentPicker.launch(arrayOf("image/*", "application/pdf", "audio/*", "video/*")) },
+                        { item ->
+                            scope.launch {
+                                try {
+                                    item.attachmentId?.let { runtime.deleteAttachment(sessionId, it) }
+                                    attachments = attachments.filterNot { it.localId == item.localId }
+                                } catch (e: Exception) {
+                                    messages = messages + ChatMessage("SYSTEM", "Could not remove ${item.name}: ${e.message ?: "request failed"}.")
+                                }
+                            }
+                        },
                         {
                             val prompt = chatInput.trim()
-                            if (runtimeConnected && prompt.isNotEmpty() && !chatBusy) {
-                                messages = messages + ChatMessage("YOU", prompt)
+                            val readyAttachments = attachments.filter { it.status == "READY" && !it.attachmentId.isNullOrBlank() }
+                            if (runtimeConnected && (prompt.isNotEmpty() || readyAttachments.isNotEmpty()) && !chatBusy &&
+                                attachments.none { it.status == "UPLOADING" }) {
+                                val sentPrompt = prompt.ifBlank { "Please analyze the attached files." }
+                                val userText = buildString {
+                                    if (prompt.isNotEmpty()) append(prompt)
+                                    if (readyAttachments.isNotEmpty()) {
+                                        if (isNotEmpty()) append("\n\n")
+                                        append("Attached files:\n")
+                                        append(readyAttachments.joinToString("\n") { "- " + it.name })
+                                    }
+                                }
+                                messages = messages + ChatMessage("YOU", userText)
                                 chatInput = ""
                                 chatBusy = true
                                 modelActivityLines = emptyList()
@@ -1320,7 +1499,6 @@ private fun OmnitrixApp() {
                                             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                                 throw cancelled
                                             } catch (_: Exception) {
-                                                // Preserve the last trustworthy state when telemetry is briefly unavailable.
                                                 if (modelActivityLines.isEmpty()) {
                                                     modelActivityLabel = "OMNITRIX · preparing the specialist route"
                                                 }
@@ -1330,8 +1508,29 @@ private fun OmnitrixApp() {
                                     }
                                     try {
                                         val response = runtime.sendChat(
-                                            JSONObject().put("message", prompt).put("session_id", sessionId)
+                                            JSONObject().put("message", sentPrompt).put("session_id", sessionId)
                                         )
+                                        val attachmentStatus = response.optJSONObject("attachment_status")
+                                        if (attachmentStatus != null) {
+                                            val consumed = mutableSetOf<String>()
+                                            val ids = attachmentStatus.optJSONArray("consumed_ids") ?: JSONArray()
+                                            for (index in 0 until ids.length()) consumed += ids.optString(index)
+                                            if (consumed.isNotEmpty()) {
+                                                attachments = attachments.filterNot { it.attachmentId in consumed }
+                                            }
+                                            val status = attachmentStatus.optString("status")
+                                            if (status == "unavailable" || status == "failed") {
+                                                messages = messages + ChatMessage(
+                                                    "SYSTEM",
+                                                    "Attachment analysis ${status}. Your files remain attached; check the live multimodal provider configuration or quota before retrying."
+                                                )
+                                            } else if (status == "partial") {
+                                                messages = messages + ChatMessage(
+                                                    "SYSTEM",
+                                                    "Only ${attachmentStatus.optInt("analyzed")} of ${attachmentStatus.optInt("count")} files were analyzed. Unprocessed files remain attached."
+                                                )
+                                            }
+                                        }
                                         val trace = response.optJSONObject("execution_trace")
                                         val modelLabel = ModelActivityLabelFormatter.fromTrace(trace)
                                         messages = messages + ChatMessage(
@@ -1632,8 +1831,9 @@ private fun MarkdownMessage(content: String) {
 @Composable
 private fun ChatScreen(
     messages: List<ChatMessage>, input: String, connected: Boolean, busy: Boolean, connectionMessage: String,
-    activityLabel: String, activityLines: List<String>,
-    onInput: (String) -> Unit, onSend: () -> Unit, onConnect: () -> Unit
+    activityLabel: String, activityLines: List<String>, attachments: List<ChatAttachment>,
+    onInput: (String) -> Unit, onAttach: () -> Unit, onRemoveAttachment: (ChatAttachment) -> Unit,
+    onSend: () -> Unit, onConnect: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         AppHeader("Chat", activityLabel = activityLabel.takeIf { busy })
@@ -1698,32 +1898,82 @@ private fun ChatScreen(
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().background(Surface).imePadding().padding(10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TerminalField(
-                value = input, onValueChange = onInput, placeholder = "Message Omnitrix",
-                modifier = Modifier.weight(1f), singleLine = false, enabled = connected && !busy
-            )
-            Button(
-                onClick = onSend,
-                enabled = connected && !busy && input.isNotBlank(),
-                modifier = Modifier.height(52.dp),
-                shape = RoundedCornerShape(2.dp),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp,
-                    focusedElevation = 0.dp,
-                    hoveredElevation = 0.dp,
-                    disabledElevation = 0.dp
-                ),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Green,
-                    contentColor = Black,
-                    disabledContainerColor = SurfaceRaised,
-                    disabledContentColor = Grey
-                ),
-                contentPadding = PaddingValues(horizontal = 14.dp)
-            ) {
-                Text(if (busy) "WAIT" else "SEND", color = if (busy) Grey else Black, fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Column(
+            Modifier.fillMaxWidth().background(Surface).imePadding().padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (attachments.isNotEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 138.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    attachments.forEach { attachment ->
+                        Row(
+                            Modifier.fillMaxWidth().background(SurfaceRaised, RoundedCornerShape(2.dp)).padding(horizontal = 9.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(attachment.name, color = White, fontSize = 11.sp, maxLines = 1)
+                                Text(
+                                    when (attachment.status) {
+                                        "READY" -> "READY · " + if (attachment.sizeBytes > 0L) android.text.format.Formatter.formatShortFileSize(LocalContext.current, attachment.sizeBytes) else "uploaded"
+                                        "FAILED" -> "UPLOAD FAILED · " + attachment.error
+                                        else -> "UPLOADING TO OMNITRIX"
+                                    },
+                                    color = if (attachment.status == "FAILED") Red else Grey,
+                                    fontSize = 9.sp,
+                                    maxLines = 2,
+                                    lineHeight = 12.sp
+                                )
+                            }
+                            TextButton(
+                                onClick = { onRemoveAttachment(attachment) },
+                                enabled = !busy && attachment.status != "UPLOADING"
+                            ) { Text("×", color = Grey, fontSize = 16.sp) }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onAttach, enabled = connected && !busy && attachments.none { it.status == "UPLOADING" }) {
+                    Text("+ ATTACH FILES", color = if (connected && !busy) Green else Grey, fontSize = 11.sp, fontFamily = Mono)
+                }
+                Text(
+                    "IMAGES · PDF · AUDIO · VIDEO",
+                    color = Grey,
+                    fontSize = 8.sp,
+                    fontFamily = Mono
+                )
+            }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TerminalField(
+                    value = input, onValueChange = onInput, placeholder = "Message Omnitrix",
+                    modifier = Modifier.weight(1f), singleLine = false, enabled = connected && !busy
+                )
+                Button(
+                    onClick = onSend,
+                    enabled = connected && !busy && attachments.none { it.status == "UPLOADING" } &&
+                        (input.isNotBlank() || attachments.any { it.status == "READY" && !it.attachmentId.isNullOrBlank() }),
+                    modifier = Modifier.height(52.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        focusedElevation = 0.dp,
+                        hoveredElevation = 0.dp,
+                        disabledElevation = 0.dp
+                    ),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Green,
+                        contentColor = Black,
+                        disabledContainerColor = SurfaceRaised,
+                        disabledContentColor = Grey
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp)
+                ) {
+                    Text(if (busy) "WAIT" else "SEND", color = if (busy) Grey else Black, fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
