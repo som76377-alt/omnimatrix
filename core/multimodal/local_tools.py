@@ -16,7 +16,10 @@ def _input_path(value: Any) -> Path:
     """Accept only an existing regular file; never accept URLs or shell fragments."""
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("A local file path is required.")
-    path = Path(value).expanduser().resolve(strict=True)
+    original = Path(value).expanduser()
+    if original.is_symlink():
+        raise ValueError("Symbolic-link inputs are not accepted.")
+    path = original.resolve(strict=True)
     if not path.is_file() or path.is_symlink():
         raise ValueError("Input must be an existing regular local file.")
     if path.stat().st_size <= 0 or path.stat().st_size > MAX_LOCAL_INPUT_BYTES:
