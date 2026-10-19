@@ -1210,16 +1210,15 @@ private fun OmnitrixApp() {
                 val readiness = runtime.connectAutomatically()
                 runtimeConnected = true
                 runtimeMessage = ""
-                modelActivityLabel = if (readiness.optBoolean("reasoning_specialist_available")) {
-                    "READY · Reasoning specialist route available"
-                } else {
-                    val preferred = readiness.optString("preferred_reasoning_model")
-                        .takeIf { it.isNotBlank() && it != "null" }
-                    if (preferred != null) {
-                        "READY · specialist falls back to Gemini; OPENROUTER_API_KEY missing on Render"
-                    } else {
-                        "READY · primary model configured; no separate reasoning route"
-                    }
+                modelActivityLabel = when {
+                    readiness.optBoolean("reasoning_specialist_available") ->
+                        "READY · OpenRouter reasoning route available"
+                    readiness.optBoolean("openrouter_key_detected") ->
+                        "READY · OpenRouter key visible to backend, but reasoning route unavailable"
+                    readiness.optString("reasoning_route_status") == "provider_key_missing" ->
+                        "READY · Gemini route available; OpenRouter key not visible to the running backend"
+                    else ->
+                        "READY · primary route available; no separate OpenRouter reasoning route"
                 }
             } catch (e: Exception) {
                 runtimeConnected = false
