@@ -52,7 +52,7 @@ def toolchain_status() -> dict[str, dict[str, Any]]:
         # This is adapter readiness, not provider health or model correctness.
         adapter_ready = name in implemented and (
             configured if spec["kind"] == "provider" else
-            dependency_installed if spec["kind"] == "system_tool" else False
+            dependency_installed if spec["kind"] in {"system_tool", "python_tool"} else False
         )
         status[name] = {
             "kind": spec["kind"],
