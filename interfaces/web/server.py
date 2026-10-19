@@ -343,6 +343,8 @@ class StudioRuntime:
         self.public_chat_lock = threading.Lock()
         self.public_chat_events: dict[str, deque[float]] = {}
         self.public_chat_global_events: deque[float] = deque()
+        self.public_attachment_lock = threading.Lock()
+        self.public_attachment_events: dict[str, deque[tuple[float, int]]] = {}
         self.sessions: OrderedDict[str, Conversation] = OrderedDict()
         self.sessions_lock = threading.Lock()
         self.test_lock = threading.Lock()
@@ -788,6 +790,82 @@ class StudioRuntime:
         safe_payload = dict(payload)
         safe_payload["session_id"] = self._public_session_id(session_id, client_ip)
         return self.chat(safe_payload)
+
+    def _record_public_attachment_upload(self, client_ip: str, size: int) -> None:
+        """Apply per-IP upload-rate and byte budgets to unauthenticated mobile uploads."""
+        if size <= 0 or size > MAX_ATTACHMENT_BYTES:
+            raise OverflowError(
+                f"File exceeds the configured per-file limit of {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MiB."
+            )
+        ip = client_ip.strip()[:128] if isinstance(client_ip, str) else ""
+        client_key = hashlib.sha256(
+            (self.access_token + "\\0" + (ip or "unknown")).encode("utf-8")
+        ).hexdigest()
+        now = time.monotonic()
+        with self.public_attachment_lock:
+            events = self.public_attachment_events.setdefault(client_key, deque())
+            day_cutoff = now - 86_400
+            minute_cutoff = now - 60
+            while events and events[0][0] <= day_cutoff:
+                events.popleft()
+            if sum(1 for stamp, _ in events if stamp > minute_cutoff) >= 20:
+                raise PublicChatRateLimitError(
+                    "Attachment upload rate limit reached. Wait a minute before uploading more files."
+                )
+            if sum(byte_count for _, byte_count in events) + size > 1024 * 1024 * 1024:
+                raise PublicChatRateLimitError(
+                    "This network has reached the hosted attachment allowance of 1 GiB per 24 hours."
+                )
+            events.append((now, size))
+            # Bound limiter memory even if many distinct clients connect.
+            if len(self.public_attachment_events) > 5000:
+                for key, bucket in list(self.public_attachment_events.items()):
+                    while bucket and bucket[0][0] <= day_cutoff:
+                        bucket.popleft()
+                    if not bucket:
+                        self.public_attachment_events.pop(key, None)
+
+    def upload_attachment_public(
+        self, headers: Any, stream: Any, client_ip: str
+    ) -> dict[str, Any]:
+        """Stage a public mobile upload in an IP-namespaced session after quota checks."""
+        if not self.public_chat_enabled or not self.mobile_health().get("chat_available"):
+            raise PermissionError("Hosted multimodal chat is not enabled on this service.")
+        raw_session = str(headers.get("X-Session-ID", "")).strip()
+        if not SESSION_ID_PATTERN.fullmatch(raw_session):
+            raise ValueError("A valid chat session ID is required for uploads.")
+        try:
+            length = int(headers.get("Content-Length", "0"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid attachment Content-Length.") from exc
+        self._record_public_attachment_upload(client_ip, length)
+        # Reuse the validated private upload path, but isolate anonymous callers' records.
+        safe_headers = {
+            "X-Session-ID": self._public_session_id(raw_session, client_ip.strip()[:128] or "unknown"),
+            "X-File-Name": headers.get("X-File-Name", ""),
+            "X-File-Mime": headers.get("X-File-Mime", ""),
+            "Content-Length": str(length),
+        }
+        return self.upload_attachment(safe_headers, stream)
+
+    def list_attachments_public(self, session_id: Any, client_ip: str) -> dict[str, Any]:
+        """Read only the current caller's namespaced mobile attachment list."""
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("A valid chat session ID is required.")
+        ip = client_ip.strip()[:128] if isinstance(client_ip, str) else ""
+        return self.list_attachments(self._public_session_id(session_id, ip or "unknown"))
+
+    def delete_attachment_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
+        """Delete a staged file only from the current caller's namespaced mobile session."""
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object.")
+        session_id = payload.get("session_id")
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("A valid chat session ID is required.")
+        safe_payload = dict(payload)
+        ip = client_ip.strip()[:128] if isinstance(client_ip, str) else ""
+        safe_payload["session_id"] = self._public_session_id(session_id, ip or "unknown")
+        return self.delete_attachment(safe_payload)
 
     def upload_attachment(self, headers: Any, stream: Any) -> dict[str, Any]:
         """Stream one user-selected media file into the private runtime without buffering it."""
@@ -1239,6 +1317,19 @@ def make_handler(
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
                 self._send_json(runtime.mobile_activity(self._first_query("session_id", ""), client_ip))
                 return
+            if route == "/api/mobile/attachments/list":
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                try:
+                    self._send_json(runtime.list_attachments_public(
+                        self._first_query("session_id", ""), client_ip
+                    ))
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 400)
+                except Exception as exc:
+                    LOGGER.warning("Public attachment listing failed: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Attachment list is temporarily unavailable."}, 500)
+                return
             if route.startswith("/api/"):
                 if not self._authorized():
                     self._send_json(
@@ -1301,8 +1392,12 @@ def make_handler(
             if not route.startswith("/api/"):
                 self._send_json({"ok": False, "error": "API route not found."}, 404)
                 return
-            public_mobile_chat = route == "/api/mobile/chat"
-            if not public_mobile_chat and not self._authorized():
+            public_mobile_routes = {
+                "/api/mobile/chat",
+                "/api/mobile/attachments/upload",
+                "/api/mobile/attachments/delete",
+            }
+            if route not in public_mobile_routes and not self._authorized():
                 self._send_json(
                     {
                         "ok": False,
@@ -1311,6 +1406,26 @@ def make_handler(
                     },
                     401,
                 )
+                return
+            if route == "/api/mobile/attachments/upload":
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                try:
+                    self._send_json(runtime.upload_attachment_public(self.headers, self.rfile, client_ip))
+                except OverflowError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 413)
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 400)
+                except PermissionError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 403)
+                except PublicChatRateLimitError as exc:
+                    self._send_json({"ok": False, "error": str(exc), "code": "rate_limited"}, 429)
+                except OSError as exc:
+                    LOGGER.warning("Public attachment upload could not write storage: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Runtime storage could not accept this file."}, 507)
+                except Exception as exc:
+                    LOGGER.warning("Public attachment upload failed: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Attachment upload failed safely."}, 500)
                 return
             if route == "/api/attachments/upload":
                 try:
@@ -1339,6 +1454,10 @@ def make_handler(
                     self._send_json(runtime.chat(payload))
                 elif route == "/api/attachments/delete":
                     self._send_json(runtime.delete_attachment(payload))
+                elif route == "/api/mobile/attachments/delete":
+                    forwarded = self.headers.get("X-Forwarded-For", "")
+                    client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                    self._send_json(runtime.delete_attachment_public(payload, client_ip))
                 elif route == "/api/mobile/chat":
                     forwarded = self.headers.get("X-Forwarded-For", "")
                     client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
