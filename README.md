@@ -107,6 +107,12 @@ The core application uses the Python standard library, with one explicit runtime
 - [Truthfulness and capability calibration contract](docs/TRUTHFULNESS_AND_CALIBRATION.md) — persistent runtime rules, adversarial evaluation cases, release gate, and capability-claim status definitions.
 - [Rich-response formatting support](docs/FORMATTING_SUPPORT.md) — browser and Android formatting capabilities, safety boundaries, and verification.
 
+## Creative Studio — first creative-production milestone
+
+Open the [Creative Studio interface](https://som76377-alt.github.io/omnimatrix/creative-studio.html) or run it from the full Studio runtime. This branch introduces a phone-first local media library, sequential shot timeline, title and motion presets, source-video audio capture where supported, and browser-based WebM draft rendering.
+
+The editor is local-first: original media is kept in this browser's IndexedDB and is not uploaded by the editor page. The first increment is not the finished AI editor: visual understanding, a model-connected director/critic, multitrack music/narration, advanced compositing, and remote rendering are not yet integrated. See [Creative Studio architecture, tool choices, limits, and next phases](docs/CREATIVE_STUDIO.md). Current tool and agent states are recorded in `config/creative-studio-tools.json` and `config/creative-studio-agents.json`.
+
 ## Omnitrix Studio — main testing app
 
 The main Studio interface lives in `webapp/`; the Python backend is `interfaces/web/server.py`. It is a browser app backed by the **existing Python Omnitrix core**, not a simulated UI shell.
