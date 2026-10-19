@@ -165,6 +165,34 @@
             <label for="shot-font">TYPE STYLE</label>
             <select id="shot-font"><option value="sans">Modern sans</option><option value="serif">Editorial serif</option><option value="mono">Technical mono</option></select>
           </div>
+          <div class="layer-editor">
+            <div class="layer-editor-heading"><div><span class="eyebrow">VECTOR / TYPE</span><strong>Graphic layers</strong></div><span class="tiny-count" id="graphic-layer-count">0</span></div>
+            <div class="layer-add-row">
+              <button type="button" class="button quiet small" id="add-text-layer">+ TEXT</button>
+              <button type="button" class="button quiet small" id="add-rect-layer">+ RECT</button>
+              <button type="button" class="button quiet small" id="add-circle-layer">+ CIRCLE</button>
+            </div>
+            <div class="graphic-layer-list" id="graphic-layer-list"><div class="layer-empty">No extra layers yet.</div></div>
+            <div id="graphic-layer-controls" class="graphic-layer-controls" hidden>
+              <div class="field-group"><label for="graphic-layer-name">LAYER NAME</label><input id="graphic-layer-name" maxlength="100"></div>
+              <div class="field-group" id="graphic-text-wrap"><label for="graphic-layer-text">TEXT CONTENT</label><textarea id="graphic-layer-text" rows="2" maxlength="300" placeholder="Enter graphic text"></textarea></div>
+              <div class="field-row">
+                <div class="field-group"><label for="graphic-layer-x">X POSITION (%)</label><input id="graphic-layer-x" type="number" min="0" max="100" step="1"></div>
+                <div class="field-group"><label for="graphic-layer-y">Y POSITION (%)</label><input id="graphic-layer-y" type="number" min="0" max="100" step="1"></div>
+              </div>
+              <div class="field-row">
+                <div class="field-group"><label for="graphic-layer-width">WIDTH (%)</label><input id="graphic-layer-width" type="number" min="1" max="100" step="1"></div>
+                <div class="field-group"><label for="graphic-layer-height">HEIGHT (%)</label><input id="graphic-layer-height" type="number" min="1" max="100" step="1"></div>
+              </div>
+              <div class="field-row">
+                <div class="field-group"><label for="graphic-layer-colour">FILL</label><input id="graphic-layer-colour" type="color" value="#d6fa62"></div>
+                <div class="field-group"><label for="graphic-layer-opacity">OPACITY</label><input id="graphic-layer-opacity" type="number" min="0" max="1" step="0.05"></div>
+              </div>
+              <div class="field-group" id="graphic-font-wrap"><label for="graphic-layer-font">FONT</label><select id="graphic-layer-font"><option value="sans">Modern sans</option><option value="serif">Editorial serif</option><option value="mono">Technical mono</option></select></div>
+              <div class="field-group"><label for="graphic-layer-animation">ENTRANCE ANIMATION</label><select id="graphic-layer-animation"><option value="none">None</option><option value="fade-in">Fade in</option><option value="slide-up">Slide up + fade</option><option value="slide-left">Slide from right</option><option value="scale-in">Scale in</option></select></div>
+              <button type="button" class="button quiet small full-width" id="delete-graphic-layer">DELETE SELECTED LAYER</button>
+            </div>
+          </div>
           <button type="button" class="button quiet full-width" id="reset-shot">RESET SHOT DESIGN</button>
         </form>
         <div class="inspector-footer"><span class="status-dot"></span><span>NON-DESTRUCTIVE · SOURCE ASSETS UNCHANGED</span></div>
