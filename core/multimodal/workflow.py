@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.attachments import DEFAULT_MULTIMODAL_MODEL, analyze_attachments
 from core.multimodal.execute import execute_provider_task
 from core.multimodal.router import TaskRequest, WorkerCapability
 
@@ -124,3 +125,73 @@ def analyze_single_attachment(record: dict[str, Any], question: str) -> dict[str
         ),
         "error": message, "worker": result.worker_id, "model": result.model_id,
     }
+
+
+
+def analyze_multiple_attachments(records: list[dict[str, Any]], question: str) -> dict[str, Any]:
+    """Keep bounded Gemini batches, then use local-only extraction for unprocessed files.
+
+    Fallback processing is strictly in input order. The chat layer consumes a prefix
+    of staged ids, so this workflow never processes a later file after an earlier
+    fallback failed.
+    """
+    primary = analyze_attachments(records, question)
+    if not records or primary.get("status") == "complete":
+        result = dict(primary)
+        if result.get("status") == "complete":
+            result["worker"] = "gemini.multimodal"
+            result["model"] = DEFAULT_MULTIMODAL_MODEL
+        return result
+
+    processed = int(primary.get("analyzed", 0) or 0)
+    context_parts = [str(primary.get("context", "")).strip()]
+    worker_runs: list[dict[str, str]] = []
+    if processed:
+        worker_runs.append({"worker": "gemini.multimodal", "model": DEFAULT_MULTIMODAL_MODEL, "status": "complete"})
+    fallback_processed = 0
+    while processed < len(records):
+        record = records[processed]
+        fallback = _try_local_extraction(record, question, str(record.get("mime_type", "")).lower())
+        if fallback is None:
+            break
+        context_parts.append(str(fallback["context"]))
+        worker_runs.append({
+            "worker": str(fallback.get("worker", "local_worker")),
+            "model": str(fallback.get("model", "unknown")),
+            "status": "partial",
+        })
+        processed += 1
+        fallback_processed += 1
+
+    all_primary_complete = primary.get("status") == "complete"
+    all_processed = processed >= len(records)
+    if all_primary_complete:
+        status = "complete"
+    elif fallback_processed:
+        status = "partial"
+    else:
+        status = str(primary.get("status", "failed"))
+
+    if fallback_processed:
+        context_parts.append(
+            "MULTI-FILE ROUTING SUMMARY: " + str(len(records)) + " file(s) queued; "
+            + str(int(primary.get("analyzed", 0) or 0)) + " file(s) completed through Gemini batches; "
+            + str(fallback_processed) + " additional file(s) received limited local extraction. "
+            + str(len(records) - processed) + " file(s) remain unprocessed. Do not infer contents for those files."
+        )
+    result = dict(primary)
+    result.update({
+        "status": status,
+        "count": len(records),
+        "analyzed": processed,
+        "context": "\\n\\n".join(part for part in context_parts if part),
+        "error": None if all_processed and fallback_processed == 0 else (
+            None if all_processed and fallback_processed > 0 else
+            str(primary.get("error") or "One or more files still need a compatible worker.")
+        ),
+        "workers": worker_runs,
+    })
+    if worker_runs:
+        result["worker"] = worker_runs[-1]["worker"] if len(worker_runs) == 1 else "mixed"
+        result["model"] = worker_runs[-1]["model"] if len(worker_runs) == 1 else "multiple"
+    return result
