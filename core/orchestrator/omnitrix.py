@@ -1016,6 +1016,7 @@ class Omnitrix:
         *,
         required_capabilities: frozenset[str] = frozenset(),
         prefer_independent_provider: bool = False,
+        prefer_fallback: bool = False,
     ):
         """Choose a configured adapter without silently changing spend policy."""
         required = agent.capabilities.union(required_capabilities)
@@ -1070,6 +1071,8 @@ class Omnitrix:
             return fallback_model
 
         def preference_rank(model) -> int:
+            if prefer_fallback and model.name == fallback_model.name:
+                return -1
             aliases = model.metadata.get("candidate_ids", [])
             if isinstance(aliases, str):
                 aliases = [aliases]
@@ -1310,7 +1313,8 @@ class Omnitrix:
         task.metadata["primary_agent_role"] = "default"
         task.metadata["task_complexity"] = "standard"
         task.metadata["task_domain"] = "general"
-        selected_model = self.router.select(task.requirements)
+        default_model = self.router.select(task.requirements)
+        selected_model = default_model
         agent_plan: AgentPlan | None = None
         if self.agent_router is not None and selected_model.provider != "demo":
             agent_plan = self.agent_router.route(
@@ -1322,8 +1326,12 @@ class Omnitrix:
                 task.metadata["task_domain"] = agent_plan.domain
                 selected_model = self._select_agent_model(
                     agent_plan.primary,
-                    selected_model,
+                    default_model,
                     required_capabilities=task.requirements.capabilities,
+                    # Standard tasks prefer the default model, but still pass
+                    # through budget/availability filters. Complex tasks use the
+                    # role's specialist preferences.
+                    prefer_fallback=agent_plan.complexity == "standard",
                 )
         _log_safely(
             logging.INFO,
@@ -1350,8 +1358,9 @@ class Omnitrix:
             try:
                 intent_model = self._select_agent_model(
                     agent_plan.intent_engineer,
-                    selected_model,
+                    default_model,
                     required_capabilities=frozenset({"reasoning"}),
+                    prefer_fallback=True,
                 )
                 intent_adapter = self.adapter_registry.get(intent_model.name)
                 # The intent stage sees recent conversation context but cannot call tools.

@@ -124,7 +124,7 @@ internal object ModelActivityLabelFormatter {
                 else -> "working on the answer"
             }
             "tool_call_decision" -> if (completed) "tool decision complete" else "checking whether a permitted tool is needed"
-            "answer_generation" -> if (completed) "solution draft prepared" else "drafting the solution"
+            "answer_generation" -> if (completed) "response generated" else "generating a response"
             else -> if (completed) "stage complete" else "working"
         }
         return "${roleName(role)} · $verb"

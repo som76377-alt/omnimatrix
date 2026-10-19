@@ -15,7 +15,8 @@
       "enabled": true,
       "metadata": {
         "cost_class": "user_provided_free_quota",
-        "estimated_cost_usd": 0
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true
       }
     },
     {
@@ -39,7 +40,7 @@
           "nvidia/nemotron-3-super-120b-a12b:free"
         ],
         "data_policy": "no_confidential_or_personal_data",
-        "profile_note": "Role-preferred zero-price reasoning candidate. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free route availability/terms may change; do not send confidential, personal, or sensitive content. OpenRouter reasoning effort is explicitly set to high; reasoning text is excluded from application responses.",
+        "profile_note": "Zero-price specialist candidate for genuinely complex work. Standard conversation and straightforward tasks prefer the budget-eligible primary model; specialist routing is based on task complexity, not exam labels. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free-route availability/terms may change; do not send confidential, personal, or sensitive content. High reasoning effort is requested only when this specialist profile is selected; reasoning text is excluded from application responses.",
         "reasoning_effort": "high",
         "exclude_reasoning": true
       }

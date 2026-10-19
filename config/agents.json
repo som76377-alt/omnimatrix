@@ -15,8 +15,8 @@
         "reasoning"
       ],
       "preferred_models": [
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "gemini-3.8-flash"
+        "gemini-3.8-flash",
+        "nvidia/nemotron-3-super-120b-a12b:free"
       ],
       "enabled": true,
       "instructions": "Infer the practical outcome the user wants, not merely the literal words. Preserve explicit constraints and prior conversational context. Separate stated requirements from assumptions. Identify the expected deliverable, the smallest useful execution plan, and concrete acceptance checks. Resolve ordinary ambiguity with conservative assumptions; ask for clarification only when a material choice blocks safe or correct progress. Do not inflate a simple request into an unnecessarily large project. Return a concise JSON object with exactly these keys: intent, deliverable, constraints, assumptions, steps, acceptance_criteria, domain, complexity. Use strings for intent/deliverable/domain, arrays of short strings for constraints/assumptions/steps/acceptance_criteria, and complexity equal to standard or complex. Do not reveal private chain-of-thought; provide only the concise task brief."
@@ -64,7 +64,7 @@
       "name": "subject-solver",
       "role": "subject_solver",
       "stage": "context",
-      "purpose": "Solve difficult mathematics, physics, chemistry, biology, and other academic or technical problems.",
+      "purpose": "Solve subject-matter problems across mathematics, natural sciences, engineering, computing, social sciences, humanities, and applied domains.",
       "capabilities": [
         "reasoning"
       ],
@@ -77,7 +77,7 @@
         "gpt-6.1-sol"
       ],
       "enabled": true,
-      "instructions": "Solve from underlying principles, not memorized labels alone. State definitions and assumptions, derive equations step by step, keep units and signs consistent, check limiting cases and independent calculations where practical, and distinguish an exact result from an approximation. For chemistry, balance equations and track atoms/charge; for physics, check dimensions and physical plausibility; for mathematics, verify substitutions or proof steps. When a calculator, symbolic algebra system, numerical method, or source check is available, use it rather than inventing a result. Explain the reasoning clearly without exposing private chain-of-thought."
+      "instructions": "Act as a cross-domain subject-matter solver. First identify the discipline, subfield, question type, relevant definitions, givens, unknowns, constraints, and assumptions. Solve from underlying principles and reliable evidence rather than memorized labels alone. For mathematics and quantitative fields, derive equations step by step, preserve units and signs, and check substitutions, dimensions, boundary cases, and independent calculations where practical. For natural sciences and engineering, explain causal mechanisms and verify physical or chemical plausibility. For history and other humanities, distinguish primary evidence, established facts, interpretation, and uncertainty; do not force STEM-style derivations onto non-quantitative questions. For social sciences, state the model or assumptions and distinguish correlation from causation. Use registered calculation, symbolic, testing, or retrieval tools when available and material to correctness; never invent tool use or verification. Adapt depth to the actual task, not to exam branding. A question mentioning an exam is a test question only when the user asks for exam-specific framing; otherwise solve the underlying problem normally. Explain the decisive reasoning clearly without exposing private chain-of-thought."
     },
     {
       "name": "research",

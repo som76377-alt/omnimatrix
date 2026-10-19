@@ -60,15 +60,35 @@ class AgentRouterTests(unittest.TestCase):
         self.assertTrue(plan.needs_intent_preflight)
         self.assertTrue(plan.needs_critique)
 
-    def test_short_jee_equation_routes_to_subject_solver_and_critic(self):
+    def test_exam_label_does_not_escalate_a_straightforward_math_problem(self):
+        problem = "Solve x^2 - 5x + 6 = 0."
+        labeled = self.router.route(
+            "JEE Advanced: " + problem,
+            frozenset({"reasoning"}),
+        )
+        unlabeled = self.router.route(problem, frozenset({"reasoning"}))
+        self.assertEqual(labeled.primary.role, "subject_solver")
+        self.assertEqual(labeled.complexity, "standard")
+        self.assertFalse(labeled.needs_intent_preflight)
+        self.assertFalse(labeled.needs_critique)
+        self.assertEqual(labeled.primary.role, unlabeled.primary.role)
+        self.assertEqual(labeled.complexity, unlabeled.complexity)
+        self.assertEqual(labeled.needs_critique, unlabeled.needs_critique)
+
+    def test_small_talk_stays_on_the_standard_route(self):
+        plan = self.router.route("Hello Omnitrix", frozenset({"reasoning"}))
+        self.assertEqual(plan.primary.role, "reasoning")
+        self.assertEqual(plan.complexity, "standard")
+        self.assertFalse(plan.needs_intent_preflight)
+        self.assertFalse(plan.needs_critique)
+
+    def test_non_stem_subjects_are_supported_without_exam_framing(self):
         plan = self.router.route(
-            "JEE Advanced: Solve x^2 - 5x + 6 = 0.",
+            "Explain the economic incentives behind price discrimination and consumer surplus.",
             frozenset({"reasoning"}),
         )
         self.assertEqual(plan.primary.role, "subject_solver")
-        self.assertEqual(plan.complexity, "complex")
-        self.assertFalse(plan.needs_intent_preflight)
-        self.assertTrue(plan.needs_critique)
+        self.assertEqual(plan.domain, "subject")
 
     def test_routes_repository_debugging_to_coding(self):
         plan = self.router.route(

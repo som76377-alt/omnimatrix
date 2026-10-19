@@ -10,13 +10,21 @@ from core.agents.registry import AgentDefinition, AgentRegistry
 
 _SUBJECT_TERMS = re.compile(
     r"\b(math|mathematics|algebra|calculus|integral|derivative|equation|proof|prove|"
-    r"physics|chemistry|biology|science|thermodynamics|electromagnet|quantum|"
-    r"stoichiometry|molecule|reaction|chemical|mechanics|statistics|probability|"
-    r"geometry|trigonometry|derive|calculate)\b",
+    r"physics|chemistry|biology|science|thermodynamics|electromagnetic|electromagnetism|"
+    r"induction|quantum|stoichiometry|molecule|reaction|chemical|mechanics|statistics|"
+    r"probability|geometry|trigonometry|derive|calculate|astronomy|astrophysics|cosmology|"
+    r"genetics|evolution|ecology|anatomy|physiology|neuroscience|"
+    r"history|historical|geography|economics|economic|philosophy|philosophical|"
+    r"psychology|psychological|sociology|sociological|linguistics|linguistic|literature|"
+    r"political science|international relations|law|jurisprudence|ethics|anthropology|"
+    r"archaeology|music theory|art history|engineering|electrical engineering|"
+    r"mechanical engineering|civil engineering|materials science|data science)\b",
     re.IGNORECASE,
 )
-_EXAM_TERMS = re.compile(
-    r"\b(jee(?:\s+advanced)?|neet|olympiad|competitive exam)\b",
+_MATH_PROBLEM_TERMS = re.compile(
+    r"\b(equation|polynomial|quadratic|integral|derivative|differentiate|integrate|"
+    r"limit|matrix|matrices|determinant|eigenvalue|eigenvector|factorise|factorize|"
+    r"logarithm|trigonometric|differential equation|linear algebra|roots of|solve for)\b",
     re.IGNORECASE,
 )
 _RESEARCH_TERMS = re.compile(
@@ -53,9 +61,8 @@ _VAGUE_ACTIONS = re.compile(
     r"make it good|handle this|sort this out)\b",
     re.IGNORECASE,
 )
-_ACADEMIC_EXERCISE_TERMS = re.compile(
-    r"\b(jee(?:\s+advanced)?|neet|olympiad|multiple[- ]choice|answer choices|"
-    r"solve for|find the value|find the maximum|find the minimum|roots of|"
+_WELL_POSED_PROBLEM_TERMS = re.compile(
+    r"\b(solve for|find the value|find the maximum|find the minimum|roots of|"
     r"evaluate the integral|evaluate the limit|maximum value|minimum value)\b",
     re.IGNORECASE,
 )
@@ -95,7 +102,7 @@ class AgentRouter:
         return (
             len(words) >= 35
             or bool(_COMPLEX_TERMS.search(objective))
-            or (domain != "general" and len(words) >= 14)
+            or (domain != "general" and len(words) >= 24)
             or bool(_VAGUE_ACTIONS.search(objective))
             or any(phrase in lower for phrase in (
                 "requirements are", "acceptance criteria", "from scratch",
@@ -114,8 +121,20 @@ class AgentRouter:
         if not isinstance(objective, str) or not objective.strip():
             raise ValueError("Cannot route an empty objective.")
 
-        exam_task = bool(_EXAM_TERMS.search(objective))
-        subject = bool(_SUBJECT_TERMS.search(objective)) or exam_task
+        has_math_action = bool(re.search(
+            r"\b(solve|evaluate|find|calculate|compute)\b",
+            objective,
+            re.IGNORECASE,
+        ))
+        has_math_notation = bool(re.search(
+            r"(?:\\frac|\\int|[=+*/^√∫])",
+            objective,
+        ))
+        subject = (
+            bool(_SUBJECT_TERMS.search(objective))
+            or bool(_MATH_PROBLEM_TERMS.search(objective))
+            or (has_math_action and has_math_notation)
+        )
         coding = "coding" in capabilities or bool(_CODING_TERMS.search(objective))
         research = bool(_RESEARCH_TERMS.search(objective))
         computation = bool(
@@ -158,11 +177,11 @@ class AgentRouter:
             support.append(self.registry.get("research"))
 
         word_count = len(re.findall(r"\b\w+\b", objective))
-        complex_task = self._is_complex(objective, domain) or exam_task
+        complex_task = self._is_complex(objective, domain)
         vague_short_prompt = word_count <= 12 and bool(_VAGUE_ACTIONS.search(objective))
         short_action_request = word_count <= 28 and bool(_ACTION_REQUESTS.search(objective))
         intent_mode = self.registry.intent_mode
-        explicit_academic_exercise = bool(_ACADEMIC_EXERCISE_TERMS.search(objective)) or (
+        well_posed_problem = bool(_WELL_POSED_PROBLEM_TERMS.search(objective)) or (
             len(re.findall(r"(?:\d|[=+*/^]|\\frac|\\int|√|∫)", objective)) >= 4
             and bool(re.search(
                 r"\b(solve|find|determine|calculate|derive|evaluate|prove)\b",
@@ -170,7 +189,7 @@ class AgentRouter:
                 re.IGNORECASE,
             ))
         )
-        # A standalone model call just to restate a well-posed exam problem adds
+        # A standalone model call just to restate a well-posed problem adds
         # latency without adding a distinct solution check. The primary solver
         # still gets intent-engineering instructions, and complex problems still
         # keep their separate critic pass.
@@ -181,7 +200,7 @@ class AgentRouter:
                 and (
                     vague_short_prompt
                     or (
-                        not explicit_academic_exercise
+                        not well_posed_problem
                         and (complex_task or short_action_request)
                     )
                 )

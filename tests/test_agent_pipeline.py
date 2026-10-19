@@ -132,6 +132,93 @@ class SpecialistPipelineTests(unittest.TestCase):
         )
         self.assertIn(QUALITY_POLICY_MARKER, adapter.requests[0].instructions)
 
+    def _build_two_model_omnitrix(self, primary_responses, specialist_responses):
+        models = ModelRegistry()
+        models.register(ModelDefinition(
+            name="omnitrix-primary",
+            provider="google",
+            model_id="gemini-3.8-flash",
+            capabilities=frozenset({"reasoning", "coding"}),
+            context_window=32000,
+            metadata={
+                "cost_class": "user_provided_free_quota",
+                "estimated_cost_usd": 0,
+                "agent_approved_cost": True,
+            },
+        ))
+        models.register(ModelDefinition(
+            name="reasoning-nemotron-super-free",
+            provider="openrouter",
+            model_id="nvidia/nemotron-3-super-120b-a12b:free",
+            capabilities=frozenset({"reasoning", "coding"}),
+            context_window=262144,
+            metadata={
+                "cost_class": "free",
+                "estimated_cost_usd": 0,
+                "agent_approved_cost": True,
+                "reasoning_effort": "high",
+            },
+        ))
+        primary_adapter = ScriptedAdapter(
+            primary_responses, name="omnitrix-primary", provider="google"
+        )
+        specialist_adapter = ScriptedAdapter(
+            specialist_responses,
+            name="reasoning-nemotron-super-free",
+            provider="openrouter",
+        )
+        adapters = AdapterRegistry()
+        adapters.register(primary_adapter)
+        adapters.register(specialist_adapter)
+        omnitrix = Omnitrix(
+            registry=models,
+            adapter_registry=adapters,
+            agent_registry=AgentRegistry.load(AGENT_CONFIG),
+            budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+        )
+        return omnitrix, primary_adapter, specialist_adapter
+
+    def test_simple_greeting_uses_primary_model_without_spending_nemotron_request(self):
+        omnitrix, primary, specialist = self._build_two_model_omnitrix(
+            ["Hello! What would you like to explore?"],
+            [],
+        )
+        result = omnitrix.chat(Conversation(), "Hello Omnitrix")
+        self.assertIn("Hello", result)
+        self.assertEqual(len(primary.requests), 1)
+        self.assertEqual(len(specialist.requests), 0)
+        trace = omnitrix.last_execution_trace
+        self.assertEqual(trace["complexity"], "standard")
+        self.assertEqual(len(trace["activity"]), 1)
+        self.assertEqual(trace["activity"][0]["configured_name"], "omnitrix-primary")
+
+    def test_complex_science_uses_specialist_once_and_lightweight_independent_review(self):
+        draft = "A changing coil current creates a changing magnetic field, inducing currents in the conductive pan; electrical resistance converts energy into heat."
+        critique = json.dumps({
+            "verdict": "pass",
+            "issues": [],
+            "corrected_answer": "",
+        })
+        omnitrix, primary, specialist = self._build_two_model_omnitrix(
+            [make_intent_brief(), critique],
+            [draft],
+        )
+        result = omnitrix.chat(
+            Conversation(),
+            "Derive the causal physics of how an induction stove heats a metal pan, and check the explanation.",
+        )
+        self.assertIn("changing magnetic field", result)
+        self.assertEqual(len(specialist.requests), 1)
+        self.assertEqual(len(primary.requests), 2)
+        activity = omnitrix.last_execution_trace["activity"]
+        self.assertEqual(
+            [item["stage"] for item in activity],
+            ["intent_engineer", "answer_generation", "critic"],
+        )
+        self.assertEqual(activity[1]["provider"], "openrouter")
+        self.assertEqual(activity[1]["reasoning_effort_requested"], "high")
+        self.assertEqual(activity[2]["provider"], "google")
+
     def test_malformed_intent_json_is_rejected(self):
         self.assertIsNone(Omnitrix._validate_intent_brief("not json"))
 
