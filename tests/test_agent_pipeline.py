@@ -4,6 +4,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from core.agents.registry import AgentRegistry
+from core.agents.router import AgentRouter
 from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
 from core.models.base import ModelAdapter, ModelResponse
@@ -191,6 +192,39 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertEqual(trace["complexity"], "standard")
         self.assertEqual(len(trace["activity"]), 1)
         self.assertEqual(trace["activity"][0]["configured_name"], "omnitrix-primary")
+
+    def test_brain_keeps_greetings_fast_and_routes_causal_questions_to_reasoning(self):
+        router = AgentRouter(AgentRegistry.load(AGENT_CONFIG))
+        greeting = router.route("Hello, how are you?", frozenset({"reasoning"}))
+        causal_question = router.route(
+            "Why does induction heat a metal pan?",
+            frozenset({"reasoning"}),
+        )
+        self.assertEqual(greeting.complexity, "standard")
+        self.assertEqual(causal_question.complexity, "complex")
+
+    def test_primary_provider_failure_falls_back_once_to_available_reasoning_model(self):
+        omnitrix, primary, specialist = self._build_two_model_omnitrix(
+            [],
+            ["Fallback answer from reasoning model."],
+        )
+
+        def fail_primary(request):
+            primary.requests.append(request)
+            raise RuntimeError("simulated provider failure")
+
+        primary.generate = fail_primary
+        result = omnitrix.chat(Conversation(), "Hello Omnitrix")
+
+        self.assertEqual(result, "Fallback answer from reasoning model.")
+        self.assertEqual(len(primary.requests), 1)
+        self.assertEqual(len(specialist.requests), 1)
+        activity = omnitrix.last_execution_trace["activity"]
+        self.assertEqual(activity[-1]["provider"], "openrouter")
+        self.assertEqual(
+            activity[-1]["configured_name"],
+            "reasoning-nemotron-super-free",
+        )
 
     def test_complex_science_uses_specialist_once_and_lightweight_independent_review(self):
         draft = "A changing coil current creates a changing magnetic field, inducing currents in the conductive pan; electrical resistance converts energy into heat."
