@@ -36,7 +36,7 @@ _MAPPING = {
 def toolchain_status() -> dict[str, dict[str, Any]]:
     """Safe inventory: configuration/dependency presence is not a live health check."""
     status: dict[str, dict[str, Any]] = {}
-    implemented = {"gemini", "openrouter", "ffmpeg"}
+    implemented = {"gemini", "openrouter", "ffmpeg", "paddleocr", "docling", "faster_whisper", "pyscenedetect"}
     for name, spec in OPTIONAL_TOOLCHAIN.items():
         configured = False
         dependency_installed = False
