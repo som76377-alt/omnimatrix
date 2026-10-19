@@ -58,7 +58,8 @@ def gemini_attachment_worker(task: TaskRequest, handoff: HandoffPacket) -> TaskR
     if status != "complete" or not context:
         # A partial result is retained as evidence, but it must not masquerade as success.
         partial = ()
-        if context:
+        analyzed_count = int(result.get("analyzed", 0) or 0)
+        if context and analyzed_count > 0:
             partial = (EvidenceItem(str(task.source_name), str(task.source_type), context,
                                     "gemini.multimodal", DEFAULT_MULTIMODAL_MODEL,
                                     metadata={"attachment_status": str(status)}),)
