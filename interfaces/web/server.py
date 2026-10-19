@@ -615,19 +615,50 @@ class StudioRuntime:
             return {"ok": True, "active": False, "status": "idle"}
 
         current = getattr(self.omnitrix, "active_execution", None)
-        if not isinstance(current, dict):
-            return {"ok": True, "active": True, "activity": None}
+        task_metadata = getattr(self.omnitrix, "active_task_metadata", None)
+        if not isinstance(task_metadata, dict) and not isinstance(current, dict):
+            return {"ok": True, "active": False, "status": "idle"}
 
         allowed_fields = (
             "status", "stage", "role", "provider", "model", "configured_model",
             "configured_name", "reasoning_effort_requested", "identity_source",
         )
-        activity = {
-            key: current.get(key)
-            for key in allowed_fields
-            if current.get(key) is None or isinstance(current.get(key), (str, int, float, bool))
+
+        def safe_activity(record: Any) -> dict[str, Any] | None:
+            if not isinstance(record, dict):
+                return None
+            return {
+                key: record.get(key)
+                for key in allowed_fields + ("latency_seconds", "review_status")
+                if record.get(key) is None
+                or isinstance(record.get(key), (str, int, float, bool))
+            }
+
+        raw_history = task_metadata.get("model_activity", []) if isinstance(task_metadata, dict) else []
+        history = [
+            item for record in raw_history
+            if (item := safe_activity(record)) is not None
+        ] if isinstance(raw_history, list) else []
+        plan = {}
+        if isinstance(task_metadata, dict):
+            for key in ("primary_agent_role", "task_complexity", "task_domain"):
+                value = task_metadata.get(key)
+                if isinstance(value, str):
+                    plan[key] = value
+            agent_roles = task_metadata.get("agent_roles")
+            if isinstance(agent_roles, list):
+                plan["agent_roles"] = [
+                    role for role in agent_roles if isinstance(role, str)
+                ][:12]
+
+        return {
+            "ok": True,
+            "active": True,
+            "status": "working",
+            "activity": safe_activity(current),
+            "activity_history": history[-12:],
+            "plan": plan,
         }
-        return {"ok": True, "active": True, "activity": activity}
 
     def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
         """Rate-limited public chat only; this path cannot access workspace or test APIs."""
