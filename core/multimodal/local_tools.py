@@ -6,10 +6,39 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 MAX_LOCAL_INPUT_BYTES = max(1024, int(os.environ.get("OMNITRIX_LOCAL_TOOL_MAX_BYTES", str(512 * 1024 * 1024))))
 MAX_TEXT_CHARS = 200_000
+MAX_PROCESS_STDOUT_BYTES = 2 * 1024 * 1024
+MAX_PROCESS_STDERR_BYTES = 64 * 1024
+
+
+def _run_bounded_process(
+    command: list[str], *, timeout_seconds: int, stdout_limit: int = MAX_PROCESS_STDOUT_BYTES,
+    stderr_limit: int = MAX_PROCESS_STDERR_BYTES,
+) -> subprocess.CompletedProcess[str]:
+    """Run a fixed no-shell command with bounded in-memory output capture."""
+    with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
+        result = subprocess.run(
+            command, stdin=subprocess.DEVNULL, stdout=stdout_file, stderr=stderr_file,
+            timeout=timeout_seconds, check=False, shell=False,
+        )
+        stdout_file.seek(0)
+        stdout = stdout_file.read(stdout_limit + 1)
+        if len(stdout) > stdout_limit:
+            raise RuntimeError("Local media tool output exceeded the configured safety limit.")
+        stderr_file.seek(0)
+        stderr = stderr_file.read(stderr_limit + 1)
+        truncated = len(stderr) > stderr_limit
+        stderr_text = stderr[:stderr_limit].decode("utf-8", errors="replace")
+        if truncated:
+            stderr_text += "\\n[tool stderr truncated]"
+        return subprocess.CompletedProcess(
+            result.args, result.returncode,
+            stdout.decode("utf-8", errors="replace"), stderr_text,
+        )
 
 
 def _input_path(value: Any) -> Path:
@@ -35,9 +64,9 @@ def probe_media(path: str, *, timeout_seconds: int = 15) -> dict[str, Any]:
     if not 1 <= timeout_seconds <= 60:
         raise ValueError("Probe timeout must be between 1 and 60 seconds.")
     source = _input_path(path)
-    result = subprocess.run(
+    result = _run_bounded_process(
         [binary, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(source)],
-        capture_output=True, text=True, timeout=timeout_seconds, check=False, shell=False,
+        timeout_seconds=timeout_seconds,
     )
     if result.returncode:
         raise RuntimeError("FFprobe could not read this media file.")
