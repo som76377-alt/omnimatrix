@@ -887,6 +887,29 @@ class StudioRuntime:
         Path(record["path"]).unlink(missing_ok=True)
         return {"ok": True, "deleted": True, "attachment_id": attachment_id}
 
+    def list_attachments(self, session_id: Any) -> dict[str, Any]:
+        """List staged files for one browser session so refreshes do not orphan the tray."""
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("A valid chat session ID is required.")
+        with self.attachment_lock:
+            rows = self.attachment_records.get(session_id, {})
+            ids = list(self.pending_attachments.get(session_id, []))
+            records = [dict(rows[item]) for item in ids if item in rows]
+        return {
+            "ok": True,
+            "attachments": [
+                {
+                    "id": record["id"],
+                    "name": record["name"],
+                    "mime_type": record["mime_type"],
+                    "size": record["size"],
+                    "sha256": record["sha256"],
+                    "status": "uploaded",
+                }
+                for record in records
+            ],
+        }
+
     def _pending_attachment_records(self, session_id: str) -> list[dict[str, Any]]:
         with self.attachment_lock:
             rows = self.attachment_records.get(session_id, {})
@@ -1230,6 +1253,8 @@ def make_handler(
                 try:
                     if route == "/api/health":
                         self._send_json(runtime.status())
+                    elif route == "/api/attachments/list":
+                        self._send_json(runtime.list_attachments(self._first_query("session_id", "")))
                     elif route == "/api/workspace/list":
                         self._workspace_list()
                     elif route == "/api/workspace/read":
