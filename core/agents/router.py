@@ -15,6 +15,10 @@ _SUBJECT_TERMS = re.compile(
     r"geometry|trigonometry|derive|calculate)\b",
     re.IGNORECASE,
 )
+_EXAM_TERMS = re.compile(
+    r"\b(jee(?:\s+advanced)?|neet|olympiad|competitive exam)\b",
+    re.IGNORECASE,
+)
 _RESEARCH_TERMS = re.compile(
     r"\b(research|look up|search the web|browse|find sources|find references|"
     r"cite sources|literature review|latest studies|scientific papers|"
@@ -110,7 +114,8 @@ class AgentRouter:
         if not isinstance(objective, str) or not objective.strip():
             raise ValueError("Cannot route an empty objective.")
 
-        subject = bool(_SUBJECT_TERMS.search(objective))
+        exam_task = bool(_EXAM_TERMS.search(objective))
+        subject = bool(_SUBJECT_TERMS.search(objective)) or exam_task
         coding = "coding" in capabilities or bool(_CODING_TERMS.search(objective))
         research = bool(_RESEARCH_TERMS.search(objective))
         computation = bool(
@@ -153,7 +158,7 @@ class AgentRouter:
             support.append(self.registry.get("research"))
 
         word_count = len(re.findall(r"\b\w+\b", objective))
-        complex_task = self._is_complex(objective, domain)
+        complex_task = self._is_complex(objective, domain) or exam_task
         vague_short_prompt = word_count <= 12 and bool(_VAGUE_ACTIONS.search(objective))
         short_action_request = word_count <= 28 and bool(_ACTION_REQUESTS.search(objective))
         intent_mode = self.registry.intent_mode
