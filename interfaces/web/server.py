@@ -1097,6 +1097,8 @@ class StudioRuntime:
                 "analyzed": attachment_result.get("analyzed", 0),
                 "remaining": max(0, len(staged) - len(consumed_ids)),
                 "error": attachment_result.get("error"),
+                "worker": attachment_result.get("worker"),
+                "model": attachment_result.get("model"),
                 "consumed_ids": consumed_ids,
             }
         return result
