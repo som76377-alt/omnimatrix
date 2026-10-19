@@ -40,6 +40,9 @@ class WebConsoleTests(unittest.TestCase):
         cls.css = (WEBAPP / "styles.css").read_text(encoding="utf-8")
         cls.worker = (WEBAPP / "sw.js").read_text(encoding="utf-8")
         cls.workflow = (ROOT / ".github/workflows/deploy-webapp.yml").read_text(encoding="utf-8")
+        cls.creative_html = (WEBAPP / "creative-studio.html").read_text(encoding="utf-8")
+        cls.creative_js = (WEBAPP / "creative-studio.js").read_text(encoding="utf-8")
+        cls.creative_css = (WEBAPP / "creative-studio.css").read_text(encoding="utf-8")
 
     def test_all_views_and_primary_navigation_exist(self):
         parser = ConsoleHTMLParser()
@@ -68,6 +71,26 @@ class WebConsoleTests(unittest.TestCase):
         ids = set(re.findall(r'byId\("([^"]+)"\)', self.js))
         missing = sorted(ids - parser.ids)
         self.assertEqual(missing, [])
+
+    def test_creative_studio_files_assets_and_local_first_contract(self):
+        parser = ConsoleHTMLParser()
+        parser.feed(self.creative_html)
+        self.assertIn("preview-canvas", parser.ids)
+        self.assertIn("media-input", parser.ids)
+        self.assertIn("timeline-list", parser.ids)
+        self.assertIn("inspector-form", parser.ids)
+        for asset in parser.local_assets:
+            with self.subTest(asset=asset):
+                self.assertTrue((WEBAPP / asset.removeprefix("./")).is_file(), asset)
+        referenced_ids = set(re.findall(r'\\$\\("([^"]+)"\\)', self.creative_js))
+        missing = sorted(referenced_ids - parser.ids)
+        self.assertEqual(missing, [])
+        self.assertIn("indexedDB", self.creative_js)
+        self.assertIn("MediaRecorder", self.creative_js)
+        self.assertIn("No model has been called", self.creative_html)
+        self.assertIn("configured-not-connected", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
+        self.assertIn('"status": "integrated"', (ROOT / "config/creative-studio-tools.json").read_text(encoding="utf-8"))
+        self.assertNotIn("fetch(", self.creative_js)
 
     def test_dashboard_reads_real_public_repository_api(self):
         self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
@@ -161,7 +184,7 @@ class WebConsoleTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js not installed in this test environment")
     def test_browser_javascript_parses(self):
-        for script in ("app.js", "sw.js"):
+        for script in ("app.js", "sw.js", "creative-studio.js"):
             with self.subTest(script=script):
                 result = subprocess.run(
                     ["node", "--check", str(WEBAPP / script)],
