@@ -569,45 +569,86 @@ class StudioRuntime:
             return conversation
 
     def mobile_health(self) -> dict[str, Any]:
-        """Return only non-sensitive readiness for the native app's hosted-chat link."""
+        """Report hosted-chat readiness from routes available to this running process."""
         enabled_models = self.omnitrix.registry.list_enabled()
-        google_model_enabled = any(
-            model.provider == "google" and model.enabled
-            for model in enabled_models
-        )
-        openrouter_models = [
+        configured_live_models = [
             model for model in enabled_models
+            if model.provider not in {"demo", "test"} and model.model_id
+        ]
+
+        available_models = []
+        for model in configured_live_models:
+            if not self.omnitrix.adapter_registry.has(model.name):
+                continue
+            adapter = self.omnitrix.adapter_registry.get(model.name)
+            if adapter.is_available():
+                available_models.append(model)
+
+        openrouter_reasoning_models = [
+            model for model in configured_live_models
             if model.provider == "openrouter" and "reasoning" in model.capabilities
         ]
-        reasoning_model = openrouter_models[0] if openrouter_models else None
-        reasoning_adapter_available = bool(
-            reasoning_model is not None
-            and self.omnitrix.adapter_registry.has(reasoning_model.name)
-            and self.omnitrix.adapter_registry.get(reasoning_model.name).is_available()
+        reasoning_model = openrouter_reasoning_models[0] if openrouter_reasoning_models else None
+        reasoning_specialist_available = any(
+            model.provider == "openrouter"
+            and "reasoning" in model.capabilities
+            and model in available_models
+            for model in configured_live_models
         )
-        key_present = bool(os.getenv("GEMINI_API_KEY"))
-        available = self.public_chat_enabled and google_model_enabled and key_present
+
+        # This is a readiness hint, not a claim about the model that will answer
+        # every prompt. Role-specific routing can choose a different live model.
+        report_model = next(
+            (
+                model for model in available_models
+                if model.provider == "openrouter" and "reasoning" in model.capabilities
+            ),
+            next(
+                (model for model in available_models if model.provider == "google"),
+                available_models[0] if available_models else None,
+            ),
+        )
+
+        available = self.public_chat_enabled and bool(available_models)
         if not self.public_chat_enabled:
             reason = "public_chat_disabled"
-        elif not google_model_enabled:
+        elif not configured_live_models:
             reason = "model_not_configured"
-        elif not key_present:
+        elif not available_models:
             reason = "provider_key_missing"
         else:
             reason = None
+
         return {
             "ok": True,
             "service": "omnitrix-mobile-api",
             "chat_available": available,
             "reason": reason,
-            "model": "gemini-3.8-flash" if available else None,
-            "reasoning_specialist_available": reasoning_adapter_available,
+            "model": (
+                report_model.model_id or report_model.name
+                if report_model is not None else None
+            ),
+            "provider": report_model.provider if report_model is not None else None,
+            "model_identity_source": (
+                "configured_route_not_a_completed_request"
+                if report_model is not None else "no_available_route"
+            ),
+            "available_models": [
+                {
+                    "provider": model.provider,
+                    "model": model.model_id or model.name,
+                }
+                for model in available_models
+            ],
+            "gemini_key_detected": bool(os.getenv("GEMINI_API_KEY")),
+            "openrouter_key_detected": bool(os.getenv("OPENROUTER_API_KEY")),
+            "reasoning_specialist_available": reasoning_specialist_available,
             "preferred_reasoning_model": (
                 reasoning_model.model_id or reasoning_model.name
                 if reasoning_model is not None else None
             ),
             "reasoning_route_status": (
-                "ready" if reasoning_adapter_available
+                "ready" if reasoning_specialist_available
                 else "provider_key_missing" if reasoning_model is not None
                 else "model_not_configured"
             ),
