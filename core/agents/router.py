@@ -66,10 +66,9 @@ _REASONING_REQUEST_TERMS = re.compile(
     r"how\s+(?:does|do|is|are|did|would|can|could|might|should)\b|"
     r"what\s+(?:happens|would happen|causes|explains)\b|"
     r"explain\s+(?:why|how|the mechanism|the process|the cause|the relationship|the derivation|the reasoning)\b|"
-    r"derive|prove|demonstrate|deduce|infer|compare|contrast|evaluate|analy[sz]e|diagnose|debug|"
+    r"derive|prove|demonstrate|deduce|infer|compare|contrast|diagnose|debug|"
     r"optimi[sz]e|step[- ]by[- ]step|work through|show that|root cause|trade[- ]?offs?|"
-    r"multi[- ]step|causal|reasoning|solve for|solve this|solve the|find the error|"
-    r"calculate|compute|integrate|differentiate|estimate|predict|determine|plan|design|architecture|"
+    r"multi[- ]step|causal|reasoning|find the error|plan|design|architecture|"
     r"implement|refactor|audit|verify|comprehensive|thorough)\b",
     re.IGNORECASE,
 )
@@ -112,7 +111,7 @@ class AgentRouter:
     def _is_complex(objective: str, domain: str) -> bool:
         words = re.findall(r"\b\w+\b", objective)
         lower = objective.lower()
-        normalized = re.sub(r"[\s.!?]+", " ", lower).strip()
+        normalized = re.sub(r"[\s,.!?]+", " ", lower).strip()
 
         # Keep short social turns fast; "How are you?" is not a reasoning task.
         if re.fullmatch(
