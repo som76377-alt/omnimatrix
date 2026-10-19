@@ -103,7 +103,20 @@
           <div class="chat-messages" id="chat-messages" aria-live="polite">
             <article class="message assistant-message"><div class="message-avatar">O</div><div class="message-content"><div class="message-meta">OMNITRIX CORE <time>READY</time></div><div class="message-bubble"><p>The Studio interface is ready. Connect the Python runtime to send a real message through Omnitrix.</p><p>On GitHub Pages, the chat is intentionally inactive because a static website cannot run the repository's Python orchestrator. The offline demo also stays clearly labelled as simulated.</p></div><div class="message-source">SYSTEM MESSAGE · NOT MODEL GENERATED</div></div></article>
           </div>
-          <div class="chat-composer-wrap"><div class="composer-tools"><span id="composer-permissions">No backend permissions loaded</span><span>ENTER TO SEND · SHIFT+ENTER NEW LINE</span></div><form id="chat-form" class="chat-composer"><textarea id="chat-input" rows="2" maxlength="8000" placeholder="Connect the runtime to start a conversation…" aria-label="Message Omnitrix" disabled></textarea><div class="composer-bottom"><span id="chat-char-count">0 / 8000</span><button class="send-button" type="submit" id="send-message" disabled>SEND <span>↑</span></button></div></form><p class="composer-disclaimer">Models may be simulated in demo mode. Never treat assistant text as evidence that a test or tool succeeded.</p></div>
+          <div class="chat-composer-wrap">
+          <div class="composer-tools"><span id="composer-permissions">No backend permissions loaded</span><span>ENTER TO SEND · SHIFT+ENTER NEW LINE</span></div>
+          <div class="chat-attachment-toolbar">
+            <input id="chat-attachment-input" type="file" multiple accept="image/*,application/pdf,audio/*,video/*" hidden>
+            <button id="chat-attach-button" class="attach-button" type="button" disabled aria-label="Attach images, PDFs, audio, or video">＋ ATTACH FILES</button>
+            <span id="chat-attachment-caption">Images · PDF · audio · video · no file-count cap</span>
+          </div>
+          <div id="chat-attachment-list" class="chat-attachment-list" aria-live="polite"></div>
+          <form id="chat-form" class="chat-composer">
+            <textarea id="chat-input" rows="2" maxlength="8000" placeholder="Connect the runtime to start a conversation…" aria-label="Message Omnitrix" disabled></textarea>
+            <div class="composer-bottom"><span id="chat-char-count">0 / 8000</span><button class="send-button" type="submit" id="send-message" disabled>SEND <span>↑</span></button></div>
+          </form>
+          <p class="composer-disclaimer">Files are uploaded to your connected private runtime. When you send them, they may be sent to the configured multimodal provider for analysis. There is no file-count cap; available storage, file-size limits, provider quotas, and model context still apply.</p>
+        </div>
         </div>
         <aside class="chat-side">
           <div class="panel context-panel"><div class="panel-heading"><p class="eyebrow">RUNTIME CONTEXT</p><span class="panel-code">LIVE STATE</span></div><div class="context-stat"><span>Model mode</span><strong id="context-model-mode">DISCONNECTED</strong></div><div class="context-stat"><span>Workspace read</span><strong id="context-workspace">DISABLED</strong></div><div class="context-stat"><span>Calculator tool</span><strong id="context-calculator">UNKNOWN</strong></div><div class="context-stat"><span>Local tests</span><strong id="context-tests">DISABLED</strong></div><button class="side-action" data-goto="capabilities">INSPECT MODELS &amp; TOOLS <span>→</span></button></div>
