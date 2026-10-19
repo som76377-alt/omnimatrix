@@ -174,6 +174,30 @@ class StudioServerTests(unittest.TestCase):
         self.assertNotIn(self.token, json.dumps(body))
         self.assertNotIn(str(self.workspace), json.dumps(body))
 
+    def test_openrouter_only_key_makes_hosted_chat_ready_without_gemini(self):
+        from unittest.mock import patch
+
+        mobile_config = ROOT / "config" / "mobile.models.json"
+        mobile_omnitrix = Omnitrix.from_config(
+            mobile_config,
+            tool_registry=self.runtime.omnitrix.tool_registry,
+            tool_permission=self.runtime.omnitrix.tool_permission,
+        )
+        self.runtime.omnitrix = mobile_omnitrix
+        self.runtime.public_chat_enabled = True
+
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "configured"}, clear=True):
+            body = self.runtime.mobile_health()
+
+        self.assertTrue(body["chat_available"])
+        self.assertIsNone(body["reason"])
+        self.assertTrue(body["reasoning_specialist_available"])
+        self.assertTrue(body["openrouter_key_detected"])
+        self.assertFalse(body["gemini_key_detected"])
+        self.assertEqual(body["provider"], "openrouter")
+        self.assertEqual(body["model"], "nvidia/nemotron-3-super-120b-a12b:free")
+        self.assertEqual(body["reasoning_route_status"], "ready")
+
     def test_public_mobile_chat_is_disabled_by_default(self):
         status, body = self.request(
             "/api/mobile/chat",
