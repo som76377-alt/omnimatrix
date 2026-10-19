@@ -12,7 +12,11 @@ from core.multimodal.router import (
 
 
 def _path_from_task(task: Any) -> str:
-    path = task.payload.get("path") if isinstance(task.payload, dict) else None
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    path = payload.get("path")
+    records = payload.get("records")
+    if not path and isinstance(records, list) and len(records) == 1 and isinstance(records[0], dict):
+        path = records[0].get("path")
     if not isinstance(path, str) or not path.strip():
         raise ValueError("This local worker requires payload.path pointing to a staged local file.")
     return path
