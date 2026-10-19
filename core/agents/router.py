@@ -127,15 +127,6 @@ class AgentRouter:
             len(words) >= 35
             or bool(_COMPLEX_TERMS.search(objective))
             or bool(_REASONING_REQUEST_TERMS.search(objective))
-            or (
-                domain in {"subject", "computation"}
-                and bool(re.search(
-                    r"\b(solve|calculate|compute|derive|prove|evaluate|determine|"
-                    r"integrate|differentiate|analyze|analyse)\b",
-                    objective,
-                    re.IGNORECASE,
-                ))
-            )
             or (domain != "general" and len(words) >= 24)
             or bool(_VAGUE_ACTIONS.search(objective))
             or any(phrase in lower for phrase in (
