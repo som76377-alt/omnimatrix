@@ -16,7 +16,7 @@ def execute_provider_task(
     """Run a bounded provider task using only credentials present server-side."""
     available_keys = [name for name in ("GEMINI_API_KEY", "OPENROUTER_API_KEY")
                       if os.environ.get(name, "").strip()]
-    executables = ["ffmpeg"] if shutil.which("ffmpeg") else []
+    executables = [name for name in ("ffmpeg", "ffprobe") if shutil.which(name)]
     return route_with_failover(
         task, build_provider_registry(), available_keys=available_keys,
         available_executables=executables, prior_evidence=prior_evidence,
