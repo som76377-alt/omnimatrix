@@ -174,6 +174,35 @@ class WorkerRegistry:
                 for s, _ in sorted(self._entries.values(), key=lambda item: item[0].worker_id)]
 
 
+def classify_provider_failure(exc: BaseException) -> FailureKind:
+    """Classify common provider failures without exposing raw provider messages.
+
+    Adapters should prefer typed exceptions/status codes. Text matching is a
+    conservative compatibility fallback for adapters that expose only messages.
+    """
+    name = type(exc).__name__.lower()
+    status = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if status == 429 or any(token in name for token in ("ratelimit", "quota")):
+        return FailureKind.QUOTA
+    if status in (401, 403) or "authentication" in name or "unauthorized" in name:
+        return FailureKind.AUTH
+    if isinstance(exc, (TimeoutError,)) or "timeout" in name:
+        return FailureKind.TIMEOUT
+    if status in (400, 413, 415, 422):
+        return FailureKind.INVALID_INPUT if status in (400, 413, 422) else FailureKind.UNSUPPORTED
+    if status in (502, 503, 504) or any(token in name for token in ("urlerror", "connectionerror")):
+        return FailureKind.TRANSIENT
+    # Do not echo exc text: it may contain response bodies or private data.
+    message = str(exc).lower()[:300]
+    if any(token in message for token in ("quota exceeded", "rate limit", "resource_exhausted")):
+        return FailureKind.QUOTA
+    if any(token in message for token in ("invalid api key", "unauthorized", "permission denied")):
+        return FailureKind.AUTH
+    if "unsupported" in message or "not supported" in message:
+        return FailureKind.UNSUPPORTED
+    return FailureKind.UNKNOWN
+
+
 def route_with_failover(task: TaskRequest, registry: WorkerRegistry, *,
                         available_keys: Iterable[str] = (),
                         available_executables: Iterable[str] = (),
