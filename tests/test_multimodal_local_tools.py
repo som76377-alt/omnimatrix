@@ -55,7 +55,8 @@ class LocalToolSafetyTests(unittest.TestCase):
         self.assertIn("docling.local", by_id)
         self.assertIn("faster_whisper.local", by_id)
         self.assertIn("pyscenedetect.local", by_id)
-        self.assertFalse(by_id["paddleocr.local"]["enabled"])
+        from core.multimodal.adapters import toolchain_status
+        self.assertEqual(by_id["paddleocr.local"]["enabled"], toolchain_status()["paddleocr"]["dependency_installed"])
 
 
 if __name__ == "__main__":
