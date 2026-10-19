@@ -18,6 +18,7 @@ OPTIONAL_TOOLCHAIN: dict[str, dict[str, Any]] = {
     "qwen3_asr": {"kind":"local_model","module":"transformers","capabilities":["audio_transcription"]},
     "faster_whisper": {"kind":"python_tool","module":"faster_whisper","enable_env":"OMNITRIX_ENABLE_FASTER_WHISPER","model_env":"OMNITRIX_WHISPER_MODEL_PATH","download_env":"OMNITRIX_ALLOW_MODEL_DOWNLOAD","capabilities":["audio_transcription"]},
     "ffmpeg": {"kind":"system_tool","executable":"ffmpeg","capabilities":["media_conversion"]},
+    "ffprobe": {"kind":"system_tool","executable":"ffprobe","capabilities":["media_metadata"]},
     "pyscenedetect": {"kind":"python_tool","module":"scenedetect","capabilities":["video_scene_detection"]},
 }
 
@@ -31,13 +32,14 @@ _MAPPING = {
     "qwen3_asr": ("qwen3_asr.local",None,None,"local",40),
     "faster_whisper": ("faster_whisper.local",None,None,"local",45),
     "ffmpeg": ("ffmpeg.system",None,"ffmpeg","local",5),
+    "ffprobe": ("ffprobe.system",None,"ffprobe","local",5),
     "pyscenedetect": ("pyscenedetect.local",None,None,"local",15),
 }
 
 def toolchain_status() -> dict[str, dict[str, Any]]:
     """Safe inventory: configuration/dependency presence is not a live health check."""
     status: dict[str, dict[str, Any]] = {}
-    implemented = {"gemini", "openrouter", "ffmpeg", "paddleocr", "docling", "faster_whisper", "pyscenedetect"}
+    implemented = {"gemini", "openrouter", "ffmpeg", "paddleocr", "docling", "faster_whisper", "pyscenedetect", "ffprobe"}
     for name, spec in OPTIONAL_TOOLCHAIN.items():
         configured = False
         explicitly_enabled = not bool(spec.get("enable_env"))
