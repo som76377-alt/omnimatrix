@@ -92,10 +92,9 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         local_result = {"status": "partial", "count": 1, "analyzed": 1,
                         "context": "OCR text for second file.", "error": "limited",
                         "worker": "paddleocr.local", "model": "local:paddleocr"}
-        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result), \\
-             patch("core.multimodal.workflow._try_local_extraction",
-                   side_effect=[local_result, None]) as fallback:
-            result = analyze_multiple_attachments(records, "Describe all")
+        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result):
+            with patch("core.multimodal.workflow._try_local_extraction", side_effect=[local_result, None]) as fallback:
+                result = analyze_multiple_attachments(records, "Describe all")
         self.assertEqual(result["status"], "partial")
         self.assertEqual(result["analyzed"], 2)
         self.assertIn("Gemini completed first file", result["context"])
