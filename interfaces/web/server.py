@@ -18,6 +18,7 @@ import stat
 from pathlib import Path, PurePosixPath
 import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen as urlopen_url
 
 from core.application import ChatApplication
+from core.attachments import MAX_ATTACHMENT_BYTES, accepted_mime_type, analyze_attachments, safe_display_name
 from core.contracts import BudgetLimits
 from core.conversation import Conversation
 from core.orchestrator.omnitrix import Omnitrix
@@ -296,6 +298,20 @@ class StudioRuntime:
         auto_sync_interval_seconds: int = 60,
     ) -> None:
         self.root = root
+        self.attachment_root = self.root / "chat-attachments"
+        self.attachment_root.mkdir(parents=True, exist_ok=True)
+        self.attachment_lock = threading.RLock()
+        self.attachment_records: dict[str, dict[str, dict[str, Any]]] = {}
+        self.pending_attachments: dict[str, list[str]] = {}
+        # This cache is intentionally transient. On runtime startup there is no
+        # authenticated manifest for prior uploads, so discard stale orphan blobs.
+        cutoff = time.time() - 24 * 60 * 60
+        try:
+            for stale in self.attachment_root.rglob("*"):
+                if stale.is_file() and not stale.is_symlink() and stale.stat().st_mtime < cutoff:
+                    stale.unlink(missing_ok=True)
+        except OSError:
+            LOGGER.warning("Could not prune every stale attachment blob.")
         self.code_root = (code_root or Path(__file__).resolve().parents[2]).resolve()
         self.config_path = config_path
         self.auto_sync_main = auto_sync_main
@@ -773,6 +789,130 @@ class StudioRuntime:
         safe_payload["session_id"] = self._public_session_id(session_id, client_ip)
         return self.chat(safe_payload)
 
+    def upload_attachment(self, headers: Any, stream: Any) -> dict[str, Any]:
+        """Stream one user-selected media file into the private runtime without buffering it."""
+        session_id = str(headers.get("X-Session-ID", "")).strip()
+        if not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("A valid chat session ID is required for uploads.")
+        raw_name = unquote(str(headers.get("X-File-Name", "")))
+        name = safe_display_name(raw_name)
+        supplied_mime = str(headers.get("X-File-Mime", ""))
+        mime_type = accepted_mime_type(name, supplied_mime)
+        raw_length = headers.get("Content-Length", "0")
+        try:
+            length = int(raw_length)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid attachment Content-Length.") from exc
+        if length <= 0:
+            raise ValueError("Empty files cannot be attached.")
+        if length > MAX_ATTACHMENT_BYTES:
+            raise OverflowError(
+                f"File exceeds the configured per-file limit of {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MiB."
+            )
+        self.attachment_root.mkdir(parents=True, exist_ok=True)
+        free_bytes = shutil.disk_usage(self.attachment_root).free
+        if free_bytes < length + 32 * 1024 * 1024:
+            raise ValueError("Runtime storage is nearly full; remove files or free disk space before uploading.")
+        session_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
+        session_dir = self.attachment_root / session_key
+        session_dir.mkdir(parents=True, exist_ok=True)
+        attachment_id = secrets.token_hex(16)
+        target = session_dir / attachment_id
+        digest = hashlib.sha256()
+        received = 0
+        try:
+            with target.open("xb") as output:
+                while received < length:
+                    chunk = stream.read(min(256 * 1024, length - received))
+                    if not chunk:
+                        raise ValueError("Upload ended before the advertised file size was received.")
+                    output.write(chunk)
+                    digest.update(chunk)
+                    received += len(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            try:
+                os.chmod(target, 0o600)
+            except OSError:
+                pass
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+
+        record = {
+            "id": attachment_id,
+            "name": name,
+            "mime_type": mime_type,
+            "size": length,
+            "sha256": digest.hexdigest(),
+            "path": str(target),
+            "created_at": utc_now(),
+        }
+        with self.attachment_lock:
+            self.attachment_records.setdefault(session_id, {})[attachment_id] = record
+            self.pending_attachments.setdefault(session_id, []).append(attachment_id)
+        return {
+            "ok": True,
+            "attachment": {
+                "id": attachment_id,
+                "name": name,
+                "mime_type": mime_type,
+                "size": length,
+                "sha256": digest.hexdigest(),
+                "status": "uploaded",
+            },
+            "limits": {
+                "file_count_limit": None,
+                "per_file_bytes": MAX_ATTACHMENT_BYTES,
+                "storage": "available private runtime disk",
+            },
+        }
+
+    def delete_attachment(self, payload: Any) -> dict[str, Any]:
+        """Delete one staged attachment only from the caller's own chat session."""
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object.")
+        session_id = payload.get("session_id")
+        attachment_id = payload.get("attachment_id")
+        if not isinstance(session_id, str) or not SESSION_ID_PATTERN.fullmatch(session_id):
+            raise ValueError("A valid chat session ID is required.")
+        if not isinstance(attachment_id, str) or not re.fullmatch(r"[a-f0-9]{32}", attachment_id):
+            raise ValueError("Invalid attachment ID.")
+        with self.attachment_lock:
+            record = self.attachment_records.get(session_id, {}).pop(attachment_id, None)
+            pending = self.pending_attachments.get(session_id, [])
+            self.pending_attachments[session_id] = [item for item in pending if item != attachment_id]
+        if not record:
+            return {"ok": True, "deleted": False}
+        Path(record["path"]).unlink(missing_ok=True)
+        return {"ok": True, "deleted": True, "attachment_id": attachment_id}
+
+    def _pending_attachment_records(self, session_id: str) -> list[dict[str, Any]]:
+        with self.attachment_lock:
+            rows = self.attachment_records.get(session_id, {})
+            ids = list(self.pending_attachments.get(session_id, []))
+            return [dict(rows[item]) for item in ids if item in rows]
+
+    def _remove_staged_attachment_ids(self, session_id: str, attachment_ids: list[str]) -> None:
+        if not attachment_ids:
+            return
+        removed: list[dict[str, Any]] = []
+        with self.attachment_lock:
+            rows = self.attachment_records.get(session_id, {})
+            for attachment_id in attachment_ids:
+                record = rows.pop(attachment_id, None)
+                if record:
+                    removed.append(record)
+            self.pending_attachments[session_id] = [
+                item for item in self.pending_attachments.get(session_id, [])
+                if item not in set(attachment_ids)
+            ]
+        for record in removed:
+            try:
+                Path(record["path"]).unlink(missing_ok=True)
+            except OSError:
+                LOGGER.warning("Could not remove consumed attachment blob.")
+
     def chat(self, payload: Any) -> dict[str, Any]:
         """Send a real turn through ChatApplication/Omnitrix."""
         if not isinstance(payload, dict):
@@ -786,6 +926,7 @@ class StudioRuntime:
         if not isinstance(session_id, str):
             raise ValueError("session_id is required.")
         conversation = self.conversation_for(session_id)
+        staged = self._pending_attachment_records(session_id)
         started = time.monotonic()
         with self.active_chats_lock:
             self.active_chats += 1
@@ -795,8 +936,27 @@ class StudioRuntime:
             raise RuntimeError("Studio is busy with another chat, test, or GitHub update; retry this request.")
         with self.active_chats_lock:
             self.active_chat_session_id = session_id
+        attachment_result: dict[str, Any] | None = None
+        consumed_ids: list[str] = []
         try:
-            reply = self.app.send_message(conversation, message.strip())
+            effective_message = message.strip()
+            if staged:
+                attachment_result = analyze_attachments(staged, message.strip())
+                context = str(attachment_result.get("context", "")).strip()
+                if context:
+                    if attachment_result.get("status") != "complete":
+                        analyzed_count = int(attachment_result.get("analyzed", 0) or 0)
+                        remaining = staged[analyzed_count:]
+                        if remaining:
+                            context += "\n\nFILES NOT INCLUDED IN THIS ANALYSIS (do not claim to inspect them): " + ", ".join(
+                                str(item.get("name", "unnamed file")) for item in remaining
+                            )
+                    effective_message += "\n\n" + context
+                analyzed_count = int(attachment_result.get("analyzed", 0) or 0)
+                consumed_ids = [str(item["id"]) for item in staged[:analyzed_count]]
+            reply = self.app.send_message(conversation, effective_message)
+            if consumed_ids:
+                self._remove_staged_attachment_ids(session_id, consumed_ids)
         except Exception as exc:
             # Keep provider details and user content out of the client response, but
             # record a safe exception class so production failures are diagnosable.
@@ -811,7 +971,7 @@ class StudioRuntime:
                 if self.active_chat_session_id == session_id:
                     self.active_chat_session_id = None
                 self.active_chats -= 1
-        return {
+        result = {
             "ok": True,
             "reply": reply,
             "provider_mode": self.status()["provider_mode"],
@@ -820,6 +980,16 @@ class StudioRuntime:
             "completed_at": utc_now(),
             "execution_trace": getattr(self.omnitrix, "last_execution_trace", None),
         }
+        if attachment_result is not None:
+            result["attachment_status"] = {
+                "status": attachment_result.get("status", "unknown"),
+                "count": attachment_result.get("count", len(staged)),
+                "analyzed": attachment_result.get("analyzed", 0),
+                "remaining": max(0, len(staged) - len(consumed_ids)),
+                "error": attachment_result.get("error"),
+                "consumed_ids": consumed_ids,
+            }
+        return result
 
     def run_tests(self) -> dict[str, Any]:
         """Run only the repository's fixed unittest command; never accept shell input."""
@@ -1117,6 +1287,20 @@ def make_handler(
                     401,
                 )
                 return
+            if route == "/api/attachments/upload":
+                try:
+                    self._send_json(runtime.upload_attachment(self.headers, self.rfile))
+                except OverflowError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 413)
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 400)
+                except OSError as exc:
+                    LOGGER.warning("Attachment upload could not write storage: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Runtime storage could not accept this file."}, 507)
+                except Exception as exc:
+                    LOGGER.warning("Attachment upload failed: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Attachment upload failed safely."}, 500)
+                return
             try:
                 payload = self._json_body()
             except OverflowError as exc:
@@ -1128,6 +1312,8 @@ def make_handler(
             try:
                 if route == "/api/chat":
                     self._send_json(runtime.chat(payload))
+                elif route == "/api/attachments/delete":
+                    self._send_json(runtime.delete_attachment(payload))
                 elif route == "/api/mobile/chat":
                     forwarded = self.headers.get("X-Forwarded-For", "")
                     client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
