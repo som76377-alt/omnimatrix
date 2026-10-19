@@ -80,7 +80,7 @@ jobs:
       - name: Run live smoke benchmark
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          CASE_LIMIT: ${{ inputs.case_limit }}
+          CASE_LIMIT: ${{ inputs.case_limit || '1' }}
         shell: bash
         run: |
           set -euo pipefail
