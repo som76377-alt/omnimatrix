@@ -1123,26 +1123,28 @@ private fun OmnitrixApp() {
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            if (!runtimeConnected || chatBusy) {
-                messages = messages + ChatMessage("SYSTEM", "Connect Omnitrix and wait for the current response before adding files.")
+            if (!runtimeConnected || chatBusy || attachments.any { it.status == "UPLOADING" }) {
+                messages = messages + ChatMessage("SYSTEM", "Connect Omnitrix and wait for current uploads or responses before adding more files.")
             } else {
+                val selectedItems = uris.map { uri ->
+                    val name = context.contentResolver.query(
+                        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                        ?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "attachment"
+                    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                    ChatAttachment(UUID.randomUUID().toString(), uri, name, mime)
+                }
+                attachments = attachments + selectedItems
                 scope.launch {
-                    for (uri in uris) {
-                        val localId = UUID.randomUUID().toString()
-                        val name = context.contentResolver.query(
-                            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
-                        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-                            ?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "attachment"
-                        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                        attachments = attachments + ChatAttachment(localId, uri, name, mime)
+                    for (selected in selectedItems) {
                         try {
-                            val response = runtime.uploadAttachment(sessionId, uri)
+                            val response = runtime.uploadAttachment(sessionId, selected.uri)
                             val record = response.optJSONObject("attachment")
                                 ?: throw IOException("The server did not return an attachment record.")
                             val remoteId = record.optString("id", "")
                             if (remoteId.isBlank()) throw IOException("The server did not return an attachment ID.")
                             attachments = attachments.map { item ->
-                                if (item.localId == localId) item.copy(
+                                if (item.localId == selected.localId) item.copy(
                                     name = record.optString("name", item.name),
                                     mimeType = record.optString("mime_type", item.mimeType),
                                     sizeBytes = record.optLong("size", 0L),
@@ -1153,7 +1155,7 @@ private fun OmnitrixApp() {
                             }
                         } catch (e: Exception) {
                             attachments = attachments.map { item ->
-                                if (item.localId == localId) item.copy(
+                                if (item.localId == selected.localId) item.copy(
                                     status = "FAILED",
                                     error = e.message ?: "Upload failed."
                                 ) else item
@@ -1462,7 +1464,8 @@ private fun OmnitrixApp() {
                         {
                             val prompt = chatInput.trim()
                             val readyAttachments = attachments.filter { it.status == "READY" && !it.attachmentId.isNullOrBlank() }
-                            if (runtimeConnected && (prompt.isNotEmpty() || readyAttachments.isNotEmpty()) && !chatBusy) {
+                            if (runtimeConnected && (prompt.isNotEmpty() || readyAttachments.isNotEmpty()) && !chatBusy &&
+                                attachments.none { it.status == "UPLOADING" }) {
                                 val sentPrompt = prompt.ifBlank { "Please analyze the attached files." }
                                 val userText = buildString {
                                     if (prompt.isNotEmpty()) append(prompt)
@@ -1933,7 +1936,7 @@ private fun ChatScreen(
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onAttach, enabled = connected && !busy) {
+                TextButton(onClick = onAttach, enabled = connected && !busy && attachments.none { it.status == "UPLOADING" }) {
                     Text("+ ATTACH FILES", color = if (connected && !busy) Green else Grey, fontSize = 11.sp, fontFamily = Mono)
                 }
                 Text(
@@ -1950,7 +1953,8 @@ private fun ChatScreen(
                 )
                 Button(
                     onClick = onSend,
-                    enabled = connected && !busy && (input.isNotBlank() || attachments.any { it.status == "READY" && !it.attachmentId.isNullOrBlank() }),
+                    enabled = connected && !busy && attachments.none { it.status == "UPLOADING" } &&
+                        (input.isNotBlank() || attachments.any { it.status == "READY" && !it.attachmentId.isNullOrBlank() }),
                     modifier = Modifier.height(52.dp),
                     shape = RoundedCornerShape(2.dp),
                     elevation = ButtonDefaults.buttonElevation(
