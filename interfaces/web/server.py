@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen as urlopen_url
 
 from core.application import ChatApplication
-from core.attachments import MAX_ATTACHMENT_BYTES, accepted_mime_type, analyze_attachments, safe_display_name
+from core.attachments import MAX_ATTACHMENT_BYTES, accepted_mime_type, safe_display_name
 from core.contracts import BudgetLimits
 from core.conversation import Conversation
 from core.orchestrator.omnitrix import Omnitrix
@@ -38,7 +38,7 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
-from core.multimodal.workflow import analyze_single_attachment
+from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
@@ -1050,7 +1050,7 @@ class StudioRuntime:
                 attachment_result = (
                     analyze_single_attachment(staged[0], message.strip())
                     if len(staged) == 1
-                    else analyze_attachments(staged, message.strip())
+                    else analyze_multiple_attachments(staged, message.strip())
                 )
                 context = str(attachment_result.get("context", "")).strip()
                 if context:
@@ -1099,6 +1099,7 @@ class StudioRuntime:
                 "error": attachment_result.get("error"),
                 "worker": attachment_result.get("worker"),
                 "model": attachment_result.get("model"),
+                "workers": attachment_result.get("workers"),
                 "consumed_ids": consumed_ids,
             }
         return result
