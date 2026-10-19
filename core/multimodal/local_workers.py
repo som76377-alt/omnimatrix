@@ -65,7 +65,7 @@ def register_local_workers(registry: WorkerRegistry) -> WorkerRegistry:
         ("pyscenedetect.local", "pyscenedetect", WorkerCapability.VIDEO_SCENE_DETECTION, detect_scenes),
     ]
     for worker_id, key, capability, operation in definitions:
-        available = bool(status.get(key, {}).get("dependency_installed"))
+        available = bool(status.get(key, {}).get("available"))
         registry.register(
             WorkerSpec(
                 worker_id=worker_id,
