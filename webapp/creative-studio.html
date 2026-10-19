@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10110f">
+  <meta name="description" content="Omnitrix Creative Studio: reference library, timeline, motion graphics and local video rendering.">
+  <title>Creative Studio · Omnitrix</title>
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="stylesheet" href="./creative-studio.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+</head>
+<body>
+  <header class="studio-header">
+    <a class="wordmark" href="./index.html" aria-label="Return to Omnitrix Studio">
+      <span class="mark" aria-hidden="true">O</span>
+      <span>OMNI<span class="green">TRIX</span><small>CREATIVE STUDIO / PREVIEW BUILD</small></span>
+    </a>
+    <div class="header-state">
+      <span class="status-dot"></span>
+      <span id="storage-state" aria-live="polite">LOCAL WORKSPACE</span>
+    </div>
+    <div class="header-actions">
+      <button class="button quiet" id="save-project">SAVE</button>
+      <button class="button quiet" id="export-project">EXPORT PROJECT</button>
+      <button class="button primary" id="render-video">RENDER VIDEO ↗</button>
+    </div>
+  </header>
+
+  <main class="studio-shell">
+    <section class="project-bar">
+      <div class="project-name-wrap">
+        <label for="project-name">PROJECT</label>
+        <input id="project-name" value="Untitled film" maxlength="100" autocomplete="off">
+      </div>
+      <div class="project-meta">
+        <span id="asset-count">0 media assets</span>
+        <span class="meta-sep">/</span>
+        <span id="timeline-duration">00:00</span>
+        <span class="meta-sep">/</span>
+        <span id="autosave-state">Not saved yet</span>
+      </div>
+    </section>
+
+    <section class="ai-brief">
+      <div class="brief-mark">✳</div>
+      <div class="brief-copy">
+        <label for="creative-brief">DIRECTOR'S BRIEF</label>
+        <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
+        <p id="agent-state">AI director and visual critic are not connected yet. This build does not pretend to make model calls; local editing tools work now.</p>
+      </div>
+      <button class="button quiet brief-save" id="save-brief">SAVE BRIEF</button>
+    </section>
+
+    <section class="studio-grid">
+      <aside class="panel asset-panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">01 / LIBRARY</span><h2>Media assets</h2></div>
+          <span class="tiny-count" id="library-count">0</span>
+        </div>
+        <label class="dropzone" id="dropzone" for="media-input">
+          <span class="upload-glyph">↑</span>
+          <strong>Drop your references here</strong>
+          <span>Images and video clips · multiple files</span>
+          <span class="dropzone-cta">CHOOSE FILES</span>
+        </label>
+        <input id="media-input" type="file" accept="image/*,video/*" multiple hidden>
+        <div class="upload-progress" id="upload-progress" hidden>
+          <div class="progress-track"><span id="upload-progress-bar"></span></div>
+          <small id="upload-progress-text">Importing assets…</small>
+        </div>
+        <div class="library-controls">
+          <input id="asset-search" type="search" placeholder="Search filenames…" aria-label="Search media assets">
+          <button class="button quiet small" id="add-all-assets">ADD ALL →</button>
+        </div>
+        <div class="asset-grid" id="asset-grid">
+          <div class="empty-state"><strong>Your visual library starts here.</strong><span>Upload multiple images or clips at once. Originals stay in this browser profile.</span></div>
+        </div>
+        <p class="panel-foot">MEDIA IS STORED LOCALLY IN THIS BROWSER. Keep your originals backed up; browser storage can be cleared by the device.</p>
+      </aside>
+
+      <section class="panel preview-panel">
+        <div class="panel-heading preview-heading">
+          <div><span class="eyebrow">02 / MONITOR</span><h2>Composition preview</h2></div>
+          <div class="preview-tools"><span class="resolution-tag">16:9</span><select id="preview-scale" aria-label="Export resolution"><option value="960x540">540p render</option><option value="1280x720" selected>720p render</option></select></div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="preview-canvas" width="960" height="540" aria-label="Video composition preview"></canvas>
+          <video id="source-video" playsinline preload="metadata" muted></video>
+          <div class="canvas-corner tl"></div><div class="canvas-corner tr"></div>
+          <div class="canvas-corner bl"></div><div class="canvas-corner br"></div>
+          <span class="preview-overlay-label">LIVE COMPOSITION</span>
+        </div>
+        <div class="transport">
+          <button class="transport-button" id="previous-frame" title="Previous clip" aria-label="Previous clip">|◀</button>
+          <button class="play-button" id="toggle-play" aria-label="Play preview">▶</button>
+          <button class="transport-button" id="next-frame" title="Next clip" aria-label="Next clip">▶|</button>
+          <div class="scrub-wrap">
+            <div class="scrub-labels"><span id="playhead-current">00:00</span><span id="playhead-total">00:00</span></div>
+            <input id="playhead" type="range" min="0" max="1" value="0" step="0.01" aria-label="Timeline playhead">
+          </div>
+          <span class="render-state" id="preview-state">READY</span>
+        </div>
+        <div class="timeline-header">
+          <div><span class="eyebrow">03 / SEQUENCE</span><h2>Timeline</h2></div>
+          <div class="timeline-actions"><button class="button quiet small" id="clear-timeline">CLEAR</button><span id="timeline-count">0 SHOTS</span></div>
+        </div>
+        <div class="timeline-list" id="timeline-list">
+          <div class="timeline-empty">Add assets from the library to build your first sequence.</div>
+        </div>
+        <div class="timeline-note">Use ▲ and ▼ to reorder shots. This first build supports sequential cuts, per-shot title layers, motion presets and browser-based WebM output.</div>
+      </section>
+
+      <aside class="panel inspector-panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">04 / DESIGN</span><h2>Shot inspector</h2></div>
+          <span id="selected-shot-label" class="tiny-count">—</span>
+        </div>
+        <div id="inspector-empty" class="empty-inspector">
+          <span class="inspector-glyph">◇</span>
+          <strong>Select a shot</strong>
+          <span>Choose a timeline clip to edit its timing, framing, motion and graphic overlay.</span>
+        </div>
+        <form id="inspector-form" class="inspector-form" hidden>
+          <div class="field-group">
+            <label for="shot-name">SHOT LABEL</label>
+            <input id="shot-name" maxlength="120">
+          </div>
+          <div class="field-row">
+            <div class="field-group"><label for="shot-start">SOURCE IN (s)</label><input id="shot-start" type="number" min="0" step="0.1"></div>
+            <div class="field-group"><label for="shot-duration">DURATION (s)</label><input id="shot-duration" type="number" min="0.5" max="600" step="0.1"></div>
+          </div>
+          <div class="field-group">
+            <label for="shot-fit">IMAGE FIT</label>
+            <select id="shot-fit"><option value="cover">Fill frame / crop</option><option value="contain">Fit whole image</option></select>
+          </div>
+          <div class="field-group">
+            <label for="shot-motion">MOTION PRESET</label>
+            <select id="shot-motion">
+              <option value="none">Static / no movement</option>
+              <option value="slow-zoom">Slow cinematic push-in</option>
+              <option value="zoom-out">Slow pull-back</option>
+              <option value="pan-left">Pan left</option>
+              <option value="pan-right">Pan right</option>
+            </select>
+          </div>
+          <div class="inspector-divider"></div>
+          <div class="field-group">
+            <label for="shot-title">TITLE / GRAPHIC TEXT</label>
+            <textarea id="shot-title" rows="2" maxlength="240" placeholder="Optional title overlay"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="shot-subtitle">SUBTITLE</label>
+            <textarea id="shot-subtitle" rows="2" maxlength="300" placeholder="Optional supporting line"></textarea>
+          </div>
+          <div class="field-row">
+            <div class="field-group"><label for="shot-position">PLACEMENT</label><select id="shot-position"><option value="bottom">Lower third</option><option value="center">Centre</option><option value="top">Upper third</option></select></div>
+            <div class="field-group"><label for="shot-colour">ACCENT</label><input id="shot-colour" type="color" value="#d6fa62"></div>
+          </div>
+          <div class="field-group">
+            <div class="range-label"><label for="shot-font-size">TITLE SIZE</label><output id="shot-font-value">44 px</output></div>
+            <input id="shot-font-size" type="range" min="22" max="88" value="44">
+          </div>
+          <div class="field-group">
+            <label for="shot-font">TYPE STYLE</label>
+            <select id="shot-font"><option value="sans">Modern sans</option><option value="serif">Editorial serif</option><option value="mono">Technical mono</option></select>
+          </div>
+          <button type="button" class="button quiet full-width" id="reset-shot">RESET SHOT DESIGN</button>
+        </form>
+        <div class="inspector-footer"><span class="status-dot"></span><span>NON-DESTRUCTIVE · SOURCE ASSETS UNCHANGED</span></div>
+      </aside>
+
+      <section class="panel export-panel">
+        <div><span class="eyebrow">05 / OUTPUT</span><h2>Render &amp; agents</h2></div>
+        <div class="export-summary">
+          <div><span>RENDER TARGET</span><strong id="export-target">WEBM · 1280 × 720</strong></div>
+          <div><span>VIDEO LENGTH</span><strong id="export-length">00:00</strong></div>
+          <div><span>EXECUTION</span><strong>ON THIS DEVICE</strong></div>
+        </div>
+        <div class="agent-status-grid">
+          <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Media librarian</strong><small>Local metadata and thumbnails</small></div><span class="agent-label">ACTIVE</span></div>
+          <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Timeline executor</strong><small>Reversible local edit operations</small></div><span class="agent-label">ACTIVE</span></div>
+          <div class="agent-status"><span class="agent-indicator pending"></span><div><strong>Visual analyst</strong><small>Requires a real vision-model API</small></div><span class="agent-label pending-text">NOT CONNECTED</span></div>
+          <div class="agent-status"><span class="agent-indicator pending"></span><div><strong>Director / critic</strong><small>Requires a real model and verification loop</small></div><span class="agent-label pending-text">NOT CONNECTED</span></div>
+        </div>
+        <p class="export-note">The browser render is a useful first export path, not a replacement for a full workstation engine. Dedicated music/narration tracks, advanced masking, generative object changes and cloud rendering are later phases. No paid API or hidden third-party upload is used by this page.</p>
+        <div class="export-actions">
+          <button class="button primary" id="render-video-bottom">RENDER CURRENT SEQUENCE ↗</button>
+          <button class="button quiet" id="download-manifest">DOWNLOAD EDIT MANIFEST</button>
+        </div>
+        <p id="render-message" class="render-message" aria-live="polite"></p>
+      </section>
+    </section>
+
+    <footer class="studio-footer">
+      <span>OMNITRIX / CREATIVE STUDIO</span>
+      <span><a href="./index.html">BACK TO CORE STUDIO</a><span class="footer-sep">/</span><a href="https://github.com/som76377-alt/omnimatrix" target="_blank" rel="noreferrer">SOURCE ↗</a></span>
+    </footer>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./creative-studio.js" defer></script>
+</body>
+</html>
