@@ -134,6 +134,8 @@ internal object ModelActivityLabelFormatter {
         code.startsWith("auth_http_") -> "authentication rejected"
         code == "authentication_error" -> "authentication failed"
         code == "http_400_bad_request" -> "HTTP 400"
+        code == "http_429_daily_quota" -> "daily quota exhausted"
+        code == "http_429_quota_exhausted" -> "quota exhausted"
         code == "http_429_rate_limited" -> "rate limited"
         code.startsWith("http_5") -> "provider server error"
         code == "timeout" -> "timeout"

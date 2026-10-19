@@ -96,6 +96,27 @@ def _safe_provider_failure_reason(exc: Exception) -> str:
         if status in (401, 403):
             return f"auth_http_{status}"
         if status == 429:
+            # Gemini uses 429 for both rate-limit errors and quota exhaustion.
+            # These checks inspect the in-memory exception only; raw body text is
+            # never copied into logs, traces, or the client response.
+            if re.search(
+                r"\b(daily quota|quota per day|requests? per day|per-day|"
+                r"requests_per_day|rpd)\b",
+                message,
+            ):
+                return "http_429_daily_quota"
+            if re.search(
+                r"\b(rate_limit_exceeded|too_many_requests|requests? per minute|"
+                r"tokens? per minute|per-minute|requests_per_minute|"
+                r"tokens_per_minute|requests? per second|rpm|tpm)\b",
+                message,
+            ):
+                return "http_429_rate_limited"
+            if any(term in message for term in (
+                "quota_exceeded", "exceeded your current quota",
+                "quota exceeded", "quota exhausted", "current quota",
+            )):
+                return "http_429_quota_exhausted"
             return "http_429_rate_limited"
         if status == 400:
             return "http_400_bad_request"

@@ -14,7 +14,7 @@ from core.models.providers.bootstrap import build_adapter_registry
 from core.models.registry import ModelDefinition, ModelRegistry
 from core.contracts import BudgetLimits
 from core.policy.quality import QUALITY_POLICY_MARKER
-from core.orchestrator.omnitrix import Omnitrix
+from core.orchestrator.omnitrix import Omnitrix, _safe_provider_failure_reason
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -231,6 +231,26 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertEqual(fallbacks[0]["to_provider"], "openrouter")
         self.assertEqual(fallbacks[0]["reason_code"], "provider_error")
         self.assertEqual(fallbacks[0]["exception_type"], "RuntimeError")
+
+    def test_provider_429_classifies_quota_and_rate_limit_messages_safely(self):
+        self.assertEqual(
+            _safe_provider_failure_reason(RuntimeError(
+                'Gemini request failed (429): {"error":{"message":"Requests per minute exceeded"}}'
+            )),
+            "http_429_rate_limited",
+        )
+        self.assertEqual(
+            _safe_provider_failure_reason(RuntimeError(
+                'Gemini request failed (429): {"error":{"message":"Daily quota exceeded"}}'
+            )),
+            "http_429_daily_quota",
+        )
+        self.assertEqual(
+            _safe_provider_failure_reason(RuntimeError(
+                'Gemini request failed (429): {"error":{"message":"You exceeded your current quota, check billing"}}'
+            )),
+            "http_429_quota_exhausted",
+        )
 
     def test_complex_science_uses_specialist_once_and_lightweight_independent_review(self):
         draft = "A changing coil current creates a changing magnetic field, inducing currents in the conductive pan; electrical resistance converts energy into heat."

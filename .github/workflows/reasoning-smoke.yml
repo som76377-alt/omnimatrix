@@ -77,7 +77,7 @@ jobs:
           print("PASS: Render reports the OpenRouter reasoning route as available.")
           PY
 
-      - name: Verify ordinary chat uses Gemini (one live greeting)
+      - name: Smoke-test ordinary chat route (one live greeting)
         env:
           HEALTH_URL: https://omnitrix-studio.onrender.com/api/mobile/health
           CHAT_URL: https://omnitrix-studio.onrender.com/api/mobile/chat
@@ -147,12 +147,22 @@ jobs:
                   "reason=" + str(fallback.get("reason_code", "unknown")),
                   "exception=" + str(fallback.get("exception_type", "unknown")),
               )
-          if answer.get("provider") != "google":
-              raise SystemExit(
-                  "FAIL: ordinary greeting did not use Gemini. "
-                  "See the safe fallback diagnostic above."
-              )
-          print("PASS: ordinary greeting used the configured Gemini route.")
+          if answer.get("provider") == "google":
+              print("PASS: ordinary greeting used the configured Gemini route.")
+          else:
+              fallbacks = trace.get("provider_fallbacks") or []
+              reason = str(fallbacks[-1].get("reason_code", "")) if fallbacks else ""
+              if reason.startswith("http_429_"):
+                  print(
+                      "WARN: Gemini returned HTTP 429 (rate/quota limit). "
+                      "The configured route was attempted and Omnitrix returned "
+                      "a fallback answer; this run cannot verify Gemini availability."
+                  )
+              else:
+                  raise SystemExit(
+                      "FAIL: ordinary greeting fell back for a non-rate-limit reason. "
+                      "See the safe fallback diagnostic above."
+                  )
           PY
 
       - name: Run live smoke benchmark
