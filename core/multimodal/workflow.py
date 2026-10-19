@@ -31,6 +31,12 @@ def analyze_single_attachment(record: dict[str, Any], question: str) -> dict[str
     name = str(record.get("name", "unnamed file"))[:180]
     mime = str(record.get("mime_type", "")).lower()
     capabilities = _CAPABILITY_BY_MIME.get(mime)
+    if capabilities is None and mime.startswith("image/"):
+        capabilities = (WorkerCapability.IMAGE_UNDERSTANDING,)
+    elif capabilities is None and mime.startswith("audio/"):
+        capabilities = (WorkerCapability.AUDIO_UNDERSTANDING,)
+    elif capabilities is None and mime.startswith("video/"):
+        capabilities = (WorkerCapability.VIDEO_UNDERSTANDING,)
     if capabilities is None:
         return {
             "status": "failed", "count": 1, "analyzed": 0,
