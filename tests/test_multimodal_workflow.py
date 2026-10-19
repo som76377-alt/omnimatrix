@@ -109,9 +109,9 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         records = [self.record, dict(self.record, id="b" * 32, name="two.png")]
         batch_result = {"status": "complete", "count": 2, "analyzed": 2,
                         "context": "Both files completed.", "error": None}
-        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result), \\
-             patch("core.multimodal.workflow._try_local_extraction") as fallback:
-            result = analyze_multiple_attachments(records, "Describe all")
+        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result):
+            with patch("core.multimodal.workflow._try_local_extraction") as fallback:
+                result = analyze_multiple_attachments(records, "Describe all")
         self.assertEqual(result["worker"], "gemini.multimodal")
         self.assertEqual(result["analyzed"], 2)
         fallback.assert_not_called()
