@@ -47,6 +47,16 @@ class LocalToolSafetyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 local_tools.transcribe_audio(str(path), language="bad language code")
 
+    def test_local_workers_are_registered_without_claiming_missing_tools_are_enabled(self):
+        from core.multimodal.providers import build_provider_registry
+        registry = build_provider_registry()
+        by_id = {item["worker_id"]: item for item in registry.describe()}
+        self.assertIn("paddleocr.local", by_id)
+        self.assertIn("docling.local", by_id)
+        self.assertIn("faster_whisper.local", by_id)
+        self.assertIn("pyscenedetect.local", by_id)
+        self.assertFalse(by_id["paddleocr.local"]["enabled"])
+
 
 if __name__ == "__main__":
     unittest.main()
