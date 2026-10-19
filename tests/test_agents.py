@@ -60,13 +60,13 @@ class AgentRouterTests(unittest.TestCase):
         self.assertTrue(plan.needs_intent_preflight)
         self.assertTrue(plan.needs_critique)
 
-    def test_well_formed_jee_exercise_skips_redundant_intent_call_but_keeps_critic(self):
+    def test_short_jee_equation_routes_to_subject_solver_and_critic(self):
         plan = self.router.route(
-            "JEE Advanced physics: A particle moves with velocity v(t) = 3t^2 - 4t. "
-            "Find the maximum displacement between t = 0 and t = 4, and justify the result.",
+            "JEE Advanced: Solve x^2 - 5x + 6 = 0.",
             frozenset({"reasoning"}),
         )
         self.assertEqual(plan.primary.role, "subject_solver")
+        self.assertEqual(plan.complexity, "complex")
         self.assertFalse(plan.needs_intent_preflight)
         self.assertTrue(plan.needs_critique)
 
