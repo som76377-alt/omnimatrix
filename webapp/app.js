@@ -24,6 +24,9 @@
     activity: [],
     busyChat: false,
     busyTests: false,
+    attachments: [],
+    busyUploads: 0,
+    attachmentSessionLoaded: "",
   };
   const byId = (id) => document.getElementById(id);
 
@@ -247,7 +250,8 @@
       ? (state.runtime.provider_mode === "offline-demo" ? "SIMULATED RESPONSES" : "REAL MODEL ADAPTER")
       : "NO INFERENCE";
     byId("chat-input").disabled = !connected || state.busyChat;
-    byId("send-message").disabled = !connected || state.busyChat;
+    byId("send-message").disabled = !connected || state.busyChat || state.busyUploads > 0;
+    byId("chat-attach-button").disabled = !connected || state.busyChat;
     byId("chat-input").placeholder = connected
       ? "Ask Omnitrix to inspect, reason, or use an authorized tool…"
       : "Connect the private Python runtime to start chatting…";
@@ -319,6 +323,13 @@
       } else {
         byId("connect-help").textContent = "Python API unavailable at this origin. On GitHub Pages this is expected; open the forwarded Codespaces port for the full Studio. " + error.message;
       }
+    }
+  }
+
+    updateChatComposerState();
+    if (connected && state.attachmentSessionLoaded !== sessionId) {
+      state.attachmentSessionLoaded = sessionId;
+      restoreChatAttachments();
     }
   }
 
@@ -804,11 +815,221 @@
     appendMessage("assistant", content, "STUDIO STATUS · NOT MODEL GENERATED");
   }
 
+  function formatAttachmentSize(bytes) {
+    const value = Math.max(0, Number(bytes) || 0);
+    if (value < 1024) return value + " B";
+    if (value < 1024 * 1024) return (value / 1024).toFixed(0) + " KB";
+    if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(1) + " MB";
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  }
+
+  function updateChatComposerState() {
+    const connected = state.connected && Boolean(state.runtime);
+    const input = byId("chat-input");
+    const send = byId("send-message");
+    const attach = byId("chat-attach-button");
+    if (input) input.disabled = !connected || state.busyChat;
+    if (send) send.disabled = !connected || state.busyChat || state.busyUploads > 0;
+    if (attach) attach.disabled = !connected || state.busyChat;
+  }
+
+  function renderChatAttachments() {
+    const target = byId("chat-attachment-list");
+    if (!target) return;
+    target.replaceChildren();
+    let totalBytes = 0;
+    state.attachments.forEach((item) => {
+      totalBytes += Number(item.size) || 0;
+      const tile = node("div", "chat-attachment-item status-" + item.status);
+      if (item.previewUrl) {
+        const preview = node("img", "chat-attachment-preview");
+        preview.src = item.previewUrl;
+        preview.alt = item.name;
+        tile.append(preview);
+      } else {
+        const kind = item.mimeType || "";
+        const label = kind.startsWith("image/") ? "IMG"
+          : kind === "application/pdf" ? "PDF"
+            : kind.startsWith("audio/") ? "AUD"
+              : kind.startsWith("video/") ? "VID" : "FILE";
+        tile.append(node("span", "chat-attachment-kind", label));
+      }
+      const meta = node("div", "chat-attachment-meta");
+      const name = node("strong", "chat-attachment-name", item.name);
+      name.title = item.name;
+      const status = item.status === "uploading"
+        ? "UPLOADING TO PRIVATE RUNTIME"
+        : item.status === "error"
+          ? ("UPLOAD FAILED · " + (item.error || "select the file again"))
+          : "READY · " + formatAttachmentSize(item.size);
+      meta.append(name, node("span", "chat-attachment-status", status));
+      tile.append(meta);
+      const remove = node("button", "attachment-remove", "×");
+      remove.type = "button";
+      remove.title = "Remove staged attachment";
+      remove.setAttribute("aria-label", "Remove " + item.name);
+      remove.disabled = state.busyChat || item.status === "uploading";
+      remove.addEventListener("click", () => discardChatAttachment(item));
+      tile.append(remove);
+      target.append(tile);
+    });
+    const ready = state.attachments.filter((item) => item.attachmentId && item.status === "uploaded").length;
+    const uploading = state.attachments.filter((item) => item.status === "uploading" || item.status === "queued").length;
+    const failed = state.attachments.filter((item) => item.status === "error").length;
+    const caption = byId("chat-attachment-caption");
+    if (caption) {
+      caption.textContent = state.attachments.length
+        ? state.attachments.length + " file(s) · " + ready + " ready · " + uploading +
+          " uploading · " + failed + " failed · " + formatAttachmentSize(totalBytes)
+        : "Images · PDF · audio · video · no file-count cap";
+    }
+    updateChatComposerState();
+  }
+
+  function clearLocalAttachment(item) {
+    if (item.previewUrl) {
+      URL.revokeObjectURL(item.previewUrl);
+      item.previewUrl = "";
+    }
+  }
+
+  async function restoreChatAttachments() {
+    if (!state.connected || !sessionId) return;
+    try {
+      const result = await apiRequest("/attachments/list?session_id=" + encodeURIComponent(sessionId));
+      const existing = new Set(state.attachments.map((item) => item.attachmentId).filter(Boolean));
+      (result.attachments || []).forEach((record) => {
+        if (existing.has(record.id)) return;
+        state.attachments.push({
+          attachmentId: record.id,
+          name: record.name,
+          mimeType: record.mime_type,
+          size: record.size,
+          status: "uploaded",
+          previewUrl: "",
+          file: null,
+          error: "",
+        });
+      });
+      renderChatAttachments();
+    } catch (error) {
+      addActivity("FILES", "Could not restore staged attachment list: " + error.message);
+    }
+  }
+
+  async function discardChatAttachment(item) {
+    if (state.busyChat || item.status === "uploading" || item.status === "queued") return;
+    if (item.attachmentId) {
+      if (!state.connected) {
+        toast("Reconnect the runtime to safely remove this staged file.");
+        return;
+      }
+      try {
+        await apiRequest("/attachments/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, attachment_id: item.attachmentId }),
+        });
+      } catch (error) {
+        toast("Could not remove file from runtime: " + error.message);
+        return;
+      }
+    }
+    clearLocalAttachment(item);
+    state.attachments = state.attachments.filter((candidate) => candidate !== item);
+    renderChatAttachments();
+  }
+
+  async function uploadChatFiles(fileList) {
+    const files = Array.from(fileList || []);
+    byId("chat-attachment-input").value = "";
+    if (!files.length) return;
+    if (!state.connected) {
+      toast("Connect the private runtime before uploading files.");
+      openConnect();
+      return;
+    }
+    if (state.busyChat) {
+      toast("Wait for the current chat turn to finish first.");
+      return;
+    }
+    const items = files.map((file) => ({
+      file,
+      name: file.name,
+      mimeType: file.type || "",
+      size: file.size,
+      status: "queued",
+      attachmentId: "",
+      previewUrl: file.type && file.type.startsWith("image/") && file.size <= 12 * 1024 * 1024
+        ? URL.createObjectURL(file) : "",
+      error: "",
+    }));
+    state.attachments.push(...items);
+    renderChatAttachments();
+    let next = 0;
+    async function worker() {
+      while (next < items.length) {
+        const index = next++;
+        const item = items[index];
+        item.status = "uploading";
+        state.busyUploads += 1;
+        renderChatAttachments();
+        try {
+          const result = await apiRequest("/attachments/upload", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "X-Session-ID": sessionId,
+              "X-File-Name": encodeURIComponent(item.name),
+              "X-File-Mime": item.mimeType,
+            },
+            body: item.file,
+          });
+          const record = result.attachment || {};
+          item.attachmentId = record.id || "";
+          item.name = record.name || item.name;
+          item.mimeType = record.mime_type || item.mimeType;
+          item.size = record.size || item.size;
+          item.status = item.attachmentId ? "uploaded" : "error";
+          if (!item.attachmentId) item.error = "no upload ID returned";
+          item.file = null;
+          addActivity("FILES", "Staged " + item.name + " (" + formatAttachmentSize(item.size) + ") in the private runtime.");
+        } catch (error) {
+          item.status = "error";
+          item.error = error.message;
+          addActivity("FILES", "Upload failed for " + item.name + ": " + error.message);
+        } finally {
+          state.busyUploads = Math.max(0, state.busyUploads - 1);
+          renderChatAttachments();
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, items.length) }, () => worker()));
+    const failed = items.filter((item) => item.status === "error").length;
+    toast(failed ? (failed + " file(s) failed to upload. Remove them or select them again.") : (items.length + " file(s) ready to send."));
+  }
+
+  byId("chat-attach-button").addEventListener("click", () => {
+    if (!state.connected) {
+      openConnect();
+      return;
+    }
+    byId("chat-attachment-input").click();
+  });
+  byId("chat-attachment-input").addEventListener("change", (event) => {
+    uploadChatFiles(event.target.files);
+  });
+
   async function submitChat(event) {
     event.preventDefault();
     const input = byId("chat-input");
     const message = input.value.trim();
-    if (!message || state.busyChat) return;
+    const readyAttachments = state.attachments.filter((item) => item.attachmentId && item.status === "uploaded");
+    if ((!message && !readyAttachments.length) || state.busyChat) return;
+    if (state.busyUploads > 0) {
+      toast("Wait for all selected files to finish uploading before sending.");
+      return;
+    }
     if (!state.connected) {
       toast("Connect the Python runtime before sending a real message.");
       openConnect();
@@ -817,11 +1038,19 @@
     state.busyChat = true;
     input.value = "";
     byId("chat-char-count").textContent = "0 / 8000";
-    appendMessage("user", message, "SENT TO PYTHON BACKEND");
+    const submittedText = message || "Please analyze the attached files.";
+    const attachmentText = readyAttachments.length
+      ? "\\n\\n**Attached files:**\\n" + readyAttachments.map((item) => "- " + item.name).join("\\n")
+      : "";
+    appendMessage("user", submittedText + attachmentText,
+      readyAttachments.length ? ("SENT TO PRIVATE RUNTIME · " + readyAttachments.length + " ATTACHMENT(S)") : "SENT TO PYTHON BACKEND");
     byId("send-message").disabled = true;
-    byId("chat-thread-subtitle").textContent = "Request queued · waiting for the runtime to report the selected model";
-    byId("chat-mode").textContent = "MODEL ROUTING";
-    addActivity("CHAT", "Message submitted to the configured Omnitrix backend.");
+    byId("chat-thread-subtitle").textContent = readyAttachments.length
+      ? ("ATTACHMENT ANALYSIS · " + readyAttachments.length + " file(s) · awaiting verified completion")
+      : "Request queued · waiting for the runtime to report the selected model";
+    byId("chat-mode").textContent = readyAttachments.length ? "ATTACHMENT PROCESSING" : "MODEL ROUTING";
+    addActivity("CHAT", "Message submitted to the configured Omnitrix backend" +
+      (readyAttachments.length ? " with " + readyAttachments.length + " staged attachment(s)." : "."));
     const activePoll = window.setInterval(async () => {
       if (!state.busyChat) return;
       try {
@@ -852,8 +1081,29 @@
       const result = await apiRequest("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, message }),
+        body: JSON.stringify({ session_id: sessionId, message: submittedText }),
       });
+      const attachmentStatus = result.attachment_status;
+      if (attachmentStatus) {
+        const consumed = new Set(Array.isArray(attachmentStatus.consumed_ids) ? attachmentStatus.consumed_ids : []);
+        state.attachments = state.attachments.filter((item) => {
+          if (consumed.has(item.attachmentId)) {
+            clearLocalAttachment(item);
+            return false;
+          }
+          return true;
+        });
+        renderChatAttachments();
+        if (attachmentStatus.status === "complete") {
+          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + " attached file(s).");
+        } else if (attachmentStatus.status === "partial") {
+          toast("Analysed " + attachmentStatus.analyzed + " of " + attachmentStatus.count + ". Remaining files stay attached.");
+        } else if (attachmentStatus.status === "unavailable") {
+          toast("Files remain attached but were not analysed. Configure GEMINI_API_KEY for multimodal input.");
+        } else if (attachmentStatus.status === "failed") {
+          toast("Attachment analysis failed. Files remain attached so you can retry.");
+        }
+      }
       const trace = describeExecutionTrace(result.execution_trace);
       const source = result.provider_mode === "offline-demo"
         ? "OFFLINE DEMO · SIMULATED RESPONSE · NOT REAL INFERENCE"
@@ -874,10 +1124,10 @@
     } finally {
       window.clearInterval(activePoll);
       state.busyChat = false;
-      input.disabled = !state.connected;
-      byId("send-message").disabled = !state.connected;
+      updateChatComposerState();
+      renderChatAttachments();
       byId("chat-char-count").textContent = input.value.length + " / 8000";
-      input.focus();
+      if (!input.disabled) input.focus();
     }
   }
 
@@ -885,6 +1135,8 @@
   byId("chat-input").addEventListener("input", () => {
     byId("chat-char-count").textContent = byId("chat-input").value.length + " / 8000";
   });
+  renderChatAttachments();
+  updateChatComposerState();
   byId("chat-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
