@@ -1,6 +1,16 @@
 name: Reasoning model smoke test
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "config/mobile.models.json"
+      - "config/agents.json"
+      - "core/models/providers/**"
+      - "core/orchestrator/omnitrix.py"
+      - "interfaces/web/server.py"
+      - "benchmarks/**"
+      - ".github/workflows/reasoning-smoke.yml"
   workflow_dispatch:
     inputs:
       case_limit:
@@ -43,6 +53,29 @@ jobs:
           python -m json.tool benchmarks/reasoning_v1.json > /dev/null
           python -m json.tool config/mobile.models.json > /dev/null
           python -m compileall -q benchmarks/run_reasoning_v1.py
+
+      - name: Verify live Render reasoning route without exposing secrets
+        env:
+          HEALTH_URL: https://omnitrix-studio.onrender.com/api/mobile/health
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib.request import urlopen
+
+          with urlopen(os.environ["HEALTH_URL"], timeout=20) as response:
+              health = json.loads(response.read().decode("utf-8"))
+          print("Hosted chat available:", health.get("chat_available"))
+          print("OpenRouter key visible to Render:", health.get("openrouter_key_detected"))
+          print("Reasoning route available:", health.get("reasoning_specialist_available"))
+          print("Reasoning route status:", health.get("reasoning_route_status"))
+          print("Configured reasoning model:", health.get("preferred_reasoning_model"))
+          if not health.get("openrouter_key_detected"):
+              raise SystemExit("FAIL: Render's running process cannot see OPENROUTER_API_KEY.")
+          if not health.get("reasoning_specialist_available"):
+              raise SystemExit("FAIL: Render sees the key, but the reasoning route is not available.")
+          print("PASS: Render reports the OpenRouter reasoning route as available.")
+          PY
 
       - name: Run live smoke benchmark
         env:
