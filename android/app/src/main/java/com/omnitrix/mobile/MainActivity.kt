@@ -1510,7 +1510,13 @@ private fun OmnitrixApp() {
                     AppTab.entries.forEach { destination ->
                         Column(
                             Modifier.weight(1f).background(if (tab == destination) SurfaceRaised else Black, RoundedCornerShape(2.dp))
-                                .clickable { tab = destination }.padding(vertical = 13.dp),
+                                .clickable {
+                                    if (destination == AppTab.VIDEO && videoStudioUrl.isBlank()) {
+                                        openVideoStudio(pendingVideoPrompt)
+                                    } else {
+                                        tab = destination
+                                    }
+                                }.padding(vertical = 13.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(destination.title, fontSize = 14.sp, color = if (tab == destination) Green else Grey, fontWeight = if (tab == destination) FontWeight.Bold else FontWeight.Medium, fontFamily = Pixel)
