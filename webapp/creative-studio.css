@@ -452,3 +452,5 @@ input::placeholder,textarea::placeholder{color:#697160}
   .advanced-brief-controls{flex:1 1 auto}
   .project-meta{flex-wrap:wrap}
 }
+
+.ai-use-note{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.45;max-width:70ch}
