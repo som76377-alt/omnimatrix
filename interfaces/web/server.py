@@ -39,7 +39,7 @@ from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
-from core.creative_assets import CreativeAssetError, download_creative_asset, search_creative_assets
+from core.creative_assets import CreativeAssetError, download_creative_asset, generate_creative_image, search_creative_assets
 
 
 from core.multimodal.journal import journal_status
@@ -1644,6 +1644,7 @@ def make_handler(
                 "/api/mobile/attachments/upload",
                 "/api/mobile/attachments/delete",
                 "/api/mobile/creative/analyze",
+                "/api/mobile/creative/generate-image",
             }
             if route not in public_mobile_routes and not self._authorized():
                 self._send_json(
@@ -1708,9 +1709,20 @@ def make_handler(
                 if not _allow_public_creative_model_request(client_ip):
                     self._send_json({"ok": False, "error": "AI creative review is rate-limited for this connection. Try again later.", "code": "rate_limited"}, 429)
                     return
+            if route in {"/api/mobile/creative/analyze", "/api/mobile/creative/generate-image"}:
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                if payload.get("consent") is not True:
+                    self._send_json({"ok": False, "error": "Explicit consent is required before sending previews or generating an image with a model."}, 400)
+                    return
+                if not _allow_public_creative_model_request(client_ip):
+                    self._send_json({"ok": False, "error": "AI creative work is rate-limited for this connection. Try again later.", "code": "rate_limited"}, 429)
+                    return
             try:
                 if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
+                elif route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"}:
+                    self._send_json(generate_creative_image(payload.get("prompt")))
                 elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
                 elif route == "/api/attachments/delete":
