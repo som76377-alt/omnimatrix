@@ -237,6 +237,19 @@ class StudioServerTests(unittest.TestCase):
         )
 
 
+    def test_mobile_video_status_reports_default_off_without_calling_model(self):
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "false"}):
+            status, body = self.request(
+                "/api/mobile/creative/video-status",
+                authorized=False,
+            )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["enabled"])
+        self.assertIn("OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true", body["message"])
+        self.assertIn("model", body)
+        self.assertNotIn("GEMINI_API_KEY", json.dumps(body.get("message", "")))
+
     def test_mobile_paid_video_generation_is_disabled_by_default(self):
         with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "false"}), \
              patch("interfaces.web.server.start_creative_video_job") as start:
