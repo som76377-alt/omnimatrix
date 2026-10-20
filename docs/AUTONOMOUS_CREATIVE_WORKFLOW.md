@@ -16,7 +16,7 @@ Asset matching in Auto-assemble is currently based on searchable title, descript
 
 The visual director needs a working server-side `GEMINI_API_KEY` and configured model. A displayed configuration status is not a live health check. If the visual model is not configured or fails, the feature reports that and can still export the supported basic cut; it must not label that cut AI-reviewed.
 
-The renderer remains browser-local Canvas + MediaRecorder WebM. The current build does not provide true cross-dissolves, independently mixed music/narration tracks, advanced colour grading, masks/compositing, generated raster imagery, a cloud render queue, a multi-frame final-render critic, or a bounded auto-correct/re-render loop. A successful browser download is not a substitute for opening and inspecting the exported file.
+The renderer remains browser-local Canvas + MediaRecorder WebM. After export, the browser reopens the actual WebM, verifies decode metadata/duration/dimensions, and samples frames for obvious black/blank output. With explicit one-run consent, it can also send up to four rendered midpoint frames to the same configured creative model for a post-render critique, apply supported corrections, and re-render once. The corrected final render receives local technical QA but not a second AI critique; this is not an independent critic and does not inspect audio or motion between sampled frames. True cross-dissolves, independently mixed music/narration tracks, advanced colour grading, masks/compositing, generated raster imagery, and a cloud render queue remain unsupported.
 
 ## Intended phone workflow
 
@@ -32,7 +32,7 @@ An explicit video-creation request submitted in the main Omnitrix web chat is de
 
 - Pinterest is reference-only until an authorised API/permission-based integration is established. The feature does not bypass logins, rate limits, or platform controls.
 - Only the bounded asset providers are supported by this endpoint; it is not an unrestricted general-purpose web crawler.
-- Original local media is not uploaded for the director call. Only resized JPEG thumbnails and limited metadata for the consented new shots are sent. The source originals remain in browser IndexedDB, which is device-local and can be cleared by the browser.
+- Original local media is not uploaded for the director/critic calls. Only resized JPEG thumbnails and limited metadata for the consented new shots, plus up to four resized midpoint frames decoded from the local rendered draft, may be sent under the explicit one-run checkbox. The source originals remain in browser IndexedDB, which is device-local and can be cleared by the browser.
 - Remote images/video are downloaded only from provider allowlisted HTTPS hosts, with redirect validation, supported MIME checks, and a 24 MB maximum per file.
 - The AI returns a structured proposal, not executable code. The browser has a second validator for operation type, asset/clip identity and numeric bounds.
 - “Strict anti-slop” is a set of hard prompt rules plus bounded native operations, not a guarantee of artistic quality. Inspect every render; the current branch does not automatically critic the finished video.
