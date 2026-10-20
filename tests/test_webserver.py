@@ -165,6 +165,22 @@ class StudioServerTests(unittest.TestCase):
         self.assertTrue(body["ok"])
         start.assert_called_once()
 
+    def test_mobile_image_generation_requires_consent_and_uses_configured_provider(self):
+        with patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
+             patch("interfaces.web.server.generate_creative_image", return_value={
+                 "ok": True, "provider": "google", "model": "gemini-2.5-flash-image",
+                 "mime_type": "image/png", "image_base64": "cG5n",
+             }) as generate:
+            status, body = self.request(
+                "/api/mobile/creative/generate-image",
+                method="POST",
+                body={"consent": True, "prompt": "Original induction stove illustration"},
+                authorized=False,
+            )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        generate.assert_called_once_with("Original induction stove illustration")
+
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
         models = {model["name"]: model for model in config["models"]}
