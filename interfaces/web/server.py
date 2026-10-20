@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import mimetypes
 import os
 import stat
@@ -390,6 +391,52 @@ class PublicChatRateLimitError(RuntimeError):
     """The anonymous mobile chat endpoint has reached a conservative request limit."""
 
 
+
+def _validate_manim_render_arguments(arguments: Any) -> None:
+    """Validate structured diagram inputs before any render process/job is started."""
+    if not isinstance(arguments, dict):
+        raise ValueError("Manim render arguments must be a JSON object.")
+    allowed = {"title", "nodes", "arrows", "quality"}
+    if set(arguments) - allowed:
+        raise ValueError("Unsupported Manim render fields were supplied.")
+    title = arguments.get("title")
+    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 100:
+        raise ValueError("title must be non-empty text up to 100 characters.")
+    if any(ord(char) < 32 for char in title):
+        raise ValueError("title contains unsupported control characters.")
+    nodes = arguments.get("nodes")
+    if not isinstance(nodes, list) or not 1 <= len(nodes) <= 8:
+        raise ValueError("nodes must contain between 1 and 8 structured nodes.")
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict) or set(node) != {"label", "x", "y"}:
+            raise ValueError(f"Node {index + 1} must contain only label, x and y.")
+        label = node.get("label")
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 72:
+            raise ValueError(f"Node {index + 1} label must be non-empty text up to 72 characters.")
+        if any(ord(char) < 32 for char in label):
+            raise ValueError(f"Node {index + 1} label contains unsupported control characters.")
+        for axis, low, high in (("x", -5.5, 5.5), ("y", -2.8, 2.8)):
+            coordinate = node.get(axis)
+            if isinstance(coordinate, bool) or not isinstance(coordinate, (int, float)):
+                raise ValueError(f"Node {index + 1} {axis} coordinate must be a finite number.")
+            if not math.isfinite(float(coordinate)) or not low <= coordinate <= high:
+                raise ValueError(f"Node {index + 1} {axis} coordinate is outside the safe diagram bounds.")
+    arrows = arguments.get("arrows", [])
+    if not isinstance(arrows, list) or len(arrows) > 12:
+        raise ValueError("arrows must be a list of at most 12 index pairs.")
+    for pair in arrows:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("Each arrow must be a pair of node indices.")
+        start, end = pair
+        if any(isinstance(index, bool) or not isinstance(index, int) for index in (start, end)):
+            raise ValueError("Arrow indices must be integers.")
+        if start == end or not (0 <= start < len(nodes) and 0 <= end < len(nodes)):
+            raise ValueError("Arrow indices must refer to two different existing nodes.")
+    quality = arguments.get("quality", "low")
+    if quality not in {"low", "medium"}:
+        raise ValueError("quality must be low or medium.")
+
+
 class StudioRuntime:
     """Own the configured orchestrator, per-browser conversations, and evidence."""
 
@@ -581,11 +628,14 @@ class StudioRuntime:
             raise ValueError("Unsupported Manim render fields were supplied.")
         # Validate before allocating a job or starting a worker.
         tool = self.omnitrix.tool_registry.get("manim_scientific_diagram")
+        if tool is None:
+            raise RuntimeError("Manim renderer is not registered in this runtime.")
         arguments = {key: value for key, value in payload.items() if key != "consent"}
-        validation = tool.execute(**arguments) if not shutil.which("manim") else None
-        if validation is not None:
-            # A missing executable is a useful, truthful availability result. Other
-            # invalid-input errors are returned immediately rather than queued.
+        _validate_manim_render_arguments(arguments)
+        # Probe availability only after side-effect-free validation. Never run an
+        # actual render synchronously merely to validate its arguments.
+        if not shutil.which("manim"):
+            validation = tool.execute(**arguments)
             if validation.metadata and validation.metadata.get("available") is False:
                 raise RuntimeError(validation.error or "Manim is unavailable on this host.")
             if not validation.success:
