@@ -94,7 +94,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("scale-in", self.creative_js)
         self.assertIn("layers: Array.isArray(clip.layers)", self.creative_js)
         self.assertIn("explicit consent", self.creative_html.lower())
-        self.assertIn("real generated mp4 with movement and audio", self.creative_html.lower())
+        self.assertIn("realistic footage and generated audio", self.creative_html.lower())
         self.assertIn('id="paid-video-consent"', self.creative_html)
         self.assertIn('id="generate-ai-video"', self.creative_html)
         self.assertIn("integrated-shared-model-role", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
