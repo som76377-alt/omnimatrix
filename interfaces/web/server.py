@@ -1700,15 +1700,6 @@ def make_handler(
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
-            if route == "/api/mobile/creative/analyze":
-                forwarded = self.headers.get("X-Forwarded-For", "")
-                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
-                if payload.get("consent") is not True:
-                    self._send_json({"ok": False, "error": "Explicit consent is required before preview images are sent to a model."}, 400)
-                    return
-                if not _allow_public_creative_model_request(client_ip):
-                    self._send_json({"ok": False, "error": "AI creative review is rate-limited for this connection. Try again later.", "code": "rate_limited"}, 429)
-                    return
             if route in {"/api/mobile/creative/analyze", "/api/mobile/creative/generate-image"}:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
