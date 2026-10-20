@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from core.creative_search_planner import build_search_query_variants
+
 
 MAX_QUERY_CHARS = 180
 MAX_RESULTS = 12
@@ -430,62 +432,97 @@ def search_creative_assets(
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_RESULTS:
         raise CreativeAssetError(f"Result limit must be between 1 and {MAX_RESULTS}.")
     env = os.environ if environ is None else environ
+    variants = build_search_query_variants(q)
+    search_links = [
+        {"query": candidate, "url": (
+            "https://www.pinterest.com/search/pins/?" + urllib.parse.urlencode({"q": candidate})
+            if provider == "pinterest"
+            else "https://www.google.com/search?" + urllib.parse.urlencode({"tbm": "isch", "q": candidate})
+        )}
+        for candidate in variants
+    ]
     if provider == "pinterest":
-        search_url = "https://www.pinterest.com/search/pins/?" + urllib.parse.urlencode({"q": q})
         return {
             "ok": True, "provider": "pinterest", "query": q, "items": [],
-            "manual_reference_only": True, "search_url": search_url,
+            "search_queries": variants, "search_links": search_links,
+            "manual_reference_only": True, "search_url": search_links[0]["url"],
             "note": (
-                "Pinterest is opened as a user-directed reference search. This app does not scrape Pinterest "
-                "or automatically download Pins; use assets only when you have permission to reuse them."
+                "Pinterest is reference search only in this build. Open a targeted query, inspect the Pin "
+                "and source page, and import only media you have permission to use. Pinterest account access "
+                "requires an approved app and OAuth; this route does not log in as you or scrape Pins."
             ),
         }
-    searched_queries = [q]
+
+    searched_queries: list[str] = []
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
     if provider == "google":
         if not str(env.get("GOOGLE_CSE_API_KEY", "")).strip() or not str(env.get("GOOGLE_CSE_CX", "")).strip():
-            search_url = "https://www.google.com/search?" + urllib.parse.urlencode({"tbm": "isch", "q": q})
-            return {"ok": True, "provider": "google", "query": q, "items": [], "count": 0,
-                    "manual_reference_only": True, "search_url": search_url,
-                    "note": "Google's image-search API is unavailable to new customers. Open Google Images, choose an image, copy its direct image address, and import it below. Direct imports are unverified and intended for private drafts until rights are checked."}
-        try:
-            items = _google_images_search(q, limit, env)
-        except CreativeAssetError:
-            search_url = "https://www.google.com/search?" + urllib.parse.urlencode({"tbm": "isch", "q": q})
-            return {"ok": True, "provider": "google", "query": q, "items": [], "count": 0,
-                    "manual_reference_only": True, "search_url": search_url,
-                    "note": "Google's image-search API is unavailable for this configuration. Open Google Images, choose an image, copy its direct image address, and import it below. Direct imports are unverified and intended for private drafts until rights are checked."}
-    elif provider == "pexels":
-        api_key = str(env.get("PEXELS_API_KEY", "")).strip()
-        if not api_key:
-            raise CreativeAssetError("Pexels is not configured yet. Add PEXELS_API_KEY as a server-side secret, or use Wikimedia Commons.")
-        items = _pexels_search(q, kind, limit, api_key)
-    else:
-        # Search progressively broader versions of the prompt instead of making
-        # the user guess the exact wording used in an asset's metadata.
-        # Keep the original query first, then widen only as needed.
-        variants = [q]
-        words = re.findall(r"[\w'-]+", q, flags=re.UNICODE)
-        for width in (4, 3, 2):
-            candidate = " ".join(words[:width]).strip()
-            if len(candidate) >= 2 and candidate.casefold() not in {v.casefold() for v in variants}:
-                variants.append(candidate)
-        items = []
-        seen = set()
-        attempted = []
+            return {
+                "ok": True, "provider": "google", "query": q, "items": [], "count": 0,
+                "search_queries": variants, "search_links": search_links,
+                "manual_reference_only": True, "search_url": search_links[0]["url"],
+                "note": (
+                    "Google Images is being opened as a set of focused visual-reference searches. "
+                    "The official Custom Search JSON API is closed to new customers; direct image imports "
+                    "remain unverified and should be treated as private drafts until reuse rights are checked."
+                ),
+            }
         for candidate in variants:
             if len(items) >= limit:
                 break
-            attempted.append(candidate)
-            for item in _commons_search(candidate, kind, limit):
+            searched_queries.append(candidate)
+            try:
+                rows = _google_images_search(candidate, limit - len(items), env)
+            except CreativeAssetError:
+                # A configured legacy API may be unavailable or denied. Fall back
+                # to visible searches rather than falsely claiming search succeeded.
+                return {
+                    "ok": True, "provider": "google", "query": q, "items": [], "count": 0,
+                    "search_queries": variants, "search_links": search_links,
+                    "manual_reference_only": True, "search_url": search_links[0]["url"],
+                    "note": "The configured Google image-search API could not be used. Open the focused browser searches instead.",
+                }
+            for item in rows:
                 identity = str(item.get("id") or item.get("asset_url") or "")
                 if identity and identity not in seen:
                     seen.add(identity)
                     items.append(item)
                     if len(items) >= limit:
                         break
-        searched_queries = attempted
+    elif provider == "pexels":
+        api_key = str(env.get("PEXELS_API_KEY", "")).strip()
+        if not api_key:
+            raise CreativeAssetError("Pexels is not configured yet. Add PEXELS_API_KEY as a server-side secret, or use Google Images for manual visual references.")
+        for candidate in variants:
+            if len(items) >= limit:
+                break
+            searched_queries.append(candidate)
+            rows = _pexels_search(candidate, kind, limit - len(items), api_key)
+            for item in rows:
+                identity = str(item.get("id") or item.get("asset_url") or "")
+                if identity and identity not in seen:
+                    seen.add(identity)
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
+    else:
+        # Query the most specific phrase first, then distinct action/object
+        # phrases and short concepts. Do not manufacture "broader" searches by
+        # blindly truncating the first N words of the user's prompt.
+        for candidate in variants:
+            if len(items) >= limit:
+                break
+            searched_queries.append(candidate)
+            for item in _commons_search(candidate, kind, limit - len(items)):
+                identity = str(item.get("id") or item.get("asset_url") or "")
+                if identity and identity not in seen:
+                    seen.add(identity)
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
     return {
-        "ok": True, "provider": provider, "query": q, "search_queries": searched_queries, "items": items[:limit],
+        "ok": True, "provider": provider, "query": q, "search_queries": searched_queries, "search_links": search_links if provider == "google" else [], "items": items[:limit],
         "count": min(len(items), limit),
         "note": (
             "Search metadata is not visual verification. Confirm each result actually matches the scene. "
