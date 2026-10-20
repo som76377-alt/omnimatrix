@@ -1898,7 +1898,8 @@
       return { attempted: false, changed: false, message: "Post-render model critique consent was switched off before upload." };
     }
     const token = aiRuntimeToken();
-    if (!token) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
     if (aiTimelineSignature() !== renderSignature) {
       return { attempted: false, changed: false, message: "Timeline changed after rendering; the draft was not auto-modified." };
     }
