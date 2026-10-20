@@ -16,8 +16,18 @@
       "status": "active-local",
       "implementation": "webapp/creative-studio.js",
       "model_required": false,
-      "responsibilities": ["import asset metadata", "create thumbnails", "index filenames", "manage local asset IDs", "persist local project references"],
-      "cannot": ["upload media to a provider", "infer semantic contents beyond file metadata", "claim visual understanding"]
+      "responsibilities": [
+        "import asset metadata",
+        "create thumbnails",
+        "index filenames",
+        "manage local asset IDs",
+        "persist local project references"
+      ],
+      "cannot": [
+        "upload media to a provider",
+        "infer semantic contents beyond file metadata",
+        "claim visual understanding"
+      ]
     },
     {
       "id": "timeline-executor",
@@ -25,41 +35,84 @@
       "status": "active-local",
       "implementation": "webapp/creative-studio.js",
       "model_required": false,
-      "responsibilities": ["apply deterministic shot settings", "compose text overlays", "apply supported pan and zoom presets", "record a local WebM draft"],
-      "cannot": ["edit original source files destructively", "claim support for unimplemented effects", "silently use paid compute"]
+      "responsibilities": [
+        "apply deterministic shot settings",
+        "compose text overlays",
+        "apply supported pan and zoom presets",
+        "record a local WebM draft"
+      ],
+      "cannot": [
+        "edit original source files destructively",
+        "claim support for unimplemented effects",
+        "silently use paid compute"
+      ]
     },
     {
       "id": "visual-analyst",
       "label": "Visual analyst",
-      "status": "configured-not-connected",
+      "status": "integrated-consent-gated",
       "model_required": true,
       "input_policy": "user-consented selected assets or generated low-resolution frames only",
-      "responsibilities": ["describe image composition and shot content", "compare references", "retrieve relevant assets for a creative brief"],
-      "release_gate": ["verified vision-model endpoint", "data-egress consent", "asset-ID grounding tests", "failure and quota tests"]
+      "responsibilities": [
+        "describe composition and likely shot content from explicitly selected resized previews",
+        "compare a selected batch of shot previews with the director brief",
+        "report visible evidence and uncertainty without claiming to inspect full video clips"
+      ],
+      "release_gate": [
+        "configured provider route and actual worker/model identity",
+        "explicit consent before each remote preview-analysis request",
+        "asset-ID grounding and JPEG payload-bound tests",
+        "provider timeout, quota, incomplete-result and malformed-plan tests"
+      ]
     },
     {
       "id": "creative-director",
       "label": "Creative director",
-      "status": "configured-not-connected",
+      "status": "integrated-proposal-only",
       "model_required": true,
-      "responsibilities": ["convert the brief and reference roles into a storyboard", "plan pacing and shot selection", "emit a structured editable timeline plan"],
-      "release_gate": ["schema-validated plans", "real asset IDs", "approval before applying large changes", "benchmark suite across distinct visual tasks"]
+      "responsibilities": [
+        "convert the brief and selected preview evidence into a structured proposed edit plan",
+        "suggest bounded per-shot timing, supported motion, framing and text-overlay changes",
+        "emit a schema-validated plan bound to actual local clip and asset IDs"
+      ],
+      "release_gate": [
+        "review and approval before timeline mutation",
+        "fresh-timeline validation before apply",
+        "post-render visual critique before claiming end-to-end autonomous quality",
+        "benchmark suite across distinct visual tasks"
+      ]
     },
     {
       "id": "motion-designer",
       "label": "Motion designer",
       "status": "planned",
       "model_required": true,
-      "responsibilities": ["propose typography and graphic hierarchy", "map transitions and keyframes to supported engine operations"],
-      "release_gate": ["editable layer data", "design-system constraints", "rendered-frame inspection", "safe rollback"]
+      "responsibilities": [
+        "propose typography and graphic hierarchy",
+        "map transitions and keyframes to supported engine operations"
+      ],
+      "release_gate": [
+        "editable layer data",
+        "design-system constraints",
+        "rendered-frame inspection",
+        "safe rollback"
+      ]
     },
     {
       "id": "visual-critic",
       "label": "Visual critic",
       "status": "configured-not-connected",
       "model_required": true,
-      "responsibilities": ["inspect rendered frames", "compare result with brief and references", "identify actionable visual defects"],
-      "release_gate": ["real frame input/output", "critique calibration tests", "no self-reported success without render evidence"]
+      "responsibilities": [
+        "inspect rendered frames",
+        "compare result with brief and references",
+        "identify actionable visual defects"
+      ],
+      "release_gate": [
+        "real frame input/output",
+        "critique calibration tests",
+        "no self-reported success without render evidence"
+      ]
     }
   ]
 }
