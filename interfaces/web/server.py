@@ -44,6 +44,7 @@ from core.creative_production import CreativeProductionManifest, ProductionContr
 from core.creative_assets import CreativeAssetError, download_creative_asset, generate_creative_image, search_creative_assets
 from core.creative_video import CreativeVideoError, creative_video_job_status, start_creative_video_job
 from core.creative_tool_registry import load_creative_tool_registry
+from core.creative_orchestrator import create_shared_production_plan, get_shared_production_plan, update_shared_production_task
 
 
 from core.multimodal.journal import journal_status
@@ -1856,6 +1857,16 @@ def make_handler(
                 try:
                     if route == "/api/creative/tools":
                         self._send_json(load_creative_tool_registry())
+                    elif route.startswith("/api/creative/production/jobs/"):
+                        job_id = route[len("/api/creative/production/jobs/"):].strip("/")
+                        if "/" in job_id or not job_id:
+                            self._send_json({"ok": False, "error": "Invalid production job route."}, 404)
+                        else:
+                            try:
+                                self._send_json({"ok": True, "plan": get_shared_production_plan(job_id)})
+                            except FileNotFoundError as exc:
+                                self._send_json({"ok": False, "error": str(exc)}, 404)
+                        return
                     elif route.startswith("/api/creative/manim-jobs/"):
                         remainder = route[len("/api/creative/manim-jobs/"):]
                         if remainder.endswith("/artifact"):
@@ -2059,7 +2070,16 @@ def make_handler(
                     self._send_json({"ok": False, "error": message, "code": "rate_limited"}, 429)
                     return
             try:
-                if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
+                if route == "/api/creative/production/plan":
+                    self._send_json({"ok": True, "plan": create_shared_production_plan(payload)}, 201)
+                elif route.startswith("/api/creative/production/jobs/") and "/tasks/" in route:
+                    remainder = route[len("/api/creative/production/jobs/"):]
+                    job_id, task_id = remainder.split("/tasks/", 1)
+                    if not job_id or not task_id or "/" in task_id:
+                        self._send_json({"ok": False, "error": "Invalid production task route."}, 404)
+                    else:
+                        self._send_json({"ok": True, "plan": update_shared_production_task(job_id, task_id, payload)})
+                elif route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
                 elif route == "/api/creative/manim-render":
                     self._send_json(runtime.start_manim_render(payload), 202)

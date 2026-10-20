@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "Omnitrix Creative Studio",
-  "status": "science-diagram-ui-integrated-manifest-ledger-not-yet-enforced-across-all-roles",
+  "status": "shared-manifest-persisted-and-task-ownership-enforced_agent-dispatch-not-yet-integrated",
   "source_of_truth": "one versioned production manifest per video job",
   "manifest": {
     "required_sections": [
@@ -102,12 +102,12 @@
     }
   ],
   "current_runtime_truth": {
-    "shared_manifest_enforced": false,
+    "shared_manifest_enforced": true,
     "independent_specialist_llms": false,
     "manim_adapter_integrated": true,
     "motion_canvas_adapter_integrated": false,
     "blender_adapter_integrated": false,
-    "note": "The core registry includes a constrained Manim diagram tool and core/creative_production.py provides a manifest ledger. Creative Studio now offers a user-supplied step sequence, calls the authenticated Manim job API when available, falls back to a deterministic browser Canvas animation, imports the result to the local media library/timeline, and performs browser decode plus sampled-frame technical checks before delivering the standalone clip. The full multi-role project workflow still does not consume one shared manifest end to end; durable jobs, independent audio/full-video critique, hosted Manim installation and a real deployed render remain unverified.",
+    "note": "The authenticated production plan/status/task-update API now uses one persisted manifest for scenes, tasks, dependencies and artifact ownership. Task handoffs require matching manifest revisions, dependencies to succeed first, and outputs to match exclusive ownership. Reported artifacts remain unverified; separate specialist dispatch and independent final visual QA are not implemented by this checkpoint.",
     "shared_manifest_module_implemented": true,
     "manim_tool_registered": true
   }
