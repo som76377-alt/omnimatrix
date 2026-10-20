@@ -118,6 +118,8 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn('id="file-tree"', body)
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
+        self.assertIn("script-src 'self' https://cdn.jsdelivr.net", csp)
+        self.assertIn("connect-src 'self' https://api.github.com https://cdn.jsdelivr.net", csp)
 
     def test_pinterest_asset_search_route_is_authenticated_and_reference_only(self):
         status, body = self.request(
