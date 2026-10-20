@@ -162,7 +162,7 @@
     return {
       id: crypto.randomUUID(), assetId: asset.id, name: asset.name,
       sourceIn: 0, duration: asset.type.startsWith("video/") ? Math.max(0.5, Math.min(asset.duration || 5, 600)) : 4,
-      fit: "cover", motion: "none", title: "", subtitle: "",
+      fit: "cover", motion: "none", transition: "cut", title: "", subtitle: "",
       titlePosition: "bottom", titleColor: "#d6fa62", titleSize: 44, titleFont: "sans", layers: []
     };
   }
@@ -384,69 +384,301 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
-  async function createOriginalGraphicCards(brief) {
-    const selector = $("preview-scale");
-    const dimensions = String(selector && selector.value || "1280x720").split("x").map(Number);
-    const width = dimensions[0] || 1280;
-    const height = dimensions[1] || 720;
-    const title = extractBriefTitle(brief).slice(0, 72) || "A closer look";
-    const topic = deriveAssetQuery(brief).slice(0, 96) || title;
-    const induction = /induction|magnetic field|coil|cooktop|stove|electromagnet/i.test(brief);
-    const stages = [
-      { kicker: "01 / THE QUESTION", heading: title, footer: "Start with the phenomenon." },
-      { kicker: "02 / THE MECHANISM", heading: induction ? "FIELD → CURRENT → HEAT" : "FOLLOW THE PROCESS", footer: topic },
-      { kicker: "03 / THE TAKEAWAY", heading: "CAUSE BECOMES EFFECT", footer: "A visual explainer · original vector graphics" }
-    ];
-    const files = [];
-    const stamp = crypto.randomUUID().slice(0, 8);
-    for (let index = 0; index < stages.length; index += 1) {
-      const canvasNode = document.createElement("canvas");
-      canvasNode.width = width;
-      canvasNode.height = height;
-      const g = canvasNode.getContext("2d", { alpha: false });
-      if (!g) throw new Error("This browser cannot create original graphic scenes.");
-      g.fillStyle = "#10120f"; g.fillRect(0, 0, width, height);
-      g.strokeStyle = "#242a22"; g.lineWidth = 1;
-      const step = Math.max(24, Math.round(width / 32));
-      for (let x = 0; x < width; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
-      for (let y = 0; y < height; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
-      const margin = Math.round(width * 0.075);
-      g.fillStyle = "#d5fb63"; g.fillRect(margin, margin, Math.round(width * 0.065), Math.max(3, Math.round(width * 0.004)));
-      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(12, Math.round(width * 0.016)) + "px system-ui";
-      g.fillText(stages[index].kicker, margin, margin + Math.round(height * 0.055));
-      const headingSize = Math.max(22, Math.round(width * (index === 0 ? 0.055 : 0.043)));
-      g.fillStyle = "#f1f3e8"; g.font = "700 " + headingSize + "px system-ui";
-      const words = stages[index].heading.split(/\s+/);
-      let line = "", lines = [];
-      for (const word of words) {
-        const next = line ? line + " " + word : word;
-        if (g.measureText(next).width > width * 0.82 && line) { lines.push(line); line = word; } else line = next;
+  function drawOriginalMotionFrame(g, brief, elapsed, duration, width, height) {
+    const lower = String(brief || "").toLowerCase();
+    const progress = Math.min(1, Math.max(0, elapsed / Math.max(0.1, duration)));
+    const induction = /induction|magnetic field|eddy current|cooktop|stove|electromagnet|coil/.test(lower);
+    const person = /\b(man|woman|person|people|human|adult|boy|girl|child|presenter|character)\b/.test(lower);
+    const waving = /\b(wav(?:e|es|ing)|greet(?:s|ing)?|hello|hi)\b/.test(lower);
+    const walking = /\b(walk(?:s|ing)?|run(?:s|ning)?|jog(?:s|ging)?|march(?:es|ing)?)\b/.test(lower);
+    const title = extractBriefTitle(brief).slice(0, 72) || deriveAssetQuery(brief).slice(0, 72) || "Original motion study";
+    const margin = Math.round(width * 0.065);
+    const sx = width / 1280;
+    const sy = height / 720;
+    const scale = Math.min(sx, sy);
+    const line = (x1, y1, x2, y2, color, thickness) => {
+      g.strokeStyle = color;
+      g.lineWidth = thickness;
+      g.lineCap = "round";
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+    };
+    const label = (text, x, y, size, color, weight) => {
+      g.fillStyle = color;
+      g.font = (weight || 600) + " " + Math.max(11, Math.round(size * scale)) + "px system-ui, sans-serif";
+      g.textAlign = "left"; g.textBaseline = "alphabetic";
+      g.fillText(String(text || "").slice(0, 90), x, y);
+    };
+    const arrow = (x1, y1, x2, y2, color, amount) => {
+      const endX = x1 + (x2 - x1) * Math.max(0.12, Math.min(1, amount));
+      const endY = y1 + (y2 - y1) * Math.max(0.12, Math.min(1, amount));
+      line(x1, y1, endX, endY, color, Math.max(2, 3 * scale));
+      const angle = Math.atan2(endY - y1, endX - x1);
+      const head = 10 * scale;
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(endX, endY);
+      g.lineTo(endX - head * Math.cos(angle - Math.PI / 6), endY - head * Math.sin(angle - Math.PI / 6));
+      g.lineTo(endX - head * Math.cos(angle + Math.PI / 6), endY - head * Math.sin(angle + Math.PI / 6));
+      g.closePath(); g.fill();
+    };
+
+    g.fillStyle = "#0d0f0d";
+    g.fillRect(0, 0, width, height);
+    g.fillStyle = "#151914";
+    g.fillRect(0, Math.round(height * 0.79), width, Math.round(height * 0.21));
+    line(margin, height - margin, width - margin, height - margin, "#30372a", Math.max(1, scale));
+
+    if (induction) {
+      // A continuous, topic-specific illustration: power coil → field → currents → heat.
+      label("INDUCTION HEATING", margin, Math.round(height * 0.105), 17, "#d6fa62", 700);
+      label(title, margin, Math.round(height * 0.16), 30, "#f1f3e8", 650);
+      const cx = width * 0.51;
+      const panY = height * 0.32;
+      const panRX = width * 0.19;
+      const panRY = height * 0.055;
+      const baseY = height * 0.47;
+      const cookY = height * 0.69;
+      // Pan body and handle.
+      g.fillStyle = "#242a24";
+      g.beginPath();
+      g.moveTo(cx - panRX, panY); g.lineTo(cx - panRX * 0.82, baseY);
+      g.quadraticCurveTo(cx, baseY + height * 0.045, cx + panRX * 0.82, baseY);
+      g.lineTo(cx + panRX, panY); g.closePath(); g.fill();
+      g.strokeStyle = "#b9c0b2"; g.lineWidth = Math.max(2, 3 * scale); g.stroke();
+      g.fillStyle = "#343b34";
+      g.beginPath(); g.ellipse(cx, panY, panRX, panRY, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#dbe0d5"; g.lineWidth = Math.max(2, 3 * scale); g.stroke();
+      line(cx + panRX * 0.9, panY + 2 * scale, cx + panRX * 1.52, panY + height * 0.035, "#aab2a4", Math.max(6, 10 * scale));
+      // Flat cooktop and coil.
+      g.fillStyle = "#1b211b";
+      g.fillRect(width * 0.19, cookY, width * 0.62, height * 0.13);
+      g.strokeStyle = "#3d4637"; g.lineWidth = Math.max(2, 2 * scale); g.strokeRect(width * 0.19, cookY, width * 0.62, height * 0.13);
+      const pulse = 0.72 + 0.28 * Math.sin(elapsed * 7);
+      for (let i = 0; i < 4; i++) {
+        g.strokeStyle = i % 2 ? "#6d7d47" : "#d6fa62";
+        g.globalAlpha = pulse * (0.72 - i * 0.1);
+        g.lineWidth = Math.max(2, (4 - i * 0.4) * scale);
+        g.beginPath();
+        g.ellipse(cx, cookY + height * 0.035, width * (0.075 + i * 0.027), height * (0.022 + i * 0.006), 0, 0, Math.PI * 2);
+        g.stroke();
       }
-      if (line) lines.push(line);
-      lines.slice(0, 3).forEach((row, i) => g.fillText(row, margin, Math.round(height * 0.31) + i * Math.round(headingSize * 1.15)));
-      const cx = Math.round(width * 0.69), cy = Math.round(height * 0.61), radius = Math.round(Math.min(width, height) * 0.12);
-      g.strokeStyle = "#d5fb63"; g.lineWidth = Math.max(2, Math.round(width * 0.002));
-      if (induction) {
-        // A clean, original schematic: pan, coil and alternating field lines.
-        g.beginPath(); g.ellipse(cx, cy - radius * 0.55, radius * 1.25, radius * 0.28, 0, 0, Math.PI * 2); g.stroke();
-        g.beginPath(); g.moveTo(cx - radius * 1.25, cy - radius * 0.55); g.lineTo(cx - radius * 0.95, cy + radius * 0.12); g.quadraticCurveTo(cx, cy + radius * 0.48, cx + radius * 0.95, cy + radius * 0.12); g.lineTo(cx + radius * 1.25, cy - radius * 0.55); g.stroke();
-        for (let j = 0; j < 4; j += 1) { g.beginPath(); g.ellipse(cx, cy + radius * (0.25 + j * 0.13), radius * (0.65 + j * 0.22), radius * (0.10 + j * 0.015), 0, 0, Math.PI * 2); g.stroke(); }
-        g.fillStyle = "#d5fb63"; for (let j = 0; j < 9; j += 1) { const px = cx - radius * 0.85 + j * radius * 0.21; g.beginPath(); g.arc(px, cy + radius * 0.72, Math.max(2, radius * 0.035), 0, Math.PI * 2); g.fill(); }
-      } else {
-        const nodes = [{x:cx-radius*1.1,y:cy},{x:cx,y:cy-radius*0.72},{x:cx+radius*1.1,y:cy},{x:cx,y:cy+radius*0.72}];
-        g.strokeStyle = "#d5fb63";
-        [[0,1],[1,2],[2,3],[3,0],[0,2]].forEach(([a,b])=>{g.beginPath();g.moveTo(nodes[a].x,nodes[a].y);g.lineTo(nodes[b].x,nodes[b].y);g.stroke();});
-        nodes.forEach((n,i)=>{g.fillStyle=i===1?"#d5fb63":"#10120f";g.beginPath();g.arc(n.x,n.y,Math.max(8,radius*0.18),0,Math.PI*2);g.fill();g.strokeStyle="#d5fb63";g.stroke();});
-        for(let j=0;j<7;j++){g.fillStyle="#f1f3e8";g.beginPath();g.arc(cx-radius*0.75+j*radius*0.25,cy+radius*1.1+(j%2)*radius*0.12,Math.max(2,radius*0.025),0,Math.PI*2);g.fill();}
+      g.globalAlpha = 1;
+      // Field lines rise through the pan base and alternate smoothly.
+      const fieldAlpha = Math.min(1, 0.25 + progress * 1.4);
+      g.globalAlpha = fieldAlpha;
+      for (let i = 0; i < 5; i++) {
+        const spread = (i + 1) * width * 0.018;
+        const lift = Math.sin(elapsed * 4 + i * 0.5) * height * 0.012;
+        g.strokeStyle = i % 2 ? "#8fa55b" : "#d6fa62";
+        g.lineWidth = Math.max(1.5, 2.5 * scale);
+        g.beginPath();
+        g.moveTo(cx - spread, cookY + height * 0.015);
+        g.bezierCurveTo(cx - spread * 1.3, height * 0.54 + lift, cx - spread * 0.75, height * 0.50 + lift, cx - spread * 0.4, baseY - height * 0.025);
+        g.bezierCurveTo(cx, baseY - height * 0.005 + lift, cx + spread * 0.75, height * 0.50 + lift, cx + spread, cookY + height * 0.015);
+        g.stroke();
       }
-      g.fillStyle = "#a7ad9c"; g.font = "500 " + Math.max(12, Math.round(width * 0.015)) + "px system-ui";
-      g.fillText(stages[index].footer.slice(0, 100), margin, height - margin);
-      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(11, Math.round(width * 0.012)) + "px ui-monospace, monospace";
-      g.fillText("OMNITRIX / MOTION GRAPHICS", margin, height - Math.round(margin * 0.42));
-      const blob = await new Promise((resolve, reject) => canvasNode.toBlob((value) => value ? resolve(value) : reject(new Error("Original graphic export failed.")), "image/png"));
-      files.push(new File([blob], "omnitrix-original-" + stamp + "-" + (index + 1) + ".png", { type: "image/png", lastModified: Date.now() }));
+      g.globalAlpha = 1;
+      // Eddy-current dots follow closed paths in the conductive pan base.
+      for (let i = 0; i < 12; i++) {
+        const angle = elapsed * 2.8 + i * Math.PI * 2 / 12;
+        const x = cx + Math.cos(angle) * panRX * 0.68;
+        const y = baseY - height * 0.015 + Math.sin(angle * 1.3) * height * 0.016;
+        g.fillStyle = i % 3 === 0 ? "#f0b35c" : "#d6fa62";
+        g.beginPath(); g.arc(x, y, Math.max(2.5, 4 * scale), 0, Math.PI * 2); g.fill();
+      }
+      if (progress > 0.44) {
+        const heatProgress = Math.min(1, (progress - 0.44) / 0.56);
+        for (let i = 0; i < 7; i++) {
+          const x = cx - panRX * 0.72 + i * panRX * 0.24;
+          const wave = Math.sin(elapsed * 5 + i) * height * 0.009;
+          line(x, panY - height * 0.005, x + wave, panY - height * (0.055 + heatProgress * 0.05), "#f0b35c", Math.max(2, 3 * scale));
+        }
+      }
+      const caption = progress < 0.22 ? "ALTERNATING CURRENT" : progress < 0.48 ? "CHANGING MAGNETIC FIELD" : progress < 0.76 ? "EDDY CURRENTS IN THE PAN BASE" : "ELECTRICAL RESISTANCE PRODUCES HEAT";
+      label(caption, margin, Math.round(height * 0.89), 17, progress > 0.76 ? "#f0b35c" : "#d6fa62", 650);
+      label("COIL", width * 0.22, cookY + height * 0.105, 12, "#a7ad9c", 600);
+      label("CONDUCTIVE PAN BASE", width * 0.63, baseY + height * 0.045, 12, "#a7ad9c", 600);
+      return;
     }
-    return files;
+
+    if (person && waving) {
+      // A deliberate, hand-drawn vector character. It is an actual looped action,
+      // not a still image with a title card. It is explicitly stylised, not photorealistic.
+      const cx = width * 0.5;
+      const bob = Math.sin(elapsed * 2.4) * height * 0.006;
+      const headX = cx - width * 0.012;
+      const headY = height * 0.245 + bob;
+      const headR = height * 0.078;
+      g.fillStyle = "#20271f"; g.fillRect(width * 0.13, height * 0.14, width * 0.22, height * 0.48);
+      g.fillStyle = "#222820"; g.fillRect(width * 0.72, height * 0.22, width * 0.16, height * 0.35);
+      g.fillStyle = "#252d23"; g.fillRect(width * 0.13, height * 0.73, width * 0.74, height * 0.012);
+      // Legs and shoes.
+      line(cx - width * 0.035, height * 0.62 + bob, cx - width * 0.06, height * 0.78, "#596452", height * 0.065);
+      line(cx + width * 0.035, height * 0.62 + bob, cx + width * 0.075, height * 0.78, "#596452", height * 0.065);
+      line(cx - width * 0.06, height * 0.78, cx - width * 0.105, height * 0.79, "#cdd3c6", height * 0.026);
+      line(cx + width * 0.075, height * 0.78, cx + width * 0.12, height * 0.79, "#cdd3c6", height * 0.026);
+      // Torso.
+      g.fillStyle = "#d6fa62";
+      g.beginPath();
+      g.moveTo(cx - width * 0.055, height * 0.405 + bob);
+      g.lineTo(cx + width * 0.055, height * 0.405 + bob);
+      g.lineTo(cx + width * 0.076, height * 0.635 + bob);
+      g.lineTo(cx - width * 0.075, height * 0.635 + bob);
+      g.closePath(); g.fill();
+      // Relaxed arm on the left.
+      line(cx - width * 0.05, height * 0.43 + bob, cx - width * 0.105, height * 0.535 + bob, "#d6fa62", height * 0.038);
+      line(cx - width * 0.105, height * 0.535 + bob, cx - width * 0.09, height * 0.605 + bob, "#bf9878", height * 0.026);
+      // Waving arm: shoulder, elbow, wrist and a moving palm/fingers.
+      const wave = Math.sin(elapsed * 7.2);
+      const shoulderX = cx + width * 0.05;
+      const shoulderY = height * 0.43 + bob;
+      const elbowX = cx + width * 0.105;
+      const elbowY = height * 0.33 + wave * height * 0.012;
+      const wristX = cx + width * 0.095 + wave * width * 0.023;
+      const wristY = height * 0.19 + Math.cos(elapsed * 7.2) * height * 0.009;
+      line(shoulderX, shoulderY, elbowX, elbowY, "#d6fa62", height * 0.04);
+      line(elbowX, elbowY, wristX, wristY, "#bf9878", height * 0.027);
+      g.fillStyle = "#bf9878";
+      g.beginPath(); g.ellipse(wristX, wristY, width * 0.019, height * 0.025, wave * 0.35, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 4; i++) {
+        const fingerX = wristX + (i - 1.3) * width * 0.012 + wave * width * 0.006;
+        const fingerY = wristY - height * (0.045 + (i % 2) * 0.012);
+        line(wristX + (i - 1.3) * width * 0.004, wristY - height * 0.012, fingerX, fingerY, "#bf9878", height * 0.009);
+      }
+      // Head and face.
+      g.fillStyle = "#bf9878"; g.beginPath(); g.arc(headX, headY, headR, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#24251f";
+      g.beginPath(); g.arc(headX, headY - headR * 0.16, headR * 1.02, Math.PI * 1.05, Math.PI * 2.04); g.fill();
+      g.fillRect(headX - headR * 0.98, headY - headR * 0.15, headR * 0.28, headR * 0.46);
+      g.fillStyle = "#20231e";
+      g.beginPath(); g.arc(headX + headR * 0.26, headY, Math.max(2, headR * 0.055), 0, Math.PI * 2); g.fill();
+      line(headX + headR * 0.19, headY + headR * 0.35, headX + headR * 0.46, headY + headR * 0.31, "#704e3b", Math.max(1.5, scale * 2));
+      label(title, margin, Math.round(height * 0.9), 16, "#a7ad9c", 500);
+      return;
+    }
+
+    // Unknown topics are drawn as one moving, prompt-derived concept map. Labels
+    // come from the request itself; no generic "follow the process" copy is inserted.
+    const stop = new Set(["a","an","the","of","for","in","on","with","by","to","from","and","or","but","as","at","into","over","under","how","why","what","when","where","which","who","please","make","create","build","generate","produce","video","film","clip","short","seconds","second","show","showing","explain","explaining","about"]);
+    let parts = String(brief || "").split(/\s*(?:→|->|=>|;|,|\bthen\b|\bbecause\b|\bleads?\s+to\b|\bcauses?\b|\btherefore\b|\bwhile\b)\s*/i)
+      .map((part) => part.replace(/[.!?]+$/g, "").trim()).filter((part) => part.length >= 3).slice(0, 4);
+    if (parts.length < 2) {
+      const words = String(brief || "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ").split(/\s+/).filter((word) => word && !stop.has(word));
+      parts = [];
+      const count = Math.max(1, Math.min(4, words.length));
+      const per = Math.max(1, Math.ceil(words.length / count));
+      for (let i = 0; i < words.length; i += per) parts.push(words.slice(i, i + per).join(" "));
+      if (!parts.length) parts = [title];
+      parts = parts.slice(0, 4);
+    }
+    label(title, margin, Math.round(height * 0.13), 28, "#f1f3e8", 650);
+    const count = Math.max(1, Math.min(4, parts.length));
+    const nodeW = Math.min(width * 0.25, width * 0.76 / count);
+    const left = margin + nodeW / 2;
+    const right = width - margin - nodeW / 2;
+    const centerY = height * 0.53;
+    const gap = count > 1 ? (right - left) / (count - 1) : 0;
+    const nodeH = height * 0.19;
+    for (let i = 0; i < count; i++) {
+      const appear = Math.max(0, Math.min(1, (elapsed - i * 0.45) / 0.65));
+      const x = count === 1 ? width * 0.5 : left + gap * i;
+      const y = centerY + Math.sin(elapsed * 1.8 + i * 1.1) * height * 0.014;
+      if (i < count - 1) {
+        const nextX = left + gap * (i + 1);
+        arrow(x + nodeW * 0.35, y, nextX - nodeW * 0.35, y, "#687651", Math.min(1, progress * count - i * 0.1));
+        const dotX = x + nodeW * 0.35 + (nextX - x - nodeW * 0.7) * ((elapsed * 0.55 + i * 0.18) % 1);
+        g.fillStyle = "#d6fa62"; g.beginPath(); g.arc(dotX, y, Math.max(2, 4 * scale), 0, Math.PI * 2); g.fill();
+      }
+      g.globalAlpha = appear;
+      g.fillStyle = i === Math.floor((elapsed * 0.55) % count) ? "#20281b" : "#171b16";
+      g.fillRect(x - nodeW / 2, y - nodeH / 2, nodeW, nodeH);
+      g.strokeStyle = i === Math.floor((elapsed * 0.55) % count) ? "#d6fa62" : "#525e43";
+      g.lineWidth = Math.max(2, 2 * scale); g.strokeRect(x - nodeW / 2, y - nodeH / 2, nodeW, nodeH);
+      const phrase = String(parts[i] || title).split(/\s+/);
+      const wordsPerLine = Math.max(1, Math.floor(nodeW / (12 * scale)));
+      const lines = [];
+      for (let j = 0; j < phrase.length; j += wordsPerLine) lines.push(phrase.slice(j, j + wordsPerLine).join(" "));
+      g.fillStyle = "#f1f3e8";
+      g.font = "600 " + Math.max(11, Math.round(16 * scale)) + "px system-ui, sans-serif";
+      g.textAlign = "center"; g.textBaseline = "middle";
+      lines.slice(0, 3).forEach((text, index) => g.fillText(text, x, y + (index - (Math.min(3, lines.length) - 1) / 2) * height * 0.035, nodeW * 0.9));
+      g.globalAlpha = 1;
+    }
+  }
+
+  async function renderOriginalMotionClip(brief) {
+    if (!("MediaRecorder" in window) || !("captureStream" in HTMLCanvasElement.prototype)) {
+      throw new Error("This browser cannot record the local animation. Open Creative Studio in an up-to-date Chrome-based browser.");
+    }
+    const selector = $("preview-scale");
+    const dimensions = String(selector && selector.value || "960x540").split("x").map(Number);
+    const width = Math.min(1280, Math.max(540, dimensions[0] || 960));
+    const height = Math.min(1280, Math.max(540, dimensions[1] || 540));
+    const match = String(brief || "").match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+    const duration = Math.min(24, Math.max(4, match ? Number(match[1]) : 8));
+    const scene = document.createElement("canvas");
+    scene.width = width; scene.height = height;
+    const sceneContext = scene.getContext("2d", { alpha: false });
+    if (!sceneContext) throw new Error("The local animation canvas could not be created.");
+    const stream = scene.captureStream(24);
+    const preferred = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    const mimeType = preferred.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    let recorder;
+    const chunks = [];
+    try {
+      recorder = new MediaRecorder(stream, {
+        ...(mimeType ? { mimeType } : {}),
+        videoBitsPerSecond: width >= 1280 ? 2100000 : 1300000
+      });
+      const blob = await new Promise((resolve, reject) => {
+        let raf = 0;
+        const timeout = window.setTimeout(() => {
+          if (raf) cancelAnimationFrame(raf);
+          try { if (recorder.state !== "inactive") recorder.stop(); } catch {}
+          reject(new Error("The local animation exceeded its bounded recording time."));
+        }, duration * 1000 + 10000);
+        const cleanup = () => {
+          window.clearTimeout(timeout);
+          if (raf) cancelAnimationFrame(raf);
+          stream.getTracks().forEach((track) => track.stop());
+        };
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size) chunks.push(event.data);
+        };
+        recorder.onerror = (event) => {
+          cleanup();
+          reject(new Error((event.error && event.error.message) || "The browser recorder failed."));
+        };
+        recorder.onstop = () => {
+          cleanup();
+          const result = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+          if (!result.size) reject(new Error("The browser returned an empty animation file."));
+          else resolve(result);
+        };
+        try {
+          recorder.start(250);
+          const startedAt = performance.now();
+          const draw = (now) => {
+            const elapsed = Math.min(duration, Math.max(0, (now - startedAt) / 1000));
+            drawOriginalMotionFrame(sceneContext, brief, elapsed, duration, width, height);
+            if (elapsed < duration && recorder.state !== "inactive") raf = requestAnimationFrame(draw);
+            else if (recorder.state !== "inactive") recorder.stop();
+          };
+          raf = requestAnimationFrame(draw);
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      });
+      if (blob.size > 24 * 1024 * 1024) {
+        throw new Error("The original animation exceeds the 24 MB transfer limit. Choose a shorter duration or lower resolution.");
+      }
+      return new File([blob], "omnitrix-original-motion-" + slug(brief).slice(0, 48) + "-" + crypto.randomUUID().slice(0, 6) + ".webm", {
+        type: "video/webm", lastModified: Date.now()
+      });
+    } finally {
+      stream.getTracks().forEach((track) => track.stop());
+    }
   }
 
   async function requestGeneratedImage(brief) {
@@ -494,57 +726,53 @@
   }
 
   async function assembleOriginalGraphicFallback(brief) {
-    onlineStatus("Creating an original local motion-graphics draft. No web search or download is involved.", "");
-    const files = await createOriginalGraphicCards(brief);
-    let imageGenerated = false;
-    // Raster image generation is paid and therefore happens only after this
-    // per-run checkbox explicitly acknowledges the estimated image cost.
+    onlineStatus("Drawing one original animated scene from the brief locally. No online search or asset download is needed.", "");
+    const file = await renderOriginalMotionClip(brief);
+    const priorIds = new Set(state.assets.map((asset) => asset.id));
+    await importFiles([file]);
+    const asset = state.assets.find((item) => !priorIds.has(item.id) && item.name === file.name);
+    if (!asset) throw new Error("The animation was rendered, but could not be added to the local media library.");
+
+    // A separate, explicitly consented AI still may be retained as an optional reference,
+    // but it never gets inserted as a fake substitute for motion or as another title card.
+    let referenceNote = "";
     if ($("auto-creative-consent").checked) {
       try {
-        onlineStatus("Requesting one original 1K image from the configured image model (estimated US$0.04)…", "");
-        files.unshift(await requestGeneratedImage(brief));
-        imageGenerated = true;
+        onlineStatus("The animated clip is ready. Generating the separately approved optional image reference…", "");
+        const referenceFile = await requestGeneratedImage(brief);
+        await importFiles([referenceFile]);
+        referenceNote = " One separately generated AI image was added to the library as an optional reference, not inserted as a duplicate slide.";
       } catch (error) {
-        onlineStatus("AI image generation failed (" + String(error.message || error) + "). Continuing with local vector graphics; no AI image is being claimed.", "error");
+        referenceNote = " Optional AI image was unavailable (" + String(error.message || error).slice(0, 150) + "); the original animation was still created.";
       }
     }
-    const before = new Set(state.assets.map((asset) => asset.name));
-    await importFiles(files);
-    const generatedByName = new Map(state.assets
-      .filter((asset) => !before.has(asset.name))
-      .map((asset) => [asset.name, asset]));
-    const generated = files.map((file) => generatedByName.get(file.name)).filter(Boolean);
-    if (generated.length !== files.length) throw new Error("Original graphics were created, but not all scenes could be added to the media library.");
-    const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
-    const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
-    const startIndex = state.project.timeline.length;
-    generated.forEach((asset, index) => {
-      const clip = createClip(asset);
-      clip.duration = targetSeconds / generated.length;
-      clip.fit = asset.name.startsWith("omnitrix-ai-generated-") ? "cover" : "contain";
-      clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "pan-left" : "none";
-      clip.title = "";
-      clip.subtitle = "";
-      state.project.timeline.push(clip);
-    });
-    const added = state.project.timeline.slice(startIndex);
-    state.selectedClipId = added[0] ? added[0].id : state.selectedClipId;
-    state.currentClipId = state.selectedClipId;
+
+    const clip = createClip(asset);
+    clip.duration = Math.max(0.5, Number(asset.duration) || 8);
+    clip.fit = "contain";
+    clip.motion = "none";
+    clip.transition = "cut";
+    clip.title = "";
+    clip.subtitle = "";
+    const insertionTime = totalDuration();
+    state.project.timeline.push(clip);
+    state.selectedClipId = clip.id;
+    state.currentClipId = clip.id;
+    state.playhead = insertionTime;
     renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
     await saveProject(false);
-    state.lastAutoDraftClipIds = added.map((clip) => clip.id);
-    onlineStatus(imageGenerated
-      ? "An original AI-generated image plus original vector graphics were assembled. Inspect factual details and composition before publishing."
-      : "Original motion-graphics draft assembled from locally drawn vector scenes. A configured image model was unavailable or not authorised.", "success");
+    state.lastAutoDraftClipIds = [clip.id];
+    const actionNote = needsDirectAiVideo(brief)
+      ? " The free renderer made a stylised vector action, not photorealistic footage."
+      : " The clip is a custom animated concept, not a stock template.";
+    onlineStatus("Created one continuous original animated clip with topic-derived visuals and motion. No three-card title template was used." + actionNote + referenceNote, "success");
     if ($("auto-creative-consent").checked) {
-      // Preview sharing is separately consent-gated; the model may direct and critique this draft.
       await finishDraftAutomatically(state.lastAutoDraftClipIds);
     } else {
-      // CREATE VIDEO must actually render when invoked manually, not merely assemble a timeline.
+      // The create action exports the generated result rather than leaving an unfinished timeline.
       await renderVideo();
     }
   }
-
 
   function needsDirectAiVideo(brief) {
     const text = String(brief || "");
@@ -1110,11 +1338,7 @@
     }
     setPreviewResolutionFromBrief(brief);
     if (needsDirectAiVideo(brief)) {
-      onlineStatus(
-        "This prompt needs genuine moving people/animals or spoken dialogue. Static images and generic vector cards are not an acceptable substitute. No web search or paid model call was made. Review the cost, check the separate paid-video approval, then press GENERATE REAL AI VIDEO + AUDIO.",
-        "error"
-      );
-      return;
+      onlineStatus("This brief includes a person/animal action. The free local route will draw a stylised animated character rather than fake realistic footage. For photorealistic movement and native audio, use the separate paid video option.", "");
     }
     const provider = $("online-asset-provider").value || "original";
     // Prompt-to-video starts with original graphics. Online media is an explicit, optional source choice.
@@ -1167,14 +1391,24 @@
         selected.push(row.item);
         if (selected.length >= 4) break;
       }
-      if (!selected.length) throw new Error("No licence-identified assets passed the format and rights checks. Nothing was imported.");
+      if (!selected.length) {
+        onlineStatus("Web results were not usable. Creating an original animated scene instead; nothing was downloaded.", "");
+        await assembleOriginalGraphicFallback(brief);
+        return;
+      }
       const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
       const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
       const importedIds = [];
       for (let i = 0; i < selected.length; i += 1) {
         onlineStatus("Building draft: importing selected asset " + (i + 1) + " of " + selected.length + "…", "");
-        const id = await importOnlineAsset(selected[i], false);
-        importedIds.push(id);
+        try {
+          const id = await importOnlineAsset(selected[i], false);
+          importedIds.push(id);
+        } catch (error) {
+          onlineStatus("The selected web asset could not be downloaded (" + String(error.message || error).slice(0, 160) + "). Stopping the search/import path and creating an original animated scene instead.", "");
+          await assembleOriginalGraphicFallback(brief);
+          return;
+        }
       }
       // Add the selected assets as one batch after all downloads/metadata checks succeed.
       const startIndex = state.project.timeline.length;
@@ -1507,6 +1741,7 @@
     $("shot-duration").value = Number(clip.duration || 4);
     $("shot-fit").value = clip.fit || "cover";
     $("shot-motion").value = clip.motion || "none";
+    $("shot-transition").value = clip.transition || "cut";
     $("shot-title").value = clip.title || "";
     $("shot-subtitle").value = clip.subtitle || "";
     $("shot-position").value = clip.titlePosition || "bottom";
@@ -1661,6 +1896,7 @@
       "shot-name": ["name", (v) => v.slice(0, 120)],
       "shot-fit": ["fit", (v) => v],
       "shot-motion": ["motion", (v) => v],
+      "shot-transition": ["transition", (v) => (["cut","fade","wipe-left","wipe-right","wipe-up","wipe-down","slide-left","slide-right","slide-up","slide-down","zoom-reveal","circle-reveal","split-open"].includes(v) ? v : "cut")],
       "shot-title": ["title", (v) => v.slice(0, 240)],
       "shot-subtitle": ["subtitle", (v) => v.slice(0, 300)],
       "shot-position": ["titlePosition", (v) => v],
@@ -1817,19 +2053,49 @@
       ctx.fillStyle = "#080a08"; ctx.fillRect(0, 0, W, H);
     }
     const scale = clip.fit === "contain" ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+    const progress = Math.min(1, Math.max(0, localTime / Math.max(0.1, Number(clip.duration) || 4)));
     let motion = 1;
     let px = 0;
     let py = 0;
-    const progress = Math.min(1, Math.max(0, localTime / Math.max(0.1, Number(clip.duration) || 4)));
     if (clip.motion === "slow-zoom") motion = 1 + 0.12 * progress;
     else if (clip.motion === "zoom-out") motion = 1.12 - 0.12 * progress;
     else if (clip.motion === "pan-left") px = (0.10 - 0.20 * progress) * W;
     else if (clip.motion === "pan-right") px = (-0.10 + 0.20 * progress) * W;
-    const dw = sw * scale * motion;
-    const dh = sh * scale * motion;
+    else if (clip.motion === "pan-up") py = (0.10 - 0.20 * progress) * H;
+    else if (clip.motion === "pan-down") py = (-0.10 + 0.20 * progress) * H;
+    else if (clip.motion === "drift-up-left") { px = 0.08 * W - 0.16 * W * progress; py = 0.08 * H - 0.16 * H * progress; }
+    else if (clip.motion === "drift-up-right") { px = -0.08 * W + 0.16 * W * progress; py = 0.08 * H - 0.16 * H * progress; }
+    else if (clip.motion === "drift-down-left") { px = 0.08 * W - 0.16 * W * progress; py = -0.08 * H + 0.16 * H * progress; }
+    else if (clip.motion === "drift-down-right") { px = -0.08 * W + 0.16 * W * progress; py = -0.08 * H + 0.16 * H * progress; }
+
+    // A short entrance only; the rest of each shot plays unobstructed.
+    const transition = ["cut","fade","wipe-left","wipe-right","wipe-up","wipe-down","slide-left","slide-right","slide-up","slide-down","zoom-reveal","circle-reveal","split-open"].includes(clip.transition) ? clip.transition : "cut";
+    const transitionDuration = Math.min(0.72, Math.max(0.22, Number(clip.duration || 4) * 0.22));
+    const entrance = Math.min(1, Math.max(0, localTime / transitionDuration));
+    let transitionScale = 1;
+    let tx = 0, ty = 0, alpha = 1;
+    if (transition === "fade") alpha = entrance;
+    if (transition === "slide-left") tx = W * (1 - entrance);
+    if (transition === "slide-right") tx = -W * (1 - entrance);
+    if (transition === "slide-up") ty = H * (1 - entrance);
+    if (transition === "slide-down") ty = -H * (1 - entrance);
+    if (transition === "zoom-reveal") { transitionScale = 0.82 + entrance * 0.18; alpha = entrance; }
+
+    const dw = sw * scale * motion * transitionScale;
+    const dh = sh * scale * motion * transitionScale;
     ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-    ctx.drawImage(media, (W - dw) / 2 + px, (H - dh) / 2 + py, dw, dh);
+    ctx.beginPath();
+    if (transition === "wipe-left") ctx.rect(0, 0, W * entrance, H);
+    else if (transition === "wipe-right") ctx.rect(W * (1 - entrance), 0, W * entrance, H);
+    else if (transition === "wipe-up") ctx.rect(0, H * (1 - entrance), W, H * entrance);
+    else if (transition === "wipe-down") ctx.rect(0, 0, W, H * entrance);
+    else if (transition === "split-open") ctx.rect(W * (1 - entrance) / 2, 0, W * entrance, H);
+    else if (transition === "circle-reveal") {
+      ctx.arc(W / 2, H / 2, Math.hypot(W, H) * 0.5 * entrance, 0, Math.PI * 2);
+    } else ctx.rect(0, 0, W, H);
+    ctx.clip();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(media, (W - dw) / 2 + px + tx, (H - dh) / 2 + py + ty, dw, dh);
     ctx.restore();
   }
 
@@ -2526,7 +2792,7 @@
         brief: state.project.brief,
         timeline: state.project.timeline.map((clip) => ({
           id: clip.id, assetId: clip.assetId, name: clip.name,
-          sourceIn: clip.sourceIn, duration: clip.duration, fit: clip.fit, motion: clip.motion,
+          sourceIn: clip.sourceIn, duration: clip.duration, fit: clip.fit, motion: clip.motion, transition: clip.transition || "cut",
           title: clip.title, subtitle: clip.subtitle, titlePosition: clip.titlePosition,
           titleColor: clip.titleColor, titleSize: clip.titleSize, titleFont: clip.titleFont,
           layers: Array.isArray(clip.layers) ? clip.layers.map((layer) => Object.assign({}, layer)) : []
@@ -2996,7 +3262,7 @@
       layers: Array.isArray(clip.layers) ? clip.layers.map((layer) => Object.assign({}, layer)) : []
     }));
     const byId = new Map(working.map((clip) => [clip.id, clip]));
-    const allowedMotion = new Set(["none", "slow-zoom", "zoom-out", "pan-left", "pan-right"]);
+    const allowedMotion = new Set(["none", "slow-zoom", "zoom-out", "pan-left", "pan-right", "pan-up", "pan-down", "drift-up-left", "drift-up-right", "drift-down-left", "drift-down-right"]);
     const allowedFit = new Set(["cover", "contain"]);
     const allowedPosition = new Set(["bottom", "center", "top"]);
     const allowedFont = new Set(["sans", "serif", "mono"]);
@@ -3548,9 +3814,20 @@
       }
     });
     $("build-from-brief").addEventListener("click", async () => {
+      if (state.creativeBusy) return;
+      state.creativeBusy = true;
+      const button = $("build-from-brief");
+      const oldLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "CREATING…";
       state.autoRenderOnAssembly = true;
       try { await buildDraftFromBrief(); }
-      finally { state.autoRenderOnAssembly = false; }
+      finally {
+        state.autoRenderOnAssembly = false;
+        state.creativeBusy = false;
+        button.disabled = false;
+        button.textContent = oldLabel || "CREATE VIDEO";
+      }
     });
     $("build-science-diagram").addEventListener("click", buildScienceDiagramDraft);
     $("paid-video-consent").addEventListener("change", () => {

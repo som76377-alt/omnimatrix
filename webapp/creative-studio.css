@@ -470,3 +470,25 @@ input::placeholder,textarea::placeholder{color:#697160}
 .science-diagram-controls p{margin:7px 0;color:var(--muted);font-size:11px;line-height:1.45}
 .science-diagram-controls #build-science-diagram{width:100%;white-space:normal;line-height:1.4;margin-top:6px}
 @media(max-width:720px){.science-diagram-controls{flex:1 1 100%;width:100%}}
+
+
+/* Mobile usability: the document is the scroll surface, not nested cards. */
+@media(max-width:760px){
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto;touch-action:auto}
+  .studio-shell,.studio-grid,.studio-grid>.panel,.asset-panel,.preview-panel,.inspector-panel,.export-panel{
+    height:auto;min-height:0;max-height:none;overflow:visible;touch-action:auto;overscroll-behavior:auto
+  }
+  .studio-grid{grid-template-columns:minmax(0,1fr);align-items:stretch}
+  .asset-grid,.timeline-list,.online-asset-results,.graphic-layer-list,.ai-selection-list{
+    max-height:none;height:auto;overflow:visible;overscroll-behavior:auto;touch-action:auto
+  }
+  .canvas-wrap{overflow:hidden;touch-action:pan-y}
+  #preview-canvas{touch-action:pan-y}
+  .inspector-panel{position:static}
+  .paid-video-options{width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px}
+  .paid-video-options summary{cursor:pointer;color:var(--muted);font-size:13px;line-height:1.5}
+  .paid-video-options[open] .paid-video-consent{margin-top:8px}
+  .brief-copy p{font-size:12px;line-height:1.5}
+  .panel-heading{gap:8px;padding:13px 12px}
+  .studio-footer{flex-wrap:wrap;gap:8px}
+}

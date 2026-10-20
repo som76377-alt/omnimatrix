@@ -31,6 +31,31 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
         self.assertIn("await deliverRenderedVideo(output.file", js)
         self.assertIn("does not verify scientific correctness", js)
 
+    def test_original_fallback_creates_one_continuous_motion_clip_not_generic_cards(self):
+        js = STUDIO_JS.read_text(encoding="utf-8")
+        self.assertIn("async function renderOriginalMotionClip", js)
+        self.assertIn("drawOriginalMotionFrame", js)
+        self.assertIn("captureStream(24)", js)
+        self.assertIn("await importFiles([file])", js)
+        self.assertNotIn('heading: "FOLLOW THE PROCESS"', js)
+        self.assertNotIn('heading: "CAUSE BECOMES EFFECT"', js)
+
+    def test_failed_online_download_falls_back_to_original_creation(self):
+        js = STUDIO_JS.read_text(encoding="utf-8")
+        self.assertIn("Stopping the search/import path and creating an original animated scene instead", js)
+        self.assertIn("The free local route will draw a stylised animated character", js)
+        self.assertIn('button.textContent = "CREATING…"', js)
+
+    def test_mobile_scroll_and_transition_library_are_present(self):
+        html = STUDIO_HTML.read_text(encoding="utf-8")
+        css = STUDIO_CSS.read_text(encoding="utf-8")
+        js = STUDIO_JS.read_text(encoding="utf-8")
+        self.assertIn('id="shot-transition"', html)
+        self.assertIn('value="circle-reveal"', html)
+        self.assertIn('value="drift-up-left"', html)
+        self.assertIn("overflow:visible;overscroll-behavior:auto;touch-action:auto", css)
+        self.assertIn('clip.transition || "cut"', js)
+
     def test_service_worker_cache_version_was_bumped_for_ui_update(self):
         worker = SERVICE_WORKER.read_text(encoding="utf-8")
         self.assertIn('const CACHE_NAME = "omnitrix-shell-v3";', worker)

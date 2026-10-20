@@ -70,11 +70,13 @@
         "prompt-derived-title-scenes",
         "flat-vector-process-schematic",
         "science-induction-stove-diagram",
-        "three-scene-fallback",
+        "continuous-original-motion-clip",
+        "topic-aware-induction-diagram-animation",
+        "stylised-human-wave-animation",
         "local-png-assets",
         "automatic-webm-render"
       ],
-      "notes": "Used when online source search returns no importable media. Creates original deterministic vector artwork and basic motion; it is not an AI raster-image model and does not guarantee scientific accuracy for arbitrary topics."
+      "notes": "Used when online source search returns no importable media. Records one continuous prompt-derived local animation to WebM. Includes a topic-specific induction-heating explainer and a stylised human-wave action; unfamiliar topics use a concept-map animation built from the user wording. It is not photorealistic and arbitrary scientific claims are not fact-checked."
     },
     {
       "id": "canvas-compositor",
@@ -87,10 +89,11 @@
         "crop-fit",
         "title-overlays",
         "slow-zoom",
-        "pan-presets",
+        "diagonal-pan-presets",
+        "13-entry-transition-library",
         "webm-render"
       ],
-      "notes": "Current implementation uses sequential cuts and a single title/subtitle treatment per shot. Separate audio tracks, masks, colour grading and transitions are not yet implemented."
+      "notes": "Current implementation uses sequential cuts by default with 13 selectable entrance transitions. Separate audio tracks, masks, colour grading and true inter-shot cross-dissolves are not yet implemented."
     },
     {
       "id": "web-audio",

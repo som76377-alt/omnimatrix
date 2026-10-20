@@ -47,19 +47,23 @@
       <div class="brief-copy">
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
-        <p id="agent-state">Original graphics are the no-search default. Real moving footage with spoken audio uses a separate paid AI video model and requires explicit approval. No public asset search is required.</p>
-        <p class="ai-use-note">Choose original motion graphics for a local WebM draft, or approve the estimated cost below to request a real generated MP4 with movement and audio. Model-generated images have a separate per-image cost approval. The app must report provider failures instead of disguising them as finished AI work.</p>
+        <p id="agent-state">Creates an original animated clip locally. Web search is optional; a failed download should never stop original creation.</p>
+        <p class="ai-use-note">Human and animal actions use a stylised vector animation for the free route. Realistic footage and generated audio are a separate paid option.</p>
         <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Ready when you are.</p>
       </div>
       <div class="brief-actions">
-        <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE MOTION-GRAPHICS DRAFT</button>
+        <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE VIDEO</button>
+        <details class="paid-video-options">
+          <summary>REALISTIC AI VIDEO (PAID)</summary>
+          <p class="ai-use-note">Real generated MP4 with movement and audio requires the explicit paid-video approval below.</p>
         <label class="auto-creative-consent paid-video-consent" for="paid-video-consent">
           <input id="paid-video-consent" type="checkbox">
           <span><strong>Approve one real AI-generated video</strong> Uses Gemini Omni Flash to generate moving footage and native audio. Google's paid API is approximately US$0.10 per generated second at 720p (about US$0.80 for an 8-second clip); actual length and charges can vary. No video-generation call starts until this is checked and you tap the button.</span>
         </label>
         <button class="button primary create-video-button" id="generate-ai-video" type="button" disabled>GENERATE REAL AI VIDEO + AUDIO</button>
+        </details>
         <details class="advanced-brief-controls">
-          <summary>Advanced</summary>
+          <summary>More controls</summary>
           <button class="button quiet" id="save-brief" type="button">SAVE BRIEF</button>
           <button class="button quiet" id="open-ai-director" type="button">AI DIRECTION</button>
         </details>
@@ -153,7 +157,7 @@
           </div>
           <label class="auto-creative-consent" for="auto-creative-consent">
             <input id="auto-creative-consent" type="checkbox">
-            <span><strong>Optional: generate one original AI image and request AI-directed review.</strong> For this run, I approve one original 1K image (about US$0.04) and, if I request AI direction, sending up to four resized previews and up to four sampled frames from the rendered draft to the configured model. Original media files are not uploaded. The same creative-director model may propose validated edits and one bounded re-render. This does not authorize the separate paid AI-video call above. I will inspect the result before publishing.</span>
+            <span><strong>Optional: create one original AI image and request AI-directed review.</strong> This approves one 1K image (estimated about US$0.04) saved to the local media library as a separate reference, plus sending selected resized previews and up to four sampled frames from the rendered draft to the configured model. It does not authorize paid video generation. Inspect the actual export before publishing.</span>
           </label>
           <p class="online-asset-note">Internet sourcing is optional and off the default creation path. Wikimedia Commons is an open-media archive, not a general-purpose search engine for every scene. Search results are not proof that a source visually matches your prompt; inspect source and rights before reuse. Pinterest is reference-only.</p>
           <div class="online-asset-results" id="online-asset-results"></div>
@@ -227,11 +231,35 @@
           <div class="field-group">
             <label for="shot-motion">MOTION PRESET</label>
             <select id="shot-motion">
-              <option value="none">Static / no movement</option>
-              <option value="slow-zoom">Slow cinematic push-in</option>
+              <option value="none">No camera move</option>
+              <option value="slow-zoom">Slow push-in</option>
               <option value="zoom-out">Slow pull-back</option>
               <option value="pan-left">Pan left</option>
               <option value="pan-right">Pan right</option>
+              <option value="pan-up">Pan up</option>
+              <option value="pan-down">Pan down</option>
+              <option value="drift-up-left">Diagonal drift up-left</option>
+              <option value="drift-up-right">Diagonal drift up-right</option>
+              <option value="drift-down-left">Diagonal drift down-left</option>
+              <option value="drift-down-right">Diagonal drift down-right</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="shot-transition">TRANSITION IN</label>
+            <select id="shot-transition">
+              <option value="cut">Cut</option>
+              <option value="fade">Fade from black</option>
+              <option value="wipe-left">Wipe from left</option>
+              <option value="wipe-right">Wipe from right</option>
+              <option value="wipe-up">Wipe from bottom</option>
+              <option value="wipe-down">Wipe from top</option>
+              <option value="slide-left">Slide in from left</option>
+              <option value="slide-right">Slide in from right</option>
+              <option value="slide-up">Slide in from bottom</option>
+              <option value="slide-down">Slide in from top</option>
+              <option value="zoom-reveal">Zoom reveal</option>
+              <option value="circle-reveal">Circular reveal</option>
+              <option value="split-open">Split open</option>
             </select>
           </div>
           <div class="inspector-divider"></div>
