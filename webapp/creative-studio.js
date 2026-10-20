@@ -281,7 +281,11 @@
   function recorderWebmMimeType() {
     // VP8 is the more broadly interoperable WebM baseline for Android/WebView.
     const candidates = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm"];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    const selected = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+    if (!selected) {
+      throw new Error("This browser cannot record a supported WebM video format. Open Creative Studio in an up-to-date Chrome-based browser.");
+    }
+    return selected;
   }
 
   async function inspectFile(file) {
@@ -740,7 +744,7 @@
           else resolve(result);
         };
         try {
-          recorder.start(250);
+          recorder.start();
           const startedAt = performance.now();
           forceCaptureFrame(capture.requestFrame);
           let lastCaptureAt = startedAt;
@@ -2468,8 +2472,13 @@
       video.addEventListener(eventName, onReady, { once: true });
       video.addEventListener("error", onError, { once: true });
       timer = window.setTimeout(() => {
+        const mediaError = video.error
+          ? " mediaErrorCode=" + video.error.code + (video.error.message ? " mediaError=" + video.error.message : "")
+          : "";
+        const details = " readyState=" + video.readyState + " networkState=" + video.networkState +
+          " mimeType=" + String(video.currentSrc ? video.currentSrc.split("#")[0].slice(0, 80) : "not-set") + mediaError;
         cleanup();
-        reject(new Error("Timed out while checking the exported video."));
+        reject(new Error("Timed out while checking the exported video (" + eventName + ")." + details));
       }, timeoutMs);
       if (eventName === "loadedmetadata" && video.readyState >= 1) onReady();
       if (eventName === "loadeddata" && video.readyState >= 2) onReady();
@@ -2924,7 +2933,7 @@
         $("render-video-bottom").disabled = false;
         updateTransport();
       };
-      recorder.start(500);
+      recorder.start();
       state.isPlaying = true;
       forceCaptureFrame(state.captureFrameRequest);
       state.lastCaptureRequestAt = performance.now();
@@ -3866,7 +3875,7 @@
       recorder.onerror = () => finish(new Error("The browser recorder failed while creating the animated diagram."));
       recorder.onstop = () => finish(null);
       try {
-        recorder.start(250);
+        recorder.start();
         forceCaptureFrame(capture.requestFrame);
         const startAt = performance.now();
         lastCaptureAt = startAt;
