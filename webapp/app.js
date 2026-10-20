@@ -1470,6 +1470,19 @@
     uploadChatFiles(event.target.files);
   });
 
+  function shouldLaunchCreativeStudio(message, attachmentCount) {
+    const text = String(message || "").trim();
+    if (!text || text.length > 4000 || attachmentCount > 0) return false;
+    const action = /\b(?:create|make|generate|produce|edit|assemble|render|animate|build|turn)\b/i.test(text);
+    const media = /\b(?:video|clip|reel|shorts?|motion\s+graphics?|animation)\b/i.test(text);
+    if (!action || !media) return false;
+    // Keep explanatory questions in ordinary chat; only route creation/editing requests.
+    if (/^(?:how|what|why|when|where|define|explain|tell me about|help me understand)\b/i.test(text)) {
+      return /\b(?:create|make|generate|produce|edit|assemble|render|animate)\s+(?:me\s+)?(?:a|an|the\s+)?(?:short\s+)?(?:video|clip|reel|animation)\b/i.test(text);
+    }
+    return true;
+  }
+
   async function submitChat(event) {
     event.preventDefault();
     const input = byId("chat-input");
@@ -1483,6 +1496,16 @@
     if (!state.connected) {
       toast("Connect the Python runtime before sending a real message.");
       openConnect();
+      return;
+    }
+    if (shouldLaunchCreativeStudio(message, readyAttachments.length)) {
+      addActivity("CREATIVE", "Opening Creative Studio to build a draft from permitted online assets.");
+      byId("chat-thread-subtitle").textContent = "CREATIVE WORKFLOW · Opening the local draft editor";
+      byId("chat-mode").textContent = "CREATIVE STUDIO";
+      const target = new URL("./creative-studio.html", window.location.href);
+      target.searchParams.set("creativeBrief", message);
+      target.searchParams.set("autoDraft", "1");
+      window.location.href = target.toString();
       return;
     }
     state.busyChat = true;
