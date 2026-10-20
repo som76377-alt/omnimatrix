@@ -30,13 +30,16 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from urllib.request import Request as URLRequest, urlopen as urlopen_url
 
 from core.application import ChatApplication
-from core.attachments import MAX_ATTACHMENT_BYTES, accepted_mime_type, analyze_attachments, safe_display_name
+from core.attachments import MAX_ATTACHMENT_BYTES, accepted_mime_type, safe_display_name
 from core.contracts import BudgetLimits
 from core.conversation import Conversation
 from core.orchestrator.omnitrix import Omnitrix
 from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
+from core.multimodal.adapters import toolchain_status
+from core.multimodal.journal import journal_status
+from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
@@ -437,6 +440,8 @@ class StudioRuntime:
             "agents": agents,
             "models": models,
             "tools": tool_details,
+            "multimodal_toolchain": toolchain_status(),
+            "multimodal_journal": journal_status(),
             "active_execution": getattr(self.omnitrix, "active_execution", None),
             "checked_at": utc_now(),
         }
@@ -1042,7 +1047,13 @@ class StudioRuntime:
         try:
             effective_message = message.strip()
             if staged:
-                attachment_result = analyze_attachments(staged, message.strip())
+                # Use capability-aware routing for a single file. Keep the existing
+                # bounded batch analyzer for multi-file turns to preserve batching.
+                attachment_result = (
+                    analyze_single_attachment(staged[0], message.strip())
+                    if len(staged) == 1
+                    else analyze_multiple_attachments(staged, message.strip())
+                )
                 context = str(attachment_result.get("context", "")).strip()
                 if context:
                     if attachment_result.get("status") != "complete":
@@ -1088,6 +1099,9 @@ class StudioRuntime:
                 "analyzed": attachment_result.get("analyzed", 0),
                 "remaining": max(0, len(staged) - len(consumed_ids)),
                 "error": attachment_result.get("error"),
+                "worker": attachment_result.get("worker"),
+                "model": attachment_result.get("model"),
+                "workers": attachment_result.get("workers"),
                 "consumed_ids": consumed_ids,
             }
         return result

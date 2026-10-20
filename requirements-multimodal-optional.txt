@@ -1,0 +1,8 @@
+# OPTIONAL ONLY. Do not install into the core web service blindly.
+# Use a dedicated worker image and validate Python/runtime compatibility first.
+docling
+paddleocr
+faster-whisper
+scenedetect[opencv]
+# FFmpeg is a system package, not a pip package.
+# Qwen inference requires a compatible PyTorch/Transformers runtime and model weights.

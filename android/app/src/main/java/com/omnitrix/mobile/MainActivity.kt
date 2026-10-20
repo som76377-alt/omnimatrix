@@ -1519,10 +1519,21 @@ private fun OmnitrixApp() {
                                                 attachments = attachments.filterNot { it.attachmentId in consumed }
                                             }
                                             val status = attachmentStatus.optString("status")
+                                            val attachmentWorker = attachmentStatus.optString("worker")
+                                            val attachmentModel = attachmentStatus.optString("model")
+                                            if (attachmentWorker.isNotBlank() || attachmentModel.isNotBlank()) {
+                                                val identity = listOf(attachmentWorker, attachmentModel)
+                                                    .filter { it.isNotBlank() }
+                                                    .joinToString(" · ")
+                                                messages = messages + ChatMessage(
+                                                    "SYSTEM",
+                                                    "Attachment processing route: $identity. This identifies the file-processing worker, not necessarily the model that wrote the final chat answer."
+                                                )
+                                            }
                                             if (status == "unavailable" || status == "failed") {
                                                 messages = messages + ChatMessage(
                                                     "SYSTEM",
-                                                    "Attachment analysis ${status}. Your files remain attached; check the live multimodal provider configuration or quota before retrying."
+                                                    "Attachment analysis ${status}. Your files remain attached; check configured providers, quotas, or explicitly enabled local tools before retrying."
                                                 )
                                             } else if (status == "partial") {
                                                 messages = messages + ChatMessage(
