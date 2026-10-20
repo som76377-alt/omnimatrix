@@ -1656,6 +1656,7 @@ def make_handler(
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "connect-src 'self' https://api.github.com https://cdn.jsdelivr.net; "
+                "media-src 'self' blob: data:; "
                 "img-src 'self' data: blob: https://upload.wikimedia.org https://images.pexels.com; base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'",
             )
