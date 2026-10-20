@@ -48,3 +48,10 @@ True cross-dissolves, independently mixed music/narration tracks, advanced colou
 ## Validation
 
 CI covers Python backend/unit tests, browser JavaScript syntax and Android compilation/JVM tests. A green CI result does not replace a live run that searches a real provider, exports a WebM in Android System WebView, saves it to device storage and opens it in a player. That live target-phone check remains necessary after the changes are deployed.
+
+
+## Google Images source integration (optional configuration)
+
+Google's Custom Search JSON API is closed to new customers, so Google Images uses a manual reference fallback by default; a legacy API configuration is attempted only if already available. The Studio opens a query in Google Images, then users can paste a selected image's direct HTTPS image address into the URL importer. Search-result/page URLs are not direct image files. The importer rejects local/private-network targets, validates redirects, caps downloads at 24 MB, and accepts image files only. These user-selected images are marked rights-unverified; check the original source before sharing or publishing. The direct URL path also works with a chosen Pinterest-hosted image URL when it is publicly accessible.
+
+Pinterest remains a user-directed reference search in this change. Automatic Pin scraping/download is not enabled. Users can save a chosen reference to Gallery and import it through the local multi-file picker, or paste a direct public image URL into the URL importer. A real Pinterest connection requires an approved official API/OAuth application and credentials; a reference link is not that integration.

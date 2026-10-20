@@ -130,7 +130,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertTrue(body["ok"])
         search_assets.assert_called_once_with(
-            "induction coil", provider="commons", kind="any", limit=12
+            "induction coil", provider="pexels", kind="any", limit=12
         )
 
     @patch("interfaces.web.server.creative_model_status")

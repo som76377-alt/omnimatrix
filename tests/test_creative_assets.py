@@ -119,7 +119,7 @@ class CreativeAssetSearchTests(unittest.TestCase):
                     _validate_download_url(url, frozenset({"upload.wikimedia.org"}))
 
     def test_download_refuses_pinterest_as_a_media_provider(self):
-        with self.assertRaisesRegex(CreativeAssetError, "Commons or configured Pexels"):
+        with self.assertRaisesRegex(CreativeAssetError, "Only Commons"):
             download_creative_asset(
                 "https://www.pinterest.com/pin/example", provider="pinterest"
             )
@@ -148,6 +148,29 @@ class CreativeAssetSearchTests(unittest.TestCase):
         with self.assertRaises(CreativeAssetError):
             search_creative_assets("coil", provider="commons", limit=99, environ={})
 
+
+    def test_google_search_falls_back_to_manual_reference_without_legacy_api_credentials(self):
+        result = search_creative_assets("induction pan", provider="google", environ={})
+        self.assertTrue(result["manual_reference_only"])
+        self.assertIn("google.com/search?", result["search_url"])
+        self.assertIn("tbm=isch", result["search_url"])
+
+    def test_google_search_normalizes_unverified_image_results(self):
+        payload = {"items": [{"title": "Induction pan", "link": "https://images.example.test/pan.jpg", "mime": "image/jpeg", "displayLink": "example.test", "image": {"contextLink": "https://example.test/article", "thumbnailLink": "https://images.example.test/thumb.jpg"}}]}
+        parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse("https://images.example.test/pan.jpg")
+        with patch("core.creative_assets._read_json", return_value=payload), patch("core.creative_assets._validate_public_image_url", return_value=parsed):
+            result = search_creative_assets("induction pan", provider="google", environ={"GOOGLE_CSE_API_KEY": "key", "GOOGLE_CSE_CX": "cx"})
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["provider"], "google")
+        self.assertFalse(result["items"][0]["rights_verified"])
+        self.assertIn("private draft", result["items"][0]["license"])
+
+    def test_google_import_rejects_local_and_non_https_urls(self):
+        validator = __import__("core.creative_assets", fromlist=["_validate_public_image_url"])._validate_public_image_url
+        for url in ("http://example.com/pan.jpg", "https://127.0.0.1/pan.jpg", "https://localhost/pan.jpg"):
+            with self.subTest(url=url):
+                with self.assertRaises(CreativeAssetError):
+                    validator(url)
 
 if __name__ == "__main__":
     unittest.main()

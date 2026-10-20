@@ -546,19 +546,20 @@
       const parsed = new URL(String(item.preview_url || ""));
       const allowed = item.provider === "commons"
         ? new Set(["upload.wikimedia.org"])
-        : item.provider === "pexels" ? new Set(["images.pexels.com"]) : new Set();
-      return parsed.protocol === "https:" && allowed.has(parsed.hostname.toLowerCase()) ? parsed.href : "";
+        : item.provider === "pexels" ? new Set(["images.pexels.com"])
+        : ["google", "web"].includes(item.provider) ? null : new Set();
+      return parsed.protocol === "https:" && !parsed.username && !parsed.password &&
+        (allowed === null || allowed.has(parsed.hostname.toLowerCase())) ? parsed.href : "";
     } catch { return ""; }
   }
 
   function supportedOnlineAsset(item) {
     const mime = String(item.mime_type || "").toLowerCase();
-    return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
+    return Boolean(item && ["commons", "pexels", "google", "web"].includes(item.provider) &&
       (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
       /^https:\/\//i.test(String(item.asset_url || "")) &&
-      // Commons-hosted media may be imported into a private draft even when
-      // metadata is incomplete. That does not imply permission to publish it.
-      (item.rights_verified === true || item.provider === "commons"));
+      // Google results may be imported into a private draft for inspection, but are not rights-cleared.
+      (item.rights_verified === true || ["commons", "google"].includes(item.provider)));
   }
 
   function renderOnlineResults(response) {
@@ -577,6 +578,22 @@
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = "OPEN PINTEREST RESULTS ↗";
+      note.append(heading, copy, link);
+      target.append(note);
+      return;
+    }
+    if (response && response.provider === "google" && response.manual_reference_only && response.search_url) {
+      const note = document.createElement("div");
+      note.className = "empty-state";
+      const heading = document.createElement("strong");
+      heading.textContent = "Google Images reference search";
+      const copy = document.createElement("span");
+      copy.textContent = "Google has closed its old search API to new customers. Open the results, choose an image, copy its direct image address, then paste that address into Import Image URL below. A result-page URL is not a direct image.";
+      const link = document.createElement("a");
+      link.href = safeExternalHttps(response.search_url) || "https://www.google.com/imghp";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "OPEN GOOGLE IMAGES RESULTS ↗";
       note.append(heading, copy, link);
       target.append(note);
       return;
@@ -662,7 +679,7 @@
 
   async function searchOnlineAssets(options) {
     const nativeMode = isNativeMobileStudio();
-    const provider = nativeMode ? "commons" : ($("online-asset-provider").value || "commons");
+    const provider = $("online-asset-provider").value || "commons";
     const queryInput = $("online-asset-query");
     let query = String(queryInput.value || "").trim();
     if (!query) query = deriveAssetQuery($("creative-brief").value);
@@ -685,7 +702,7 @@
     }
     state.onlineSearchBusy = true;
     $("search-online-assets").disabled = true;
-    onlineStatus("Searching " + (provider === "commons" ? "Wikimedia Commons" : "Pexels") + " for “" + query + "”…", "");
+    onlineStatus("Searching " + ({ commons: "Wikimedia Commons", pexels: "Pexels", google: "Google Images" }[provider] || provider) + " for “" + query + "”…", "");
     try {
       const params = new URLSearchParams({ q: query, provider, kind: $("online-asset-kind").value || "any", limit: "12" });
       const endpoint = nativeMode ? "./api/mobile/creative/search?" : "./api/creative/search?";
@@ -723,7 +740,7 @@
       const token = aiRuntimeToken();
       if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
       onlineStatus("Downloading a bounded copy of “" + (item.title || "asset") + "”…", "");
-      const params = new URLSearchParams({ provider: nativeMode ? "commons" : item.provider, url: item.asset_url });
+      const params = new URLSearchParams({ provider: item.provider, url: item.asset_url });
       const endpoint = nativeMode ? "./api/mobile/creative/assets/download?" : "./api/creative/assets/download?";
       const response = await fetch(endpoint + params.toString(), {
         method: "GET", cache: "no-store",
@@ -2896,6 +2913,29 @@
       const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
       window.open(url, "_blank", "noopener,noreferrer");
     });
+    $("import-direct-image").addEventListener("click", async () => {
+      const url = safeExternalHttps($("direct-image-url").value);
+      if (!url) { onlineStatus("Paste a valid direct HTTPS image address, not a search-results page.", "error"); return; }
+      const item = {
+        provider: "web", title: "User-selected online image", description: "Image URL selected by the user",
+        kind: "image", mime_type: "image/jpeg", asset_url: url, preview_url: url,
+        source_page: url, attribution: "User-selected URL",
+        license: "Rights not verified — private draft only; check the original source before reuse",
+        license_url: url, rights_verified: false
+      };
+      const button = $("import-direct-image");
+      button.disabled = true;
+      button.textContent = "IMPORTING…";
+      try {
+        await importOnlineAsset(item, true);
+        onlineStatus("Image imported into your local library and timeline. Its rights are not verified; inspect the source before sharing or publishing.", "success");
+      } catch (error) {
+        onlineStatus(String(error.message || error), "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "IMPORT IMAGE URL";
+      }
+    });
     $("build-from-brief").addEventListener("click", async () => {
       state.autoRenderOnAssembly = true;
       $("auto-creative-consent").checked = true;
@@ -2973,9 +3013,7 @@
       const nativeMode = isNativeMobileStudio();
       if (nativeMode) {
         const provider = $("online-asset-provider");
-        if (provider) { provider.value = "commons"; provider.disabled = true; }
-        const referenceButton = $("pinterest-reference");
-        if (referenceButton) referenceButton.hidden = true;
+        if (provider) provider.disabled = false;
       }
       let inboundBrief = "";
       if (nativeMode) {
