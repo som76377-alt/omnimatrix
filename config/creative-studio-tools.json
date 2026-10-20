@@ -262,13 +262,13 @@
         "maximum-eight-nodes",
         "maximum-twelve-arrows",
         "90-second-timeout",
-        "100mb-output-cap"
+        "24mb-studio-artifact-cap"
       ],
       "requirements": [
         "manim executable installed in backend worker",
         "OMNITRIX_ARTIFACT_DIR writable for durable output"
       ],
-      "notes": "Tool is registered in the default Omnitrix registry. It returns an explicit unavailable result if the host does not have Manim installed. It is not yet wired into Creative Studio's scene/timeline manifest and no hosted runtime probe has been performed."
+      "notes": "The bounded render job API is connected to a dedicated Creative Studio science-diagram control. It tries Manim when the authenticated runtime and executable are available, otherwise falls back to local Canvas rendering; the generated clip is imported into the local library/timeline and browser-decoded with sampled-frame technical checks before delivery. Manim execution on the deployed host and scientific/visual correctness are not guaranteed, and the full production manifest is not yet enforced across all specialist roles."
     }
   ]
 }
