@@ -47,7 +47,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("const runPostRenderCritic = Boolean", self.studio_js)
         self.assertIn('await renderVideo({ autoCritiqueRetry: true })', self.studio_js)
         self.assertIn("A single bounded re-render will follow.", self.studio_js)
-        self.assertIn("sampled frames from the rendered draft", self.studio_html.lower())
+        self.assertIn("sampled render frames", self.studio_html.lower())
 
     def test_export_reopens_webm_and_checks_actual_decoded_frames(self):
         self.assertIn("async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot)", self.studio_js)
@@ -75,7 +75,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         fallback = self.studio_js.split("async function assembleOriginalGraphicFallback(brief)", 1)[1].split("\\n  function renderAssets()", 1)[0]
         self.assertIn("await requestGeneratedImage(brief)", fallback)
         self.assertIn("await renderVideo()", fallback)
-        self.assertIn("real generated mp4 with movement and audio", self.studio_html.lower())
+        self.assertIn("uses gemini omni flash to generate moving footage and native audio", self.studio_html.lower())
         self.assertIn('id="paid-video-consent"', self.studio_html)
         self.assertIn('id="generate-ai-video"', self.studio_html)
         self.assertIn('"./api/mobile/creative/generate-video"', self.studio_js)
@@ -84,13 +84,13 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertNotIn('if ($("auto-creative-consent").checked) {\\n      try {\\n        onlineStatus("No suitable source media.', fallback)
 
 
-    def test_human_motion_or_dialogue_routes_to_actual_video_not_vector_cards(self):
+    def test_human_motion_or_dialogue_uses_stylised_local_action_and_keeps_paid_option(self):
         self.assertIn("function needsDirectAiVideo(brief)", self.studio_js)
-        self.assertIn("This prompt needs genuine moving people/animals or spoken dialogue.", self.studio_js)
+        self.assertIn("The free local route will draw a stylised animated character", self.studio_js)
         self.assertIn('if (needsDirectAiVideo(brief))', self.studio_js)
         self.assertIn('generateDirectAiVideo(String($("creative-brief").value || "").trim())', self.studio_js)
         self.assertIn('await renderVideo()', self.studio_js)
-        self.assertIn("No asset search or download will run.", self.studio_js)
+        self.assertIn("async function renderOriginalMotionClip(brief)", self.studio_js)
 
 if __name__ == "__main__":
     unittest.main()
