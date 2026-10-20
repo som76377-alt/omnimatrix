@@ -286,7 +286,7 @@ def search_creative_assets(
         # the user guess the exact wording used in an asset's metadata.
         # Keep the original query first, then widen only as needed.
         variants = [q]
-        words = re.findall(r"[\\w'-]+", q, flags=re.UNICODE)
+        words = re.findall(r"[\w'-]+", q, flags=re.UNICODE)
         for width in (4, 3, 2):
             candidate = " ".join(words[:width]).strip()
             if len(candidate) >= 2 and candidate.casefold() not in {v.casefold() for v in variants}:
