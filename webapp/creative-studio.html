@@ -55,6 +55,7 @@
         <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE VIDEO</button>
         <details class="paid-video-options">
           <summary>REALISTIC AI VIDEO (PAID)</summary>
+          <p class="ai-use-note">Real generated MP4 with movement and audio requires the explicit paid-video approval below.</p>
         <label class="auto-creative-consent paid-video-consent" for="paid-video-consent">
           <input id="paid-video-consent" type="checkbox">
           <span><strong>Approve one real AI-generated video</strong> Uses Gemini Omni Flash to generate moving footage and native audio. Google's paid API is approximately US$0.10 per generated second at 720p (about US$0.80 for an 8-second clip); actual length and charges can vary. No video-generation call starts until this is checked and you tap the button.</span>
@@ -156,7 +157,7 @@
           </div>
           <label class="auto-creative-consent" for="auto-creative-consent">
             <input id="auto-creative-consent" type="checkbox">
-            <span><strong>Optional: create one original AI image and request AI-directed review.</strong> This approves one 1K image (estimated about US$0.04) saved to the local media library as a separate reference, plus sending selected resized previews and sampled render frames to the configured model. It does not authorize paid video generation. Inspect the actual export before publishing.</span>
+            <span><strong>Optional: create one original AI image and request AI-directed review.</strong> This approves one 1K image (estimated about US$0.04) saved to the local media library as a separate reference, plus sending selected resized previews and up to four sampled frames from the rendered draft to the configured model. It does not authorize paid video generation. Inspect the actual export before publishing.</span>
           </label>
           <p class="online-asset-note">Internet sourcing is optional and off the default creation path. Wikimedia Commons is an open-media archive, not a general-purpose search engine for every scene. Search results are not proof that a source visually matches your prompt; inspect source and rights before reuse. Pinterest is reference-only.</p>
           <div class="online-asset-results" id="online-asset-results"></div>
