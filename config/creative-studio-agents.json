@@ -130,20 +130,30 @@
     },
     {
       "id": "motion-designer",
-      "label": "Motion designer",
-      "status": "configured-not-connected",
+      "label": "Motion-graphics engineer",
+      "status": "integrated-shared-model-role",
       "model_required": true,
+      "implementation": "core/creative_director.py + webapp/creative-studio.js Canvas renderer",
       "responsibilities": [
-        "propose typography and graphic hierarchy",
-        "map transitions and keyframes to supported engine operations"
+        "propose purposeful shot pacing and supported motion presets",
+        "map graphic hierarchy and motion intent to validated timeline operations",
+        "avoid decorative motion that does not explain or direct attention",
+        "prefer clear visual cause-and-effect and readable timing over effects for their own sake"
+      ],
+      "cannot": [
+        "claim to be a separate deployed model or independent second opinion",
+        "create unsupported keyframes, transitions, audio tracks or effects",
+        "claim AI-directed edits unless the configured model call returned and validated a proposal",
+        "guarantee professional quality without inspecting the rendered result"
       ],
       "release_gate": [
         "editable layer data",
         "design-system constraints",
         "rendered-frame inspection",
-        "safe rollback"
+        "safe rollback",
+        "honest provider identity and error reporting"
       ],
-      "execution_mode": "Future specialist role; native graphic entry motion currently uses the integrated graphics engineer and browser Canvas renderer."
+      "execution_mode": "Shared, consent-gated role within the existing creative-director model call. It is not an independently deployed specialist model. The browser Canvas renderer performs the actual supported animation and WebM recording."
     },
     {
       "id": "visual-critic",
