@@ -54,8 +54,10 @@
   function samplePose(brief, elapsed, duration) {
     const action = detectAction(brief);
     const profile = PROFILES[action] || PROFILES.idle;
-    const t = Math.max(0, Number(elapsed) || 0);
-    const span = Math.max(0.1, Number(duration) || 0.1);
+    const rawTime = Number(elapsed);
+    const t = Number.isFinite(rawTime) ? Math.max(0, rawTime) : 0;
+    const rawDuration = Number(duration);
+    const span = Number.isFinite(rawDuration) ? Math.max(0.1, rawDuration || 0.1) : 0.1;
     const progress = clamp(t / span, 0, 1);
     const phase = t * profile.cyclesPerSecond * TAU;
     const swing = Math.sin(phase);
