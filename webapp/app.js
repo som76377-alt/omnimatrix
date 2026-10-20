@@ -856,10 +856,10 @@
       const name = node("strong", "chat-attachment-name", item.name);
       name.title = item.name;
       const status = item.status === "uploading"
-        ? "UPLOADING TO PRIVATE RUNTIME"
+        ? "Uploading to private runtime"
         : item.status === "error"
-          ? ("UPLOAD FAILED · " + (item.error || "select the file again"))
-          : "READY · " + formatAttachmentSize(item.size);
+          ? ("Upload failed · " + (item.error || "select the file again"))
+          : "Ready · " + formatAttachmentSize(item.size);
       meta.append(name, node("span", "chat-attachment-status", status));
       tile.append(meta);
       const remove = node("button", "attachment-remove", "×");
