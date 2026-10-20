@@ -41,6 +41,14 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("await runAiDirection()", self.studio_js)
         self.assertIn("No AI visual analysis was claimed", self.studio_js)
 
+    def test_post_render_critic_requires_explicit_consent_and_allows_one_correction_pass(self):
+        self.assertIn("async function critiqueRenderedDraft(inspection, renderSignature)", self.studio_js)
+        self.assertIn("POST-RENDER VISUAL CRITIC", self.studio_js)
+        self.assertIn("const runPostRenderCritic = Boolean", self.studio_js)
+        self.assertIn('await renderVideo({ autoCritiqueRetry: true })', self.studio_js)
+        self.assertIn("A single bounded re-render will follow.", self.studio_js)
+        self.assertIn("frames from the actual rendered WebM", self.studio_html)
+
     def test_export_reopens_webm_and_checks_actual_decoded_frames(self):
         self.assertIn("async function inspectRenderedVideo(blob, expectedDuration)", self.studio_js)
         self.assertIn('waitForVideoEvent(video, "loadedmetadata"', self.studio_js)
