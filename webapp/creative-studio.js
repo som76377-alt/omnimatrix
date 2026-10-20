@@ -445,6 +445,99 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
+  // Layered vector human rig: fixed-length limb segments, named joints, and
+  // deterministic pose curves. Every frame is drawn from geometry, not a flattened image.
+  function drawRiggedHuman(g, brief, elapsed, duration, width, height) {
+    const text = String(brief || "").toLowerCase();
+    const wave = /\b(wav(?:e|es|ing)|greet(?:s|ing)?|hello|hi)\b/.test(text);
+    const run = /\b(run(?:s|ning)?|sprint(?:s|ing)?|jog(?:s|ging)?)\b/.test(text);
+    const walk = /\b(walk(?:s|ing)?|march(?:es|ing)?)\b/.test(text);
+    const dance = /\bdanc(?:e|es|ing)\b/.test(text);
+    const jump = /\b(jump(?:s|ing)?|leap(?:s|ing)?)\b/.test(text);
+    const nod = /\b(nod(?:s|ding)?|yes)\b/.test(text);
+    const action = wave ? "wave" : run ? "run" : walk ? "walk" : dance ? "dance" : jump ? "jump" : nod ? "nod" : "idle";
+    const t = Math.max(0, Number(elapsed) || 0), speed = run ? 10 : walk ? 5 : dance ? 4.2 : 7;
+    const phase = t * speed, swing = Math.sin(phase), opposite = Math.sin(phase + Math.PI);
+    const unit = Math.min(width / 450, height / 490) * 1.04;
+    const lift = jump ? Math.max(0, swing) * 22 : run ? Math.abs(swing) * 4 : Math.sin(t * 2.3) * 2;
+    const lean = run ? 0.14 : walk ? 0.04 : dance ? Math.sin(phase * 0.5) * 0.1 : 0;
+    const ox = width * ((walk || run) ? 0.48 + Math.sin(t * 0.9) * 0.018 : 0.49);
+    const floorY = height * 0.785, oy = floorY - (127 + lift) * unit;
+    const ink="#171a16", skin="#b98564", skinLight="#d7a17c", skinShade="#875b43";
+    const shirt="#d6fa62", shirtShade="#91aa4c", pants="#343b33", pantsLight="#515a4c";
+    const p=(x,y)=>({x:ox+x*unit,y:oy+y*unit});
+    const child=(o,a,l)=>({x:o.x+Math.sin(a)*l*unit,y:o.y+Math.cos(a)*l*unit});
+    const line=(a,b,c,w)=>{g.strokeStyle=c;g.lineWidth=w*unit;g.lineCap="round";g.lineJoin="round";g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();};
+    const limb=(a,b,c,w,h)=>{line(a,b,ink,w+4);line(a,b,c,w);if(h)line({x:a.x-1.5*unit,y:a.y},{x:b.x-1.5*unit,y:b.y},h,Math.max(1,w*.12));};
+    const ellipse=(x,y,rx,ry,c,r)=>{g.fillStyle=c;g.beginPath();g.ellipse(x,y,rx*unit,ry*unit,r||0,0,Math.PI*2);g.fill();};
+    const joint=(o,r,c)=>{ellipse(o.x,o.y,r+2,r+2,ink,0);ellipse(o.x,o.y,r,r,c,0);};
+    const leftHip=p(-15,1),rightHip=p(15,1),leftShoulder=p(-29,-111),rightShoulder=p(29,-111);
+    const neck=p(0,-132),head=p(-lean*14,-170-(nod?Math.sin(t*4)*3:0));
+    g.save();g.globalAlpha=jump?0.3-Math.max(0,swing)*0.14:0.36;ellipse(ox,floorY+4*unit,jump?43:52,6,"#050705",0);g.restore();
+
+    // Back-to-front layer order: legs, rear arm, torso, raised arm, head and hands.
+    const stride=walk?.46:run?.76:dance?.48:0;
+    const leftLegAngle=.05+swing*stride,rightLegAngle=-.05+opposite*stride;
+    const leftKnee=child(leftHip,leftLegAngle,58),rightKnee=child(rightHip,rightLegAngle,58);
+    const leftAnkle=child(leftKnee,leftLegAngle*.35-Math.max(0,swing)*stride*.22,61);
+    const rightAnkle=child(rightKnee,rightLegAngle*.35-Math.max(0,opposite)*stride*.22,61);
+    limb(leftHip,leftKnee,pants,17,pantsLight);limb(leftKnee,leftAnkle,pants,13,pantsLight);
+    limb(rightHip,rightKnee,pants,17,pantsLight);limb(rightKnee,rightAnkle,pants,13,pantsLight);
+    joint(leftKnee,6.5,pantsLight);joint(rightKnee,6.5,pantsLight);
+    const shoe=(ankle,dir)=>{g.fillStyle=ink;g.beginPath();g.moveTo(ankle.x-7*unit,ankle.y-2*unit);g.lineTo(ankle.x+dir*23*unit,ankle.y+unit);g.quadraticCurveTo(ankle.x+dir*28*unit,ankle.y+8*unit,ankle.x+dir*17*unit,ankle.y+9*unit);g.lineTo(ankle.x-7*unit,ankle.y+7*unit);g.closePath();g.fill();g.fillStyle="#b8c0b1";g.fillRect(Math.min(ankle.x,ankle.x+dir*22*unit),ankle.y+6*unit,22*unit,2*unit);};
+    shoe(leftAnkle,-1);shoe(rightAnkle,1);
+
+    let a;
+    if(wave)a={lu:-.56,lf:-.18,ru:2.55+swing*.1,rf:2.72+swing*.28};
+    else if(walk||run)a={lu:-.22-swing*stride*.85,lf:-.1-swing*stride*.45,ru:.22+swing*stride*.85,rf:.1+swing*stride*.45};
+    else if(dance)a={lu:-1.55+Math.sin(phase)*.25,lf:-2.25+Math.sin(phase+1)*.24,ru:1.65+Math.sin(phase+.8)*.25,rf:2.15+Math.sin(phase+1.7)*.24};
+    else if(jump)a={lu:-1.25,lf:-1.95,ru:1.25,rf:1.95};
+    else a={lu:-.18+Math.sin(phase)*.04,lf:-.08,ru:.18+Math.sin(phase+Math.PI)*.04,rf:.08};
+    const leftElbow=child(leftShoulder,a.lu,48),leftWrist=child(leftElbow,a.lf,45);
+    const rightElbow=child(rightShoulder,a.ru,48),rightWrist=child(rightElbow,a.rf,45);
+    limb(leftShoulder,leftElbow,shirt,13,shirtShade);limb(leftElbow,leftWrist,skin,9,skinLight);joint(leftElbow,5,skin);
+
+    // Native vector shirt with seam and collar details.
+    g.fillStyle=ink;g.beginPath();g.moveTo(leftShoulder.x-5*unit,leftShoulder.y);
+    g.quadraticCurveTo(ox-35*unit,oy-82*unit,ox-23*unit,oy-30*unit);g.lineTo(ox-19*unit,oy+unit);
+    g.quadraticCurveTo(ox,oy+8*unit,ox+19*unit,oy+unit);g.lineTo(ox+23*unit,oy-30*unit);
+    g.quadraticCurveTo(ox+35*unit,oy-82*unit,rightShoulder.x+5*unit,rightShoulder.y);
+    g.lineTo(ox+16*unit,oy-105*unit);g.quadraticCurveTo(ox,oy-98*unit,ox-16*unit,oy-105*unit);g.closePath();g.fill();
+    g.fillStyle=shirt;g.beginPath();g.moveTo(leftShoulder.x,leftShoulder.y);
+    g.quadraticCurveTo(ox-33*unit,oy-80*unit,ox-21*unit,oy-31*unit);g.lineTo(ox-17*unit,oy-unit);
+    g.quadraticCurveTo(ox,oy+5*unit,ox+17*unit,oy-unit);g.lineTo(ox+21*unit,oy-31*unit);
+    g.quadraticCurveTo(ox+33*unit,oy-80*unit,rightShoulder.x,rightShoulder.y);
+    g.lineTo(ox+14*unit,oy-103*unit);g.quadraticCurveTo(ox,oy-95*unit,ox-14*unit,oy-103*unit);g.closePath();g.fill();
+    line(p(-10,-101),p(0,-92),shirtShade,2);line(p(0,-92),p(10,-101),shirtShade,2);line(p(-16,-3),p(16,-3),shirtShade,1.3);
+    g.fillStyle=skinShade;g.fillRect(neck.x-8*unit,neck.y-3*unit,16*unit,24*unit);
+    g.fillStyle=skin;g.fillRect(neck.x-6*unit,neck.y-5*unit,12*unit,23*unit);
+    ellipse(head.x,head.y,29,34,ink,lean);ellipse(head.x,head.y+unit,26,31,skin,lean);
+    ellipse(head.x-27*unit,head.y+unit,4,7,skinShade,0);ellipse(head.x+27*unit,head.y+unit,4,7,skin,0);
+    g.fillStyle=ink;g.beginPath();g.moveTo(head.x-26*unit,head.y-6*unit);
+    g.quadraticCurveTo(head.x-29*unit,head.y-35*unit,head.x-4*unit,head.y-37*unit);
+    g.quadraticCurveTo(head.x+22*unit,head.y-39*unit,head.x+27*unit,head.y-14*unit);
+    g.lineTo(head.x+17*unit,head.y-9*unit);g.lineTo(head.x+10*unit,head.y-19*unit);
+    g.lineTo(head.x-unit,head.y-10*unit);g.lineTo(head.x-13*unit,head.y-16*unit);g.closePath();g.fill();
+    const eyeY=head.y+2*unit,blink=Math.sin(t*1.7+.3)>.992,eyeH=blink?.7:2.2;
+    ellipse(head.x-9*unit,eyeY,2.3,eyeH,ink,0);ellipse(head.x+9*unit,eyeY,2.3,eyeH,ink,0);
+    line({x:head.x-14*unit,y:head.y-4*unit},{x:head.x-5*unit,y:head.y-5*unit},skinShade,1.5);
+    line({x:head.x+5*unit,y:head.y-5*unit},{x:head.x+14*unit,y:head.y-4*unit},skinShade,1.5);
+    line({x:head.x,y:head.y+3*unit},{x:head.x-unit,y:head.y+10*unit},skinShade,1.2);
+    line({x:head.x-4*unit,y:head.y+16*unit},{x:head.x+(wave?13:6)*unit,y:head.y+(wave?15:16)*unit},skinShade,1.5);
+
+    limb(rightShoulder,rightElbow,shirt,13,shirtShade);limb(rightElbow,rightWrist,skin,9,skinLight);joint(rightElbow,5,skin);
+    const hand=(wrist,angle)=>{const palm=child(wrist,angle,8);ellipse(palm.x,palm.y,6,8,skin,angle*.2);[-.34,-.12,.1,.31].forEach((offset,i)=>{const tip=child(palm,angle+offset,11+(i%2)*2);line(palm,tip,skin,2.2);joint(tip,1,skinLight);});line(palm,child(palm,angle-.72,7),skin,2.7);};
+    hand(leftWrist,a.lf);hand(rightWrist,a.rf+(wave?swing*.18:0));joint(leftWrist,4.5,skin);joint(rightWrist,4.5,skin);
+    joint(leftShoulder,6,shirt);joint(rightShoulder,6,shirt);
+
+    if(wave){const bubbleX=width*.70,bubbleY=height*.22+Math.sin(t*2.2)*height*.006,bubbleW=width*.135,bubbleH=height*.075;
+      g.fillStyle="#f1f3e8";g.beginPath();g.roundRect(bubbleX-bubbleW/2,bubbleY-bubbleH/2,bubbleW,bubbleH,Math.max(7,10*unit));g.fill();
+      g.beginPath();g.moveTo(bubbleX-bubbleW*.25,bubbleY+bubbleH*.42);g.lineTo(bubbleX-bubbleW*.34,bubbleY+bubbleH*.64);g.lineTo(bubbleX-bubbleW*.06,bubbleY+bubbleH*.42);g.closePath();g.fill();
+      g.fillStyle="#20231e";g.font="700 "+Math.max(16,Math.round(height*.036))+"px system-ui,sans-serif";g.textAlign="center";g.textBaseline="middle";g.fillText("Hi!", bubbleX, bubbleY);}
+    const title=String(brief||"").replace(/\s+/g," ").trim().slice(0,72)||"Original character animation";
+    g.fillStyle="#a7ad9c";g.font="500 "+Math.max(11,Math.round(height*.019))+"px system-ui,sans-serif";g.textAlign="left";g.textBaseline="alphabetic";g.fillText(title,width*.065,height*.91,width*.87);
+  }
+
   function drawOriginalMotionFrame(g, brief, elapsed, duration, width, height) {
     const lower = String(brief || "").toLowerCase();
     const progress = Math.min(1, Math.max(0, elapsed / Math.max(0.1, duration)));
@@ -562,78 +655,8 @@
       return;
     }
 
-    if (person && waving) {
-      // A deliberate, hand-drawn vector character. It is an actual looped action,
-      // not a still image with a title card. It is explicitly stylised, not photorealistic.
-      const cx = width * 0.5;
-      const bob = Math.sin(elapsed * 2.4) * height * 0.006;
-      const headX = cx - width * 0.012;
-      const headY = height * 0.245 + bob;
-      const headR = height * 0.078;
-      g.fillStyle = "#20271f"; g.fillRect(width * 0.13, height * 0.14, width * 0.22, height * 0.48);
-      g.fillStyle = "#222820"; g.fillRect(width * 0.72, height * 0.22, width * 0.16, height * 0.35);
-      g.fillStyle = "#252d23"; g.fillRect(width * 0.13, height * 0.73, width * 0.74, height * 0.012);
-      // Legs and shoes.
-      line(cx - width * 0.035, height * 0.62 + bob, cx - width * 0.06, height * 0.78, "#596452", height * 0.065);
-      line(cx + width * 0.035, height * 0.62 + bob, cx + width * 0.075, height * 0.78, "#596452", height * 0.065);
-      line(cx - width * 0.06, height * 0.78, cx - width * 0.105, height * 0.79, "#cdd3c6", height * 0.026);
-      line(cx + width * 0.075, height * 0.78, cx + width * 0.12, height * 0.79, "#cdd3c6", height * 0.026);
-      // Torso.
-      g.fillStyle = "#d6fa62";
-      g.beginPath();
-      g.moveTo(cx - width * 0.055, height * 0.405 + bob);
-      g.lineTo(cx + width * 0.055, height * 0.405 + bob);
-      g.lineTo(cx + width * 0.076, height * 0.635 + bob);
-      g.lineTo(cx - width * 0.075, height * 0.635 + bob);
-      g.closePath(); g.fill();
-      // Relaxed arm on the left.
-      line(cx - width * 0.05, height * 0.43 + bob, cx - width * 0.105, height * 0.535 + bob, "#d6fa62", height * 0.038);
-      line(cx - width * 0.105, height * 0.535 + bob, cx - width * 0.09, height * 0.605 + bob, "#bf9878", height * 0.026);
-      // Waving arm: shoulder, elbow, wrist and a moving palm/fingers.
-      const wave = Math.sin(elapsed * 7.2);
-      const shoulderX = cx + width * 0.05;
-      const shoulderY = height * 0.43 + bob;
-      const elbowX = cx + width * 0.105;
-      const elbowY = height * 0.33 + wave * height * 0.012;
-      const wristX = cx + width * 0.095 + wave * width * 0.023;
-      const wristY = height * 0.19 + Math.cos(elapsed * 7.2) * height * 0.009;
-      line(shoulderX, shoulderY, elbowX, elbowY, "#d6fa62", height * 0.04);
-      line(elbowX, elbowY, wristX, wristY, "#bf9878", height * 0.027);
-      g.fillStyle = "#bf9878";
-      g.beginPath(); g.ellipse(wristX, wristY, width * 0.019, height * 0.025, wave * 0.35, 0, Math.PI * 2); g.fill();
-      for (let i = 0; i < 4; i++) {
-        const fingerX = wristX + (i - 1.3) * width * 0.012 + wave * width * 0.006;
-        const fingerY = wristY - height * (0.045 + (i % 2) * 0.012);
-        line(wristX + (i - 1.3) * width * 0.004, wristY - height * 0.012, fingerX, fingerY, "#bf9878", height * 0.009);
-      }
-      // Head and face.
-      g.fillStyle = "#bf9878"; g.beginPath(); g.arc(headX, headY, headR, 0, Math.PI * 2); g.fill();
-      g.fillStyle = "#24251f";
-      g.beginPath(); g.arc(headX, headY - headR * 0.16, headR * 1.02, Math.PI * 1.05, Math.PI * 2.04); g.fill();
-      g.fillRect(headX - headR * 0.98, headY - headR * 0.15, headR * 0.28, headR * 0.46);
-      g.fillStyle = "#20231e";
-      g.beginPath(); g.arc(headX + headR * 0.26, headY, Math.max(2, headR * 0.055), 0, Math.PI * 2); g.fill();
-      line(headX + headR * 0.19, headY + headR * 0.35, headX + headR * 0.46, headY + headR * 0.31, "#704e3b", Math.max(1.5, scale * 2));
-      // The free route cannot embed a synthesized voice, so make the requested
-      // greeting explicit in the scene rather than implying the clip has audio.
-      const bubbleX = width * 0.68;
-      const bubbleY = height * 0.23 + Math.sin(elapsed * 2.2) * height * 0.008;
-      const bubbleW = width * 0.16;
-      const bubbleH = height * 0.095;
-      g.fillStyle = "#f1f3e8";
-      g.beginPath();
-      g.roundRect(bubbleX - bubbleW / 2, bubbleY - bubbleH / 2, bubbleW, bubbleH, Math.max(8, 14 * scale));
-      g.fill();
-      g.beginPath();
-      g.moveTo(bubbleX - bubbleW * 0.27, bubbleY + bubbleH * 0.42);
-      g.lineTo(bubbleX - bubbleW * 0.36, bubbleY + bubbleH * 0.62);
-      g.lineTo(bubbleX - bubbleW * 0.08, bubbleY + bubbleH * 0.42);
-      g.closePath(); g.fill();
-      g.fillStyle = "#20231e";
-      g.font = "700 " + Math.max(18, Math.round(height * 0.047)) + "px system-ui, sans-serif";
-      g.textAlign = "center"; g.textBaseline = "middle";
-      g.fillText("Hi!", bubbleX, bubbleY);
-      label(title, margin, Math.round(height * 0.9), 16, "#a7ad9c", 500);
+    if (person) {
+      drawRiggedHuman(g, brief, elapsed, duration, width, height);
       return;
     }
 

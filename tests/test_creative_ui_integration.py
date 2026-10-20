@@ -77,6 +77,19 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("inspectionFailure", render)
         self.assertIn("no video was saved", render.lower())
 
+    def test_rigged_character_engine_has_connected_joints_and_deterministic_action_poses(self):
+        start = self.studio_js.index("function drawRiggedHuman(")
+        end = self.studio_js.index("function drawOriginalMotionFrame(", start)
+        rig = self.studio_js[start:end]
+        for action in ("wave", "run", "walk", "dance", "jump", "nod", "idle"):
+            self.assertIn('"' + action + '"', rig)
+        for invariant in ("const child=", "const leftElbow=", "const rightElbow=", "const leftWrist=", "const rightWrist=", "const leftKnee=", "const rightKnee=", "function limb(", "function joint(", 'g.fillText("Hi!", bubbleX, bubbleY)'):
+            self.assertIn(invariant, rig)
+        self.assertIn("drawRiggedHuman(g, brief, elapsed, duration, width, height)", self.studio_js)
+        self.assertIn("floorY - (127 + lift) * unit", rig)
+        self.assertNotIn("if (person && waving)", self.studio_js)
+        self.assertIn("Layered vector human rig", self.studio_js)
+
     def test_graphics_engineer_outputs_only_bounded_native_layers(self):
         self.assertIn("STRICT ANTI-SLOP RULES", self.director)
         self.assertIn('{"text", "rect", "circle", "line", "arrow"}', self.director)
