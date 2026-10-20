@@ -300,7 +300,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(baseline["model_id"], "gemini-3.8-flash")
         self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
-        self.assertEqual(baseline["metadata"]["timeout_seconds"], 15)
+        self.assertEqual(baseline["metadata"]["timeout_seconds"], 30)
         self.assertEqual(baseline["metadata"]["max_retries"], 0)
         self.assertEqual(baseline["metadata"]["standard_fallback_model"], "omnitrix-fast-fallback")
 
