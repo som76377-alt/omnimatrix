@@ -102,47 +102,66 @@ def _read_json(url: str, *, headers: dict[str, str] | None = None, timeout: floa
     return data
 
 
-def generate_creative_image(prompt: Any, *, environ: Any = None) -> dict[str, Any]:
-    """Generate one original image with Gemini when the server owner configured a key."""
+def generate_creative_image(
+    prompt: Any, *, environ: Any = None, aspect_ratio: str = "16:9"
+) -> dict[str, Any]:
+    """Generate one original image through the current Gemini Interactions API."""
     text = _safe_text(prompt, "Image prompt", 1800, required=True)
     env = os.environ if environ is None else environ
     api_key = str(env.get("GEMINI_API_KEY", "")).strip()
     if not api_key:
         raise CreativeAssetError("AI image generation is unavailable because GEMINI_API_KEY is not configured.")
-    model = str(env.get("OMNITRIX_IMAGE_MODEL", "gemini-2.5-flash-image")).strip()
+    model = str(env.get("OMNITRIX_IMAGE_MODEL", "gemini-nano-banana-2.1")).strip()
+    # The old 2.5 Flash Image endpoint was shut down in October 2026. Migrate this
+    # known legacy default rather than repeatedly attempting a dead endpoint.
+    if model == "gemini-2.5-flash-image":
+        model = "gemini-nano-banana-2.1"
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", model):
         raise CreativeAssetError("The configured image model name is invalid.")
+    if aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise CreativeAssetError("Image aspect ratio must be 16:9, 9:16, or 1:1.")
     instruction = (
-        "Create one original visual asset for a professionally art-directed explainer video. "
-        "Use a clear subject silhouette, deliberate composition, crisp matte colours, strong visual hierarchy, "
-        "and believable object relationships. Prefer clean 2D technical illustration or editorial illustration. "
-        "No fake interface, random decorative particles, glossy plastic, stock-photo watermark, brand logos, "
-        "or illegible typography. Do not render captions or text; labels will be added separately by the editor. "
-        "Make the visual specific to this brief: " + text
+        "Create one original, professionally art-directed image asset. This is a single scene image, "
+        "not a video, slideshow, title card, poster, collage, or interface. Use the exact subject and "
+        "physical action in the user's brief, credible anatomy and object relationships, deliberate composition, "
+        "clear focal hierarchy, matte colours, crisp detail, and a clean background appropriate to the scene. "
+        "Avoid generic stock-photo staging, random decorative particles, glowing HUDs, glossy plastic, excessive "
+        "gradients, watermarks, brand logos, fake interfaces, misspelled text, and arbitrary object slicing. "
+        "Do not render captions; any labels will be added separately by the editor. User's visual brief: "
+        + text
     )
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + urllib.parse.quote(model, safe="._-")
-        + ":generateContent?"
-        + urllib.parse.urlencode({"key": api_key})
-    )
+    endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions"
     body = json.dumps({
-        "contents": [{"parts": [{"text": instruction}]}],
-        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
-    }).encode("utf-8")
+        "model": model,
+        "input": instruction,
+        "response_format": {
+            "type": "image",
+            "mime_type": "image/png",
+            "aspect_ratio": aspect_ratio,
+            "image_size": "1K",
+        },
+    }, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
-        endpoint, data=body,
-        headers={"User-Agent": _USER_AGENT, "Content-Type": "application/json", "Accept": "application/json"},
+        endpoint,
+        data=body,
+        headers={
+            "User-Agent": _USER_AGENT,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-goog-api-key": api_key,
+        },
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=90) as response:
             raw = response.read(8 * 1024 * 1024 + 1)
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            raise CreativeAssetError("The image provider rejected its credentials or access scope.") from exc
+            raise CreativeAssetError("The image provider rejected the request. Check the server key and image-model access.") from exc
         if exc.code == 429:
             raise CreativeAssetError("The image provider quota or rate limit was reached.") from exc
+        if exc.code in {400, 404}:
+            raise CreativeAssetError(f"The image provider rejected the request (HTTP {exc.code}). Check model access and prompt support.") from exc
         raise CreativeAssetError(f"The image provider returned HTTP {exc.code}.") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise CreativeAssetError("AI image generation is temporarily unavailable from this server.") from exc
@@ -152,30 +171,36 @@ def generate_creative_image(prompt: Any, *, environ: Any = None) -> dict[str, An
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CreativeAssetError("The image provider returned invalid JSON.") from exc
-    candidates = payload.get("candidates", []) if isinstance(payload, dict) else []
-    for candidate in candidates if isinstance(candidates, list) else []:
-        content = candidate.get("content", {}) if isinstance(candidate, dict) else {}
-        parts = content.get("parts", []) if isinstance(content, dict) else []
-        for part in parts if isinstance(parts, list) else []:
-            inline = part.get("inlineData", part.get("inline_data", {})) if isinstance(part, dict) else {}
-            if not isinstance(inline, dict):
-                continue
-            mime = str(inline.get("mimeType", inline.get("mime_type", ""))).lower()
-            encoded = inline.get("data")
-            if mime not in {"image/png", "image/jpeg", "image/webp"} or not isinstance(encoded, str):
-                continue
-            try:
-                image_bytes = base64.b64decode(encoded, validate=True)
-            except (ValueError, base64.binascii.Error):
-                continue
-            if not image_bytes or len(image_bytes) > 6 * 1024 * 1024:
-                raise CreativeAssetError("The generated image is empty or exceeds the 6 MB limit.")
-            return {
-                "ok": True, "provider": "google", "model": model,
-                "mime_type": mime, "image_base64": base64.b64encode(image_bytes).decode("ascii"),
-                "size_bytes": len(image_bytes),
-                "note": "One original image was generated. Inspect factual details and composition before publishing.",
-            }
+    parts: list[dict[str, Any]] = []
+    steps = payload.get("steps", []) if isinstance(payload, dict) else []
+    for step in steps if isinstance(steps, list) else []:
+        if isinstance(step, dict) and step.get("type") == "model_output":
+            content = step.get("content", [])
+            if isinstance(content, list):
+                parts.extend(part for part in content if isinstance(part, dict))
+    for part in parts:
+        mime = str(part.get("mime_type") or part.get("mimeType") or "").lower()
+        encoded = part.get("data")
+        if mime not in {"image/png", "image/jpeg", "image/webp"} or not isinstance(encoded, str):
+            continue
+        try:
+            image_bytes = base64.b64decode(encoded, validate=True)
+        except (ValueError, base64.binascii.Error):
+            continue
+        if len(image_bytes) < 1024:
+            raise CreativeAssetError("The image provider returned an empty or incomplete image.")
+        if len(image_bytes) > 6 * 1024 * 1024:
+            raise CreativeAssetError("The generated image exceeds the 6 MB import limit.")
+        return {
+            "ok": True,
+            "provider": "google",
+            "model": str(payload.get("model") or model),
+            "mime_type": mime,
+            "image_base64": base64.b64encode(image_bytes).decode("ascii"),
+            "size_bytes": len(image_bytes),
+            "estimated_cost_usd": 0.04,
+            "note": "One original 1K image was generated. Inspect composition and factual details before publishing.",
+        }
     raise CreativeAssetError("The configured model returned no supported image. No image was imported.")
 
 
