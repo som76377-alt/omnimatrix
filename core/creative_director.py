@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import math
 import os
 import re
 import tempfile
@@ -217,8 +218,15 @@ def validate_plan(
         op: dict[str, Any] = {"type": kind, "asset_id": asset_id, "clip_id": clip_id}
         if kind == "set_duration":
             duration = item.get("duration_seconds")
-            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not 0.5 <= duration <= 600:
+            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(float(duration)) or not 0.5 <= duration <= 600:
                 raise CreativeDirectorError("Shot durations must be between 0.5 and 600 seconds.")
+            source = clip_by_id[clip_id]
+            source_duration = float(source.get("source_duration", 0) or 0)
+            source_in = float(source.get("source_in", 0) or 0)
+            if str(source.get("media_type", "")).startswith("video/") and source_duration > 0:
+                max_available = source_duration - source_in
+                if max_available < 0.5 or duration > max_available:
+                    raise CreativeDirectorError("A proposed video-shot duration exceeds the remaining source clip length.")
             op["duration_seconds"] = round(float(duration), 2)
         elif kind == "set_motion":
             preset = item.get("preset")
@@ -301,13 +309,20 @@ def analyze_creative_request(
             raise CreativeDirectorError("The selected previews exceed the total upload limit.")
         name = _bounded_text(row.get("name", f"Shot {index + 1}"), "Asset name", 160, required=True)
         duration_value = row.get("duration", 0)
-        if isinstance(duration_value, bool) or not isinstance(duration_value, (int, float)):
-            raise CreativeDirectorError("Clip duration metadata must be numeric.")
+        source_duration_value = row.get("source_duration", 0)
+        source_in_value = row.get("source_in", 0)
+        numbers = (duration_value, source_duration_value, source_in_value)
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in numbers):
+            raise CreativeDirectorError("Clip timing metadata must be finite numeric values.")
+        media_type = _bounded_text(row.get("media_type", ""), "Media type", 100)
         normalized.append({
             "asset_id": asset_id,
             "clip_id": clip_id,
             "name": name,
             "duration": max(0.0, min(600.0, float(duration_value))),
+            "source_duration": max(0.0, min(600.0, float(source_duration_value))),
+            "source_in": max(0.0, min(600.0, float(source_in_value))),
+            "media_type": media_type.lower(),
             "motion": str(row.get("motion", "none"))[:32],
             "fit": str(row.get("fit", "cover"))[:16],
         })
@@ -329,7 +344,9 @@ def analyze_creative_request(
 
     selected_notes = [
         {"asset_id": item["asset_id"], "clip_id": item["clip_id"], "name": item["name"],
-         "duration_seconds": item["duration"], "current_motion": item["motion"], "current_fit": item["fit"]}
+         "duration_seconds": item["duration"], "source_duration_seconds": item["source_duration"],
+         "source_in_seconds": item["source_in"], "media_type": item["media_type"],
+         "current_motion": item["motion"], "current_fit": item["fit"]}
         for item in normalized
     ]
     reorder_permitted = payload.get("allow_reorder") is True
