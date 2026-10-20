@@ -546,19 +546,20 @@
       const parsed = new URL(String(item.preview_url || ""));
       const allowed = item.provider === "commons"
         ? new Set(["upload.wikimedia.org"])
-        : item.provider === "pexels" ? new Set(["images.pexels.com"]) : new Set();
-      return parsed.protocol === "https:" && allowed.has(parsed.hostname.toLowerCase()) ? parsed.href : "";
+        : item.provider === "pexels" ? new Set(["images.pexels.com"])
+        : item.provider === "google" ? null : new Set();
+      return parsed.protocol === "https:" && !parsed.username && !parsed.password &&
+        (allowed === null || allowed.has(parsed.hostname.toLowerCase())) ? parsed.href : "";
     } catch { return ""; }
   }
 
   function supportedOnlineAsset(item) {
     const mime = String(item.mime_type || "").toLowerCase();
-    return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
+    return Boolean(item && ["commons", "pexels", "google"].includes(item.provider) &&
       (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
       /^https:\/\//i.test(String(item.asset_url || "")) &&
-      // Commons-hosted media may be imported into a private draft even when
-      // metadata is incomplete. That does not imply permission to publish it.
-      (item.rights_verified === true || item.provider === "commons"));
+      // Google results may be imported into a private draft for inspection, but are not rights-cleared.
+      (item.rights_verified === true || ["commons", "google"].includes(item.provider)));
   }
 
   function renderOnlineResults(response) {
@@ -662,7 +663,7 @@
 
   async function searchOnlineAssets(options) {
     const nativeMode = isNativeMobileStudio();
-    const provider = nativeMode ? "commons" : ($("online-asset-provider").value || "commons");
+    const provider = $("online-asset-provider").value || "commons";
     const queryInput = $("online-asset-query");
     let query = String(queryInput.value || "").trim();
     if (!query) query = deriveAssetQuery($("creative-brief").value);
@@ -685,7 +686,7 @@
     }
     state.onlineSearchBusy = true;
     $("search-online-assets").disabled = true;
-    onlineStatus("Searching " + (provider === "commons" ? "Wikimedia Commons" : "Pexels") + " for “" + query + "”…", "");
+    onlineStatus("Searching " + ({ commons: "Wikimedia Commons", pexels: "Pexels", google: "Google Images" }[provider] || provider) + " for “" + query + "”…", "");
     try {
       const params = new URLSearchParams({ q: query, provider, kind: $("online-asset-kind").value || "any", limit: "12" });
       const endpoint = nativeMode ? "./api/mobile/creative/search?" : "./api/creative/search?";
