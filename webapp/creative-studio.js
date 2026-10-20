@@ -690,6 +690,11 @@
       return null;
     }
     queryInput.value = query;
+    if (provider === "original") {
+      renderOnlineResults({ provider: "original", items: [] });
+      onlineStatus("Original creation mode does not search or download web assets. Press CREATE VIDEO to generate original graphics and render a WebM.", "success");
+      return { provider, query, items: [], original_creation_mode: true };
+    }
     if (state.onlineSearchBusy) return null;
     if (provider === "pinterest") {
       const link = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
