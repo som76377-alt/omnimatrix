@@ -77,18 +77,19 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("inspectionFailure", render)
         self.assertIn("no video was saved", render.lower())
 
-    def test_rigged_character_engine_has_connected_joints_and_deterministic_action_poses(self):
-        start = self.studio_js.index("function drawRiggedHuman(")
-        end = self.studio_js.index("function drawOriginalMotionFrame(", start)
-        rig = self.studio_js[start:end]
-        for action in ("wave", "run", "walk", "dance", "jump", "nod", "idle"):
-            self.assertIn('"' + action + '"', rig)
-        for invariant in ("const child=", "const leftElbow=", "rightElbow=child(", "leftWrist=child(", "rightWrist=child(", "const leftKnee=", "rightKnee=child(", "const limb=", "const joint=", 'g.fillText("Hi!", bubbleX, bubbleY)'):
+    def test_rigged_character_engine_uses_shared_pose_module_and_hierarchical_joints(self):
+        rig_path = ROOT / "webapp" / "rigged-character.js"
+        rig = rig_path.read_text(encoding="utf-8")
+        self.assertIn('window.OmnitrixRig.samplePose', self.studio_js)
+        self.assertIn('window.OmnitrixRig.buildSkeleton', self.studio_js)
+        self.assertIn('<script src="./rigged-character.js" defer></script>', self.studio_html)
+        self.assertLess(self.studio_html.index('src="./rigged-character.js"'), self.studio_html.index('src="./creative-studio.js"'))
+        for action in ('"wave"', '"walk"', '"run"', '"dance"', '"jump"', '"nod"', '"idle"'):
+            self.assertIn(action, rig)
+        for invariant in ("function samplePose(", "function sampleCurve(", "function buildSkeleton(", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist", "leftKnee", "rightKnee", "leftAnkle", "rightAnkle"):
             self.assertIn(invariant, rig)
-        self.assertIn("drawRiggedHuman(g, brief, elapsed, duration, width, height)", self.studio_js)
-        self.assertIn("floorY - (127 + lift) * unit", rig)
-        self.assertNotIn("if (person && waving)", self.studio_js)
         self.assertIn("Layered vector human rig", self.studio_js)
+        self.assertIn("No clip was imported", self.studio_js)
 
     def test_graphics_engineer_outputs_only_bounded_native_layers(self):
         self.assertIn("STRICT ANTI-SLOP RULES", self.director)
