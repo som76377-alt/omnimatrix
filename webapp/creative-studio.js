@@ -281,7 +281,11 @@
   function recorderWebmMimeType() {
     // VP8 is the more broadly interoperable WebM baseline for Android/WebView.
     const candidates = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm"];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    const supported = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+    if (!supported) {
+      throw new Error("This browser cannot record WebM video. No file was exported; use an up-to-date Chrome-based browser.");
+    }
+    return supported;
   }
 
   async function inspectFile(file) {
@@ -735,7 +739,12 @@
         };
         recorder.onstop = () => {
           cleanup();
-          const result = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+          const actualMimeType = String(recorder.mimeType || mimeType || "").toLowerCase();
+          if (!actualMimeType.startsWith("video/webm")) {
+            reject(new Error("The browser recorder produced " + (actualMimeType || "an unknown media format") + " instead of WebM. The file was rejected rather than mislabeled."));
+            return;
+          }
+          const result = new Blob(chunks, { type: actualMimeType });
           if (!result.size) reject(new Error("The browser returned an empty animation file."));
           else resolve(result);
         };
