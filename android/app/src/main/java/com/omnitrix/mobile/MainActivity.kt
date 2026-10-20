@@ -85,7 +85,6 @@ private val Green = Color(0xFFD0FF55)
 private val White = Color(0xFFF0F2E8)
 private val Grey = Color(0xFFA4AD98)
 private val Red = Color(0xFFFF6B6B)
-private val Mono = FontFamily.Monospace
 private val Pixel = FontFamily(Font(R.font.pixelify_sans, weight = FontWeight.Normal))
 private const val REPOSITORY = "som76377-alt/omnimatrix"
 private const val HOSTED_BACKEND_DISCOVERY_URL =
