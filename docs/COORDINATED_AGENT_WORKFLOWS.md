@@ -1,6 +1,6 @@
 # Coordinated Agent Workflows
 
-**Status:** partial implementation on `feat/coordinated-agent-workflows`. A deterministic manifest module and bounded Manim tool are present and Manim is registered in the default tool registry. The manifest is not yet the source of truth for the existing Creative Studio UI/timeline, and the hosted runtime has not been tested.  
+**Status:** partial, honest implementation. Creative Studio now exposes a science-diagram workflow: it validates user-provided causal steps, attempts the authenticated bounded Manim render API, falls back to a deterministic browser Canvas/WebM renderer when Manim is unavailable, imports the generated clip into the local library and timeline, and checks actual video decoding/sampled frames before delivery. A standalone manifest tracks the server-side Manim render task. This is not yet a fully coordinated multi-agent production pipeline.  
 **Purpose:** prevent role-labelled agents from duplicating work, losing context, inventing tool success, or producing an unchecked final artifact.
 
 ## Non-negotiable architecture
@@ -41,16 +41,16 @@ For each important visual concept, produce multiple narrow queries rather than o
 
 Use Gemini image generation for consented raster generation/editing; use the configured Gemini video route only after separate cost consent; use OpenRouter/Nemotron for eligible text reasoning when the live route is healthy; use deterministic calculators and media probes for exact computation and technical checks. A model should not be used where a deterministic tool is more reliable.
 
-Manim now has a registered, constrained tool that generates a fixed Python scene from validated labels/coordinates/arrow indices; it never accepts arbitrary model-written source. It checks for the `manim` executable, imposes a 90-second timeout and 100 MB output cap, and writes MP4s under `OMNITRIX_ARTIFACT_DIR` (default `/tmp/omnitrix-artifacts`). This is not a full isolated container: the host still needs normal process/container resource limits. Manim installation and a real render on the deployed host remain unverified.
+Manim now has a registered, constrained tool that generates a fixed Python scene from validated labels/coordinates/arrow indices; it never accepts arbitrary model-written source. Inputs are validated before a job is created; renders have a 90-second timeout and 24 MB Studio artifact cap, and output is written under `OMNITRIX_ARTIFACT_DIR` (default `/tmp/omnitrix-artifacts`). This is not a full isolated container: the host still needs normal process/container resource limits. The UI has a browser-renderer fallback; Manim installation and a real Manim render on the deployed host remain unverified.
 
 ## Runtime implementation checklist
 
-- [ ] Load and schema-validate `config/coordinated-agent-workflows.json`.
+- [x] Validate the coordination JSON configuration during CI.
 - [x] Add a standalone typed manifest module with task ownership, dependencies, artifact references, state transitions, fingerprinting and optional atomic JSON persistence (`core/creative_production.py`).
-- [ ] Wire that manifest into the existing Creative Studio UI/timeline and durable job execution.
+- [x] Connect the user-facing science-diagram action to the Manim render/status/artifact API when available, plus a deterministic browser-render fallback; import the resulting clip into the browser media library and timeline. The manifest still does not cover every agent role or the whole timeline/export.
 - [ ] Add shared artifact storage/manifest with checksums and provenance.
 - [x] Add a bounded template-based Manim tool to the default tool registry; it accepts structured nodes/arrows only and refuses to claim availability if the `manim` executable is missing.
-- [ ] Install/probe Manim in the deployed worker and connect rendered MP4 artifacts to the Studio timeline.
+- [ ] Install/probe Manim in the deployed worker and run a real hosted MP4 render; the UI imports the returned MP4 when the Manim route works.
 - [ ] Add worker adapters for visual inspection and FFmpeg; probe capabilities before routing.
 - [ ] Add query expansion, result deduplication, relevance ranking and visual verification to asset search.
 - [ ] Add independent critic routing and final-export inspection.
@@ -63,4 +63,4 @@ This design is not complete until the runtime checklist is implemented and tests
 
 ## Current honest status
 
-The shared manifest module and Manim tool have been added and unit tests have been authored, but the tests have **not been executed in the hosted repository environment**. The manifest is not yet called by the existing Studio timeline; there is no durable queue worker, no independently deployed critic, and no verified remote Manim render. Do not treat this branch as a completed end-to-end multi-agent video pipeline.
+The shared manifest module and Manim tool now have API/UI integration tests in CI, and the science diagram can be created locally without paid AI services. The server-side render queue remains in memory, so job records are lost on restart. The manifest is not yet the shared source of truth across researcher, graphics, Manim, editor and critic roles; no independently deployed full-video/audio critic or durable queue exists, and the deployed Render host's Manim executable/actual render remains unverified. Browser decode and sampled-frame checks are technical QA, not proof of scientific correctness or zero AI slop. Do not describe the remaining orchestration as complete.
