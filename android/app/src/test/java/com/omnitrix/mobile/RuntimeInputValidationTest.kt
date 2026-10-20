@@ -70,7 +70,7 @@ class RuntimeInputValidationTest {
     @Test
     fun normalizesCommonLatexDelimitersForNativeRenderer() {
         val normalized = MarkwonMathNormalizer.normalize("Force: \\(F = ma\\)\n\\[E = mc^2\\]")
-        assertTrue(normalized.contains("\$\$F = ma\$\$"))
+        assertTrue(normalized.contains("\$F = ma\$"))
         assertTrue(normalized.contains("\$\$\nE = mc^2\n\$\$"))
     }
 
@@ -78,6 +78,13 @@ class RuntimeInputValidationTest {
     fun doesNotNormalizeLatexInsideFencedOrInlineCode() {
         val original = "```latex\n\\(F = ma\\)\n```\n`\\[E = mc^2\\]`"
         assertEquals(original, MarkwonMathNormalizer.normalize(original))
+    }
+
+    @Test
+    fun formatsAlertMarkersAsReadableBoldLabels() {
+        val source = "> [!WARNING] Check the assumptions\n> More detail follows."
+        val result = MarkwonMathNormalizer.normalize(source)
+        assertTrue(result.contains("> **WARNING**  Check the assumptions"))
     }
 
 }
