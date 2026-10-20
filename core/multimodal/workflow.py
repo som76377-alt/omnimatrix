@@ -232,7 +232,7 @@ def analyze_multiple_attachments(records: list[dict[str, Any]], question: str) -
         fallback_processed += 1
 
     all_processed = processed >= len(records)
-    if fallback_processed:
+    if fallback_processed or not all_processed:
         context_parts.append(
             "MULTI-FILE ROUTING SUMMARY: " + str(len(records)) + " file(s) queued; "
             + str(int(primary.evidence[-1].metadata.get("analyzed_count", 0) or 0) if primary.evidence else 0)
