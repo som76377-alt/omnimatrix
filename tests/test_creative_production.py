@@ -14,11 +14,23 @@ class CreativeProductionManifestTests(unittest.TestCase):
         with self.assertRaises(ProductionContractError):
             manifest.set_task_state("graphics", "running")
         manifest.register_artifact("research.json", kind="json", owner_task_id="research", uri="artifact://research.json")
+        manifest.set_task_state("research", "running")
         manifest.set_task_state("research", "succeeded", evidence=["source-reviewed"])
         self.assertEqual(manifest.tasks["graphics"].status, "ready")
         manifest.register_artifact("coil.mp4", kind="video", owner_task_id="graphics", uri="artifact://coil.mp4")
         manifest.set_task_state("graphics", "running")
         manifest.set_task_state("graphics", "succeeded", evidence=["rendered-output"])
+
+    def test_task_cannot_succeed_without_running_and_evidence(self):
+        manifest = CreativeProductionManifest("job-state", "Test")
+        manifest.add_task("task", "coder", "Create file", writes=["output.bin"])
+        manifest.register_artifact("output.bin", kind="binary", owner_task_id="task", uri="artifact://output.bin")
+        with self.assertRaises(ProductionContractError):
+            manifest.set_task_state("task", "succeeded", evidence=["claimed-done"])
+        manifest.set_task_state("task", "running")
+        with self.assertRaises(ProductionContractError):
+            manifest.set_task_state("task", "succeeded")
+        manifest.set_task_state("task", "succeeded", evidence=["real-artifact-reference"])
 
     def test_duplicate_writers_are_rejected(self):
         manifest = CreativeProductionManifest("job-2", "Test")
