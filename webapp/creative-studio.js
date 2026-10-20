@@ -448,53 +448,33 @@
   // Layered vector human rig: fixed-length limb segments, named joints, and
   // deterministic pose curves. Every frame is drawn from geometry, not a flattened image.
   function drawRiggedHuman(g, brief, elapsed, duration, width, height) {
-    const text = String(brief || "").toLowerCase();
-    const wave = /\b(wav(?:e|es|ing)|greet(?:s|ing)?|hello|hi)\b/.test(text);
-    const run = /\b(run(?:s|ning)?|sprint(?:s|ing)?|jog(?:s|ging)?)\b/.test(text);
-    const walk = /\b(walk(?:s|ing)?|march(?:es|ing)?)\b/.test(text);
-    const dance = /\bdanc(?:e|es|ing)\b/.test(text);
-    const jump = /\b(jump(?:s|ing)?|leap(?:s|ing)?)\b/.test(text);
-    const nod = /\b(nod(?:s|ding)?|yes)\b/.test(text);
-    const action = wave ? "wave" : run ? "run" : walk ? "walk" : dance ? "dance" : jump ? "jump" : nod ? "nod" : "idle";
-    const t = Math.max(0, Number(elapsed) || 0), speed = run ? 10 : walk ? 5 : dance ? 4.2 : 7;
-    const phase = t * speed, swing = Math.sin(phase), opposite = Math.sin(phase + Math.PI);
+    if (!window.OmnitrixRig) throw new Error("The rigged-character motion module failed to load.");
+    const pose = window.OmnitrixRig.samplePose(brief, elapsed, duration);
+    const { wave, run, walk, dance, jump, nod, t, phase, swing, opposite, lift, lean } = pose;
     const unit = Math.min(width / 450, height / 490) * 1.04;
-    const lift = jump ? Math.max(0, swing) * 22 : run ? Math.abs(swing) * 4 : Math.sin(t * 2.3) * 2;
-    const lean = run ? 0.14 : walk ? 0.04 : dance ? Math.sin(phase * 0.5) * 0.1 : 0;
-    const ox = width * ((walk || run) ? 0.48 + Math.sin(t * 0.9) * 0.018 : 0.49);
+    const ox = width * pose.xPosition;
     const floorY = height * 0.785, oy = floorY - (127 + lift) * unit;
     const ink="#171a16", skin="#b98564", skinLight="#d7a17c", skinShade="#875b43";
     const shirt="#d6fa62", shirtShade="#91aa4c", pants="#343b33", pantsLight="#515a4c";
     const p=(x,y)=>({x:ox+x*unit,y:oy+y*unit});
     const child=(o,a,l)=>({x:o.x+Math.sin(a)*l*unit,y:o.y+Math.cos(a)*l*unit});
+    const skeleton = window.OmnitrixRig.buildSkeleton({ ox, oy, unit, pose });
+    const { leftHip, rightHip, leftShoulder, rightShoulder, neck, head } = skeleton;
     const line=(a,b,c,w)=>{g.strokeStyle=c;g.lineWidth=w*unit;g.lineCap="round";g.lineJoin="round";g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();};
     const limb=(a,b,c,w,h)=>{line(a,b,ink,w+4);line(a,b,c,w);if(h)line({x:a.x-1.5*unit,y:a.y},{x:b.x-1.5*unit,y:b.y},h,Math.max(1,w*.12));};
     const ellipse=(x,y,rx,ry,c,r)=>{g.fillStyle=c;g.beginPath();g.ellipse(x,y,rx*unit,ry*unit,r||0,0,Math.PI*2);g.fill();};
     const joint=(o,r,c)=>{ellipse(o.x,o.y,r+2,r+2,ink,0);ellipse(o.x,o.y,r,r,c,0);};
-    const leftHip=p(-15,1),rightHip=p(15,1),leftShoulder=p(-29,-111),rightShoulder=p(29,-111);
-    const neck=p(0,-132),head=p(-lean*14,-170-(nod?Math.sin(t*4)*3:0));
     g.save();g.globalAlpha=jump?0.3-Math.max(0,swing)*0.14:0.36;ellipse(ox,floorY+4*unit,jump?43:52,6,"#050705",0);g.restore();
 
     // Back-to-front layer order: legs, rear arm, torso, raised arm, head and hands.
-    const stride = walk ? 0.46 : run ? 0.76 : dance ? 0.48 : 0;
-    const leftLegAngle=.05+swing*stride,rightLegAngle=-.05+opposite*stride;
-    const leftKnee=child(leftHip,leftLegAngle,58),rightKnee=child(rightHip,rightLegAngle,58);
-    const leftAnkle=child(leftKnee,leftLegAngle*.35-Math.max(0,swing)*stride*.22,61);
-    const rightAnkle=child(rightKnee,rightLegAngle*.35-Math.max(0,opposite)*stride*.22,61);
+    const { leftKnee, rightKnee, leftAnkle, rightAnkle } = skeleton;
     limb(leftHip,leftKnee,pants,17,pantsLight);limb(leftKnee,leftAnkle,pants,13,pantsLight);
     limb(rightHip,rightKnee,pants,17,pantsLight);limb(rightKnee,rightAnkle,pants,13,pantsLight);
     joint(leftKnee,6.5,pantsLight);joint(rightKnee,6.5,pantsLight);
     const shoe=(ankle,dir)=>{g.fillStyle=ink;g.beginPath();g.moveTo(ankle.x-7*unit,ankle.y-2*unit);g.lineTo(ankle.x+dir*23*unit,ankle.y+unit);g.quadraticCurveTo(ankle.x+dir*28*unit,ankle.y+8*unit,ankle.x+dir*17*unit,ankle.y+9*unit);g.lineTo(ankle.x-7*unit,ankle.y+7*unit);g.closePath();g.fill();g.fillStyle="#b8c0b1";g.fillRect(Math.min(ankle.x,ankle.x+dir*22*unit),ankle.y+6*unit,22*unit,2*unit);};
     shoe(leftAnkle,-1);shoe(rightAnkle,1);
 
-    let a;
-    if(wave)a={lu:-.56,lf:-.18,ru:2.55+swing*.1,rf:2.72+swing*.28};
-    else if(walk||run)a={lu:-.22-swing*stride*.85,lf:-.1-swing*stride*.45,ru:.22+swing*stride*.85,rf:.1+swing*stride*.45};
-    else if(dance)a={lu:-1.55+Math.sin(phase)*.25,lf:-2.25+Math.sin(phase+1)*.24,ru:1.65+Math.sin(phase+.8)*.25,rf:2.15+Math.sin(phase+1.7)*.24};
-    else if(jump)a={lu:-1.25,lf:-1.95,ru:1.25,rf:1.95};
-    else a={lu:-.18+Math.sin(phase)*.04,lf:-.08,ru:.18+Math.sin(phase+Math.PI)*.04,rf:.08};
-    const leftElbow=child(leftShoulder,a.lu,48),leftWrist=child(leftElbow,a.lf,45);
-    const rightElbow=child(rightShoulder,a.ru,48),rightWrist=child(rightElbow,a.rf,45);
+    const { leftElbow, leftWrist, rightElbow, rightWrist } = skeleton;
     limb(leftShoulder,leftElbow,shirt,13,shirtShade);limb(leftElbow,leftWrist,skin,9,skinLight);joint(leftElbow,5,skin);
 
     // Native vector shirt with seam and collar details.
@@ -527,7 +507,7 @@
 
     limb(rightShoulder,rightElbow,shirt,13,shirtShade);limb(rightElbow,rightWrist,skin,9,skinLight);joint(rightElbow,5,skin);
     const hand=(wrist,angle)=>{const palm=child(wrist,angle,8);ellipse(palm.x,palm.y,6,8,skin,angle*.2);[-.34,-.12,.1,.31].forEach((offset,i)=>{const tip=child(palm,angle+offset,11+(i%2)*2);line(palm,tip,skin,2.2);joint(tip,1,skinLight);});line(palm,child(palm,angle-.72,7),skin,2.7);};
-    hand(leftWrist,a.lf);hand(rightWrist,a.rf+(wave?swing*.18:0));joint(leftWrist,4.5,skin);joint(rightWrist,4.5,skin);
+    hand(leftWrist,pose.leftForearmAngle);hand(rightWrist,pose.rightForearmAngle + pose.waveHandOffset);joint(leftWrist,4.5,skin);joint(rightWrist,4.5,skin);
     joint(leftShoulder,6,shirt);joint(rightShoulder,6,shirt);
 
     if(wave){const bubbleX=width*.70,bubbleY=height*.22+Math.sin(t*2.2)*height*.006,bubbleW=width*.135,bubbleH=height*.075;

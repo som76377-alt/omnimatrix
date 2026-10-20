@@ -6,6 +6,11 @@ The local original-animation route uses a reusable deterministic vector characte
 
 This is a stylised 2D vector rig, not photorealistic footage or a full mesh-deformation/inverse-kinematics editor. It is a reusable foundation for custom character art, more motion clips and later rig editing.
 
+The pose/kinematics core lives in `webapp/rigged-character.js`, separate from the Canvas renderer so the same action sampling can be tested without a browser. It resolves the brief to a named action, samples deterministic time-based channels, interpolates authored keyframes with smoothstep easing, and builds a parent-child skeleton with fixed segment lengths. The drawing layer consumes the sampled skeleton rather than maintaining a second copy of arm/leg pose math. Action regression tests exercise deterministic samples, actual joint displacement, jump motion, and segment lengths with Node's built-in test runner.
+
+The rig remains stylised and intentionally local-first; it does not need model calls, generated images, external packages, or paid services. The browser recording/decoding/blank-frame checks remain the authority for whether an encoded clip is importable. The new kinematics tests do not replace an on-device visual review.
+
+
 ## Current milestone
 
 This is the first creative-production milestone inside Omnitrix. The editor is a separate page at `webapp/creative-studio.html`, designed for phone-first use as well as desktop.

@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "omnitrix-shell-v5";
+const CACHE_NAME = "omnitrix-shell-v6";
 const SHELL = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const SHELL = [
   "./icon.svg",
   "./creative-studio.html",
   "./creative-studio.css",
+  "./rigged-character.js",
   "./creative-studio.js",
 ];
 

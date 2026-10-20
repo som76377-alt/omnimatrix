@@ -58,7 +58,8 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
 
     def test_service_worker_cache_version_was_bumped_for_ui_update(self):
         worker = SERVICE_WORKER.read_text(encoding="utf-8")
-        self.assertIn('const CACHE_NAME = "omnitrix-shell-v5";', worker)
+        self.assertIn('const CACHE_NAME = "omnitrix-shell-v6";', worker)
+        self.assertIn('"./rigged-character.js"', worker)
 
 
 if __name__ == "__main__":
