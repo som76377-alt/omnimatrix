@@ -101,6 +101,24 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
+    def test_pinterest_asset_search_route_is_authenticated_and_reference_only(self):
+        status, body = self.request(
+            "/api/creative/search?provider=pinterest&kind=image&q=induction%20stove"
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["manual_reference_only"])
+        self.assertEqual(body["items"], [])
+        self.assertIn("pinterest.com/search/pins/", body["search_url"])
+
+    def test_asset_search_route_rejects_requests_without_runtime_token(self):
+        status, body = self.request(
+            "/api/creative/search?provider=pinterest&q=coil",
+            authorized=False,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["code"], "unauthorized")
+
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
         models = {model["name"]: model for model in config["models"]}
