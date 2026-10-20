@@ -421,3 +421,10 @@ input::placeholder,textarea::placeholder{color:#697160}
   .online-search-controls .button{width:100%}
   .online-asset-actions .button{flex:1;min-width:130px}
 }
+
+
+.auto-creative-consent{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:start;gap:10px;padding:11px;border:1px solid var(--line-soft);background:#0b0d0a;color:var(--muted);font-size:12px;line-height:1.55}
+.auto-creative-consent input{margin:3px 0 0;accent-color:var(--green);width:16px;height:16px}
+.auto-creative-consent strong{display:block;color:var(--text);font-size:13px;line-height:1.4;margin-bottom:3px}
+.online-asset-card-actions a{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.online-asset-status{white-space:pre-wrap}
