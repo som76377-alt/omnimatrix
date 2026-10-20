@@ -212,6 +212,32 @@
         "original-raster-scenes"
       ],
       "notes": "One original image is attempted only when the user initiates Create Video / a direct prompt-to-video workflow and the server has GEMINI_API_KEY plus an available image model. If unavailable, the editor falls back to original deterministic vector scenes. The model output must be reviewed; this does not imply fact-checking."
+    },
+    {
+      "id": "direct-ai-video-generation",
+      "label": "Direct AI video and audio generator",
+      "status": "integrated-opt-in-paid-provider",
+      "runtime": "server-side-gemini-interactions-api-background-job",
+      "cost_class": "paid-only-explicit-per-request-cost-acknowledgement",
+      "provider": "Google Gemini API",
+      "model_default": "gemini-omni-1.1-flash",
+      "capabilities": [
+        "text-to-moving-video",
+        "native-audio-and-spoken-dialogue-when-supported",
+        "portrait-or-landscape-video",
+        "background-job-status",
+        "bounded-mp4-or-webm-return",
+        "direct-video-import-into-local-project",
+        "separate-explicit-consent-from-raster-image-and-preview-analysis"
+      ],
+      "limits": [
+        "no provider request is made until explicit paid-video acknowledgement",
+        "approximate 720p cost is US$0.10 per generated second; final duration and billable use may vary",
+        "mobile transfers are limited to 24 MB",
+        "up to two active server jobs and three public generation requests per rolling day",
+        "the provider result needs manual review for action continuity, audio synchronization and factual content"
+      ],
+      "notes": "Uses the current Gemini Interactions API. The direct AI-video path is distinct from the local Canvas/WebM renderer and is not used as a silent fallback. Server-side GEMINI_API_KEY and paid video-model access are required. A returned job or response is not proof of a good clip; inspect the actual saved video."
     }
   ]
 }
