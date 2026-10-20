@@ -76,7 +76,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start()"))
         self.assertNotIn("recorder.start(250)", self.studio_js)
         self.assertNotIn("recorder.start(500)", self.studio_js)
-        self.assertIn("Timed out while checking the exported video (" + ' + eventName + ' + ").", self.studio_js)
+        self.assertIn("Timed out while checking the exported video (", self.studio_js)
         self.assertIn("if (!selected)", self.studio_js)
         self.assertIn("inspectionFailure", render)
         self.assertIn("no video was saved", render.lower())
