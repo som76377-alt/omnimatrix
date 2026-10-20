@@ -342,6 +342,13 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
+  function safeExternalHttps(value) {
+    try {
+      const parsed = new URL(String(value || ""));
+      return parsed.protocol === "https:" && !parsed.username && !parsed.password ? parsed.href : "";
+    } catch { return ""; }
+  }
+
   function safePreviewUrl(item) {
     try {
       const parsed = new URL(String(item.preview_url || ""));
@@ -372,7 +379,7 @@
       const copy = document.createElement("span");
       copy.textContent = "Open Pinterest to browse inspiration. Pins are not copied automatically because source rights and platform permissions must be respected.";
       const link = document.createElement("a");
-      link.href = response.search_url;
+      link.href = safeExternalHttps(response.search_url) || "https://www.pinterest.com/";
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = "OPEN PINTEREST RESULTS ↗";
@@ -426,7 +433,7 @@
       actions.className = "online-asset-card-actions";
       const source = document.createElement("a");
       source.className = "button quiet small";
-      source.href = String(item.source_page || "#");
+      source.href = safeExternalHttps(item.source_page) || "https://commons.wikimedia.org/";
       source.target = "_blank";
       source.rel = "noopener noreferrer";
       source.textContent = "SOURCE ↗";
@@ -642,11 +649,13 @@
       const importedIds = [];
       for (let i = 0; i < selected.length; i += 1) {
         onlineStatus("Building draft: importing selected asset " + (i + 1) + " of " + selected.length + "…", "");
-        const id = await importOnlineAsset(selected[i], true);
+        const id = await importOnlineAsset(selected[i], false);
         importedIds.push(id);
       }
-      const startIndex = state.project.timeline.length - importedIds.length;
-      const draftClips = state.project.timeline.slice(Math.max(0, startIndex));
+      // Add the selected assets as one batch after all downloads/metadata checks succeed.
+      const startIndex = state.project.timeline.length;
+      importedIds.forEach((id) => addAssetToTimeline(id));
+      const draftClips = state.project.timeline.slice(startIndex);
       const baseDuration = targetSeconds / Math.max(1, draftClips.length);
       const title = extractBriefTitle(brief);
       draftClips.forEach((clip, index) => {
@@ -667,13 +676,6 @@
         clip.titleSize = 44;
         clip.titleFont = "sans";
         clip.layers = Array.isArray(clip.layers) ? clip.layers : [];
-        if (index === 0) {
-          clip.layers.push({
-            id: crypto.randomUUID(), type: "rect", name: "Title rule",
-            text: "", x: 50, y: 88, width: 12, height: 1,
-            fontSize: 12, color: "#d6fa62", opacity: 0.95, font: "sans", animation: "slide-left"
-          });
-        }
       });
       state.selectedClipId = draftClips[0] ? draftClips[0].id : state.selectedClipId;
       state.currentClipId = state.selectedClipId;
@@ -684,14 +686,47 @@
       updateStats();
       drawFrame();
       await saveProject(false);
-      onlineStatus(
-        "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Selection used titles, descriptions and licence metadata—not visual-AI judgment. Preview it, then open Director + graphics engineer and approve selected-thumbnail analysis for richer visual choices.",
-        "success"
-      );
+      const automaticDirection = $("auto-creative-consent").checked;
       $("ai-director-panel").hidden = false;
       renderAiSelectionList();
-      loadAiModelStatus();
-      $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      // Select only the newly assembled clips, never earlier project shots.
+      const draftIds = new Set(draftClips.map((clip) => clip.id));
+      $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
+        checkbox.checked = draftIds.has(checkbox.value);
+      });
+      updateAiControls();
+
+      if (automaticDirection) {
+        // The separate checkbox explicitly authorizes this one model call and local auto-apply.
+        $("ai-consent").checked = true;
+        await loadAiModelStatus();
+        if (state.creativeStatus && state.creativeStatus.configured) {
+          onlineStatus("Asset draft assembled. The visual director is now examining only the new shots' resized thumbnails…", "");
+          await runAiDirection();
+          if (state.creativePlan && Array.isArray(state.creativePlan.operations) && state.creativePlan.operations.length) {
+            applyAiPlan();
+          }
+          if (state.creativePlanApplied) {
+            onlineStatus("The visual director's validated edits were applied to this draft. Starting a local WebM export; inspect it before publishing.", "success");
+          } else {
+            onlineStatus("The basic timeline is ready, but no validated visual-director edits were applied. " +
+              (String($("ai-status").textContent || "").trim() || "Check the Director status and review the timeline.") +
+              " Starting a local WebM export of the supported draft.", "");
+          }
+        } else {
+          onlineStatus("A basic draft was assembled, but the visual model is not configured or reachable. No AI visual analysis was claimed. Starting a local WebM export of the basic draft.", "");
+        }
+        await saveProject(false);
+        $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+        renderVideo();
+      } else {
+        onlineStatus(
+          "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results. Preview the sequence; tick the optional automatic-direction consent to have the configured vision model inspect resized thumbnails, apply supported graphic/edit suggestions and export a draft.",
+          "success"
+        );
+        await loadAiModelStatus();
+        $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     } catch (error) {
       onlineStatus(String(error.message || error), "error");
     } finally {
@@ -763,14 +798,14 @@
         sourceNote.textContent = (asset.sourceProvider.toUpperCase() + " · " + (asset.license || "licence unknown")).slice(0, 220);
         if (asset.licenseUrl) {
           const licenceLink = document.createElement("a");
-          licenceLink.href = asset.licenseUrl;
+          licenceLink.href = safeExternalHttps(asset.licenseUrl) || "https://commons.wikimedia.org/";
           licenceLink.target = "_blank";
           licenceLink.rel = "noopener noreferrer";
           licenceLink.textContent = " Licence ↗";
           sourceNote.append(licenceLink);
         }
         const sourceLink = document.createElement("a");
-        sourceLink.href = asset.sourcePage;
+        sourceLink.href = safeExternalHttps(asset.sourcePage) || "https://commons.wikimedia.org/";
         sourceLink.target = "_blank";
         sourceLink.rel = "noopener noreferrer";
         sourceLink.textContent = " Source ↗";
