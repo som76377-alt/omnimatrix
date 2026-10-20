@@ -1,42 +1,49 @@
-# Omnitrix Creative Studio — online asset-to-draft workflow
+# Omnitrix Creative Studio — prompt-to-video workflow
 
-## What the current feature branch adds
+## What the feature provides
 
-- A dedicated online-asset API in `core/creative_assets.py`, consumed by Creative Studio through authenticated server routes.
-- Wikimedia Commons file search with attribution, source-page and licence metadata; supported media downloads are bounded to 24 MB and allowlisted official hosts.
-- Optional Pexels photo/video search when `PEXELS_API_KEY` is configured on the server. Key availability and provider policy can change; it is not a required dependency.
-- Pinterest search links for collecting references. Pinterest Pins are **not** scraped or downloaded by this app. A user must obtain permission and use an authorised route before reusing media.
-- A one-action **Auto-assemble Draft** flow that searches up to 12 results, rejects unsupported formats or missing licence metadata, ranks by title/description matches, imports at most four selected assets, saves the source/rights metadata, and arranges a short sequential draft.
-- An optional per-run consent checkbox that permits sending only the new draft shots' resized JPEG thumbnails to the configured visual model. If configured, the director can propose supported timing/framing/text/native graphic-layer changes; the client validates and applies that proposal to the newly created shots and starts browser WebM export.
-- Native editable text, rectangle, circle, line and arrow graphic layers, with bounded opacity/size/position and restrained entry motion presets.
+- A prompt-driven workflow that searches the internet for licensed source media, creates a timeline draft, and renders a real WebM video locally in the browser/WebView. Manually adding images or video clips is optional.
+- Wikimedia Commons search with attribution, source-page and licence metadata. Supported media downloads are allowlisted to official provider hosts and capped at 24 MB per imported file.
+- Optional Pexels photo/video search when `PEXELS_API_KEY` is configured on the server. It is not required for the prompt-only workflow.
+- Pinterest reference search links in the full web Studio. Pinterest Pins are **not** scraped or auto-imported; reuse media only through an authorised route with the necessary rights.
+- A one-action **Auto-assemble Draft** flow that searches a bounded set of results, rejects unsupported media or missing licence metadata, ranks by title/description matches, imports at most four selected assets, saves the source/rights metadata and arranges a short sequential edit.
+- Native editable text, rectangle, circle, line and arrow graphic layers, restrained motion presets and adjustable framing in the Studio.
+- Local browser render and post-render technical QA: the output is reopened for decode metadata, duration, dimensions and sampled-frame checks. A consent-gated visual-director/post-render critic is available in the authenticated full web Studio when a supported model is configured.
 
-## What the workflow does not claim
+## Android app integration
 
-Asset matching in Auto-assemble is currently based on searchable title, description and licence metadata. It does **not** visually inspect every internet result before it chooses the initial four. The opt-in multimodal director inspects those imported shots' resized thumbnails after the initial edit is made. Video analysis is one thumbnail per source clip, not full temporal understanding.
+- The native app has a **Video** tab. An imperative request such as “Create a 12-second vertical science explainer video about an induction stove” sent from Chat switches to the Studio and begins the draft automatically. Regular questions and chat messages with attached chat files stay in chat.
+- The Studio also opens directly from the Video tab, where the user can enter a brief manually. Image/video file picking is supported, but assets are optional because the automatic path searches Commons.
+- For the native app, the prompt-only path calls bounded, rate-limited public Commons endpoints. It does not require a Codespaces runtime token. This route is restricted to Commons rather than arbitrary download URLs, and it limits asset searches/imports.
+- The native app saves a generated WebM to `Movies/Omnitrix` (on modern Android) and shows an **OPEN VIDEO** action. A bounded 24 MB video-file save limit is in place to avoid excessive memory use while passing WebM through the mobile bridge.
+- Prompts mentioning vertical/portrait, 9:16, Reels, TikTok or Shorts select 720×1280 output; square terms select 720×720; horizontal/landscape/16:9 selects 1280×720. Other prompts retain the current export setting.
+- The optional thumbnail-based AI director remains on the authenticated full web Studio path; native prompt-only generation does not claim an AI visual review. The native workflow still creates an actual local-rendered video even when no visual model is configured.
 
-The visual director needs a working server-side `GEMINI_API_KEY` and configured model. A displayed configuration status is not a live health check. If the visual model is not configured or fails, the feature reports that and can still export the supported basic cut; it must not label that cut AI-reviewed.
+## Quality and capability limits
 
-The renderer remains browser-local Canvas + MediaRecorder WebM. After export, the browser reopens the actual WebM, verifies decode metadata/duration/dimensions, and samples frames for obvious black/blank output. With explicit one-run consent, it can also send up to four rendered midpoint frames to the same configured creative model for a post-render critique, apply supported corrections, and re-render once. The corrected final render receives local technical QA but not a second AI critique; this is not an independent critic and does not inspect audio or motion between sampled frames. True cross-dissolves, independently mixed music/narration tracks, advanced colour grading, masks/compositing, generated raster imagery, and a cloud render queue remain unsupported.
+The initial automatic selection is based on searchable title, description and licence metadata. It does **not** visually inspect every search result before choosing up to four assets, and it does not synthesize new photorealistic scenes from scratch. The prompt-only fallback is a basic asset-based cut with a title/motion treatment, not a finished professional science documentary. Review it before publishing. The visual director on the full web Studio inspects resized thumbnails (one per source clip), not the full temporal content of the source clips.
 
-## Intended phone workflow
+The browser renderer uses Canvas + MediaRecorder and produces WebM. Native Android currently hands that renderer through a WebView. Actual playback/MediaRecorder behavior can vary by Android System WebView version, storage space and device; this code path must still be smoke-tested on the target phone after deployment. The app reports a save/render failure rather than claiming an export succeeded. Long or high-bitrate videos may exceed the mobile 24 MB limit; shorten the duration or choose a lower resolution if that happens.
 
-An explicit video-creation request submitted in the main Omnitrix web chat is detected by the UI and handed off in the same tab to Creative Studio. The brief travels through tab-scoped session storage rather than the URL. This is a UI handoff, not a general-purpose backend browser tool; explanatory questions and messages with uploaded chat attachments remain in ordinary chat.
+True cross-dissolves, independently mixed music/narration tracks, advanced colour grading, masks/compositing, unrestricted internet crawling, prompt-generated raster imagery and a cloud render queue remain unsupported. Pinterest is reference-only. A configured model status is not a live provider health check, and a model proposal is not a guarantee of artistic quality.
 
-1. Open Creative Studio from the same core Studio tab in which the authenticated Python runtime is connected. Asset API routes require the runtime token.
-2. Put the subject, audience, target duration, aspect ratio and style constraints in **Director's Brief**. For example: “Create a 12-second vertical science explainer showing how an induction stove heats a pan; documentary realism; two or three purposeful explanatory labels; no decorative particles or fake interfaces.”
-3. Keep **Wikimedia Commons** selected for a no-key source, then press **Auto-assemble Draft**. The app only auto-imports supported formats whose search metadata exposes a licence name and licence URL.
-4. Tick **Optional: let the Director + graphics engineer finish this draft** before starting the flow to grant one-run thumbnail sharing, automatic local application of validated supported edits, and automatic WebM export. This can incur upstream quota/charges, depending on provider. If unchecked, the app makes a basic timeline and leaves the model proposal step manual.
-5. Review the local preview and exported WebM. Check the source and licence details for every asset before publication.
+## How to use it
+
+1. In Omnitrix on Android, send a direct creation prompt in Chat or tap **Video** to open the Studio manually.
+2. Be specific about subject, audience, duration, orientation and desired look. Example: “Create a 12-second vertical science explainer showing how an induction stove heats a pan; use purposeful labels and clean diagrams, no decorative particles or fake interfaces.”
+3. Wait for Commons asset search and the render to complete. Keep the Studio open. The WebM is saved to `Movies/Omnitrix` when the bridge confirms the save.
+4. Add local images or clips through the Studio’s file picker when you want to control the source media; this is optional.
+5. Inspect the resulting video and confirm source/licence details before publishing. The native prompt-only mode is a starter edit, not a substitute for artistic review.
 
 ## Security and licence boundaries
 
-- Pinterest is reference-only until an authorised API/permission-based integration is established. The feature does not bypass logins, rate limits, or platform controls.
-- Only the bounded asset providers are supported by this endpoint; it is not an unrestricted general-purpose web crawler.
-- Original local media is not uploaded for the director/critic calls. Only resized JPEG thumbnails and limited metadata for the consented new shots, plus up to four resized midpoint frames decoded from the local rendered draft, may be sent under the explicit one-run checkbox. The source originals remain in browser IndexedDB, which is device-local and can be cleared by the browser.
-- Remote images/video are downloaded only from provider allowlisted HTTPS hosts, with redirect validation, supported MIME checks, and a 24 MB maximum per file.
-- The AI returns a structured proposal, not executable code. The browser has a second validator for operation type, asset/clip identity and numeric bounds.
-- “Strict anti-slop” is a set of hard prompt rules plus bounded native operations, not a guarantee of artistic quality. Inspect every render; the current branch does not automatically critic the finished video.
+- Pinterest is reference-only until an authorised API/permission-based integration exists. The app does not bypass logins, rate limits or platform controls.
+- The public native asset endpoints support Commons only, cap search results and apply per-client rate limiting; they are not a generic proxy or arbitrary URL fetcher.
+- Original local media stays in the browser/WebView library unless a user separately requests an AI visual-analysis operation in the authenticated web Studio. That opt-in sends resized previews rather than original media.
+- Download URLs are provider-allowlisted, redirects are validated, MIME types are checked, and each imported asset is capped at 24 MB.
+- The AI returns a structured proposal rather than executable code; client and server validators enforce operation allowlists and numeric bounds.
+- Anti-slop guardrails reduce predictable layout and unsupported claims; they cannot guarantee visual quality. Inspect actual frames, timing, asset relevance, attribution and playback.
 
-## Validation target
+## Validation
 
-Offline regression tests cover Commons metadata mapping, Pinterest reference-only behavior, missing Pexels key, unsafe download hosts, authenticated API access, graphics layer bounds, and allowed native arrow/line layer types. Provider search availability, model health, artistic relevance and browser MediaRecorder compatibility require a live smoke test with a configured runtime and a real phone/browser.
+CI covers Python backend/unit tests, browser JavaScript syntax and Android compilation/JVM tests. A green CI result does not replace a live run that searches a real provider, exports a WebM in Android System WebView, saves it to device storage and opens it in a player. That live target-phone check remains necessary after the changes are deployed.
