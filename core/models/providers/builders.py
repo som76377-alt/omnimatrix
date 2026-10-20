@@ -17,9 +17,22 @@ def build_gemini_adapter(model: ModelDefinition) -> ModelAdapter:
             f"Model '{model.name}' requires a model_id."
         )
 
+    timeout_seconds = model.metadata.get("timeout_seconds", 60.0)
+    max_retries = model.metadata.get("max_retries", 2)
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or timeout_seconds <= 0
+    ):
+        raise ValueError(f"Model '{model.name}' has an invalid timeout_seconds.")
+    if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+        raise ValueError(f"Model '{model.name}' has an invalid max_retries.")
+
     return GeminiAdapter(
         name=model.name,
         model_id=model.model_id,
+        timeout=float(timeout_seconds),
+        max_retries=max_retries,
     )
 
 

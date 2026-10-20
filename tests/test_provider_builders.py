@@ -19,6 +19,37 @@ class ProviderBuilderTests(unittest.TestCase):
         self.assertEqual(adapter.name, "gemini-primary")
         self.assertEqual(adapter.provider, "google")
 
+    def test_builds_gemini_adapter_with_profile_timeout_settings(self):
+        model = ModelDefinition(
+            name="gemini-fast-failover",
+            provider="google",
+            model_id="gemini-test-model",
+            metadata={"timeout_seconds": 15, "max_retries": 0},
+        )
+
+        adapter = build_gemini_adapter(model)
+
+        self.assertEqual(adapter._timeout, 15.0)
+        self.assertEqual(adapter._max_retries, 0)
+
+    def test_invalid_gemini_timeout_settings_fail(self):
+        invalid_metadata = (
+            {"timeout_seconds": 0},
+            {"timeout_seconds": True},
+            {"max_retries": -1},
+            {"max_retries": True},
+        )
+        for metadata in invalid_metadata:
+            with self.subTest(metadata=metadata):
+                model = ModelDefinition(
+                    name="gemini-invalid-settings",
+                    provider="google",
+                    model_id="gemini-test-model",
+                    metadata=metadata,
+                )
+                with self.assertRaises(ValueError):
+                    build_gemini_adapter(model)
+
     def test_wrong_provider_fails(self):
         model = ModelDefinition(
             name="not-gemini",

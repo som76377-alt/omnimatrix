@@ -16,7 +16,9 @@
       "metadata": {
         "cost_class": "user_provided_free_quota",
         "estimated_cost_usd": 0,
-        "agent_approved_cost": true
+        "agent_approved_cost": true,
+        "timeout_seconds": 15,
+        "max_retries": 0
       }
     },
     {
