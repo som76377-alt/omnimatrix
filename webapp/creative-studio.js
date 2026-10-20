@@ -3552,6 +3552,7 @@
       try { await buildDraftFromBrief(); }
       finally { state.autoRenderOnAssembly = false; }
     });
+    $("build-science-diagram").addEventListener("click", buildScienceDiagramDraft);
     $("paid-video-consent").addEventListener("change", () => {
       $("generate-ai-video").disabled = !$("paid-video-consent").checked || state.aiVideoBusy;
     });
