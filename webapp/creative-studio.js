@@ -740,7 +740,11 @@
           else resolve(result);
         };
         try {
-          recorder.start(250);
+          // Do not request periodic MediaRecorder chunks for the original-creation path.
+          // On some Android WebViews, concatenated short WebM chunks omit/fail to expose
+          // the final duration/index when reopened from a Blob URL. A single finalized
+          // recording lets the recorder write its end-of-stream metadata before QA.
+          recorder.start();
           const startedAt = performance.now();
           forceCaptureFrame(capture.requestFrame);
           let lastCaptureAt = startedAt;
@@ -2464,7 +2468,14 @@
         video.removeEventListener("error", onError);
       };
       const onReady = () => { cleanup(); resolve(); };
-      const onError = () => { cleanup(); reject(new Error(failureMessage || "The exported video could not be decoded.")); };
+      const onError = () => {
+        const mediaError = video.error;
+        const details = mediaError
+          ? " (MediaError code " + mediaError.code + (mediaError.message ? ": " + mediaError.message : "") + ")"
+          : "";
+        cleanup();
+        reject(new Error((failureMessage || "The exported video could not be decoded.") + details));
+      };
       video.addEventListener(eventName, onReady, { once: true });
       video.addEventListener("error", onError, { once: true });
       timer = window.setTimeout(() => {
