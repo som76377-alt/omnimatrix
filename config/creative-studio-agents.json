@@ -147,17 +147,27 @@
     {
       "id": "visual-critic",
       "label": "Visual critic",
-      "status": "configured-not-connected",
+      "status": "partially-integrated-same-model-post-render-review",
       "model_required": true,
       "responsibilities": [
-        "inspect rendered frames",
-        "compare result with brief and references",
-        "identify actionable visual defects"
+        "inspect up to four midpoint frames decoded from the actual first exported WebM",
+        "compare visible output composition with the brief",
+        "identify concrete, frame-supported issues such as irrelevant shots, text obstruction or bad crops",
+        "propose only schema-validated corrections and allow one bounded correction/re-render pass"
       ],
       "release_gate": [
-        "real frame input/output",
-        "critique calibration tests",
-        "no self-reported success without render evidence"
+        "real rendered-frame input from a decodable WebM",
+        "explicit per-run consent before frame egress",
+        "bounded correction count and fresh-timeline validation",
+        "technical QA of final re-render",
+        "independent-critic benchmark remains future work"
+      ],
+      "execution_mode": "Consent-gated post-render prompt sent through the existing creative-director provider; not a separately deployed model or independent second opinion.",
+      "cannot": [
+        "claim to inspect audio, motion between sampled frames or unseen portions of source clips",
+        "independently validate the model that produced the edit",
+        "perform a second AI critique of the corrected final render",
+        "guarantee visual quality or eliminate every form of AI slop"
       ]
     }
   ]
