@@ -1870,7 +1870,10 @@
         binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 32768)));
       }
       const response = window.OmnitrixNativeBridge.saveVideoBase64(fileName, blob.type || "video/webm", btoa(binary));
-      if (response !== "saved") throw new Error("Android did not confirm saving the generated video.");
+      if (response !== "saved") {
+        const detail = String(response || "").startsWith("error:") ? String(response).slice(6) : "";
+        throw new Error(detail || "Android did not confirm saving the generated video.");
+      }
       return "saved to Movies/Omnitrix on this phone";
     }
     const url = URL.createObjectURL(blob);
