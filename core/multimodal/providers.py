@@ -62,7 +62,11 @@ def gemini_attachment_worker(task: TaskRequest, handoff: HandoffPacket) -> TaskR
         if context and analyzed_count > 0:
             partial = (EvidenceItem(str(task.source_name), str(task.source_type), context,
                                     "gemini.multimodal", DEFAULT_MULTIMODAL_MODEL,
-                                    metadata={"attachment_status": str(status)}),)
+                                    metadata={
+                                        "attachment_status": str(status),
+                                        "attachment_count": len(records),
+                                        "analyzed_count": analyzed_count,
+                                    }),)
         message = ("Gemini analysis was partial; use preserved evidence and continue with a compatible worker."
                    if status == "partial" else
                    "Gemini did not complete attachment analysis; check the provider status and quota.")
@@ -71,7 +75,11 @@ def gemini_attachment_worker(task: TaskRequest, handoff: HandoffPacket) -> TaskR
             evidence=partial, failure_kind=kind, safe_message=message, retryable=True)
     evidence = EvidenceItem(str(task.source_name), str(task.source_type), context,
                             "gemini.multimodal", DEFAULT_MULTIMODAL_MODEL,
-                            metadata={"attachment_count": len(records), "status": status})
+                            metadata={
+                                "attachment_count": len(records),
+                                "analyzed_count": int(result.get("analyzed", 0) or 0),
+                                "status": status,
+                            })
     return TaskResult(True, "gemini.multimodal", DEFAULT_MULTIMODAL_MODEL,
                       evidence=(evidence,), completed_steps=("gemini_attachment_analysis",))
 
