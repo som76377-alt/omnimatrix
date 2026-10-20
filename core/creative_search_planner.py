@@ -12,11 +12,11 @@ from typing import Any
 MAX_QUERY_VARIANTS = 6
 
 _COMMAND_RE = re.compile(
-    r"^\\s*(?:please\\s+)?(?:create|make|generate|produce|build|find|search(?:\\s+for)?)\\s+",
+    r"^\s*(?:please\s+)?(?:create|make|generate|produce|build|find|search(?:\s+for)?)\s+",
     re.IGNORECASE,
 )
 _MEDIA_WRAPPER_RE = re.compile(
-    r"^\\s*(?:a|an|the)?\\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated|motion-graphics)\\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\\s+(?:(?:of|about|showing|explaining|where|in\\s+which)\\s+)?",
+    r"^\s*(?:a|an|the)?\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated|motion-graphics)\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\s+(?:(?:of|about|showing|explaining|where|in\s+which)\s+)?",
     re.IGNORECASE,
 )
 _STOP_WORDS = {
@@ -39,10 +39,10 @@ _ACTIONS = ("wave", "waves", "waving", "greet", "greets", "greeting",
 
 
 def _clean_phrase(value: str) -> str:
-    text = re.sub(r"[^\\w' -]", " ", value, flags=re.UNICODE)
-    tokens = [token.strip("'-") for token in re.findall(r"[\\w'-]+", text, flags=re.UNICODE)]
+    text = re.sub(r"[^\w' -]", " ", value, flags=re.UNICODE)
+    tokens = [token.strip("'-") for token in re.findall(r"[\w'-]+", text, flags=re.UNICODE)]
     tokens = [token for token in tokens if token and token.casefold() not in _STOP_WORDS]
-    return re.sub(r"\\s+", " ", " ".join(tokens)).strip()
+    return re.sub(r"\s+", " ", " ".join(tokens)).strip()
 
 
 def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) -> list[str]:
@@ -54,7 +54,7 @@ def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) 
     """
     if not isinstance(query, str):
         return []
-    raw = re.sub(r"\\s+", " ", query).strip()
+    raw = re.sub(r"\s+", " ", query).strip()
     if not raw:
         return []
     try:
@@ -66,21 +66,21 @@ def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) 
     working = _MEDIA_WRAPPER_RE.sub("", working, count=1)
     # Remove common production directives without discarding scene nouns/actions.
     working = re.sub(
-        r"\\b(?:in\\s+)?\\d{1,3}\\s*(?:seconds?|secs?|s)\\b|\\b(?:9:16|16:9|1:1)\\b",
+        r"\b(?:in\s+)?\d{1,3}\s*(?:seconds?|secs?|s)\b|\b(?:9:16|16:9|1:1)\b",
         " ", working, flags=re.IGNORECASE,
     )
     working = re.sub(
-        r"\\b(?:in\\s+)?(?:a\\s+)?(?:cinematic|premium|beautiful|high[- ]quality|photorealistic|realistic|vertical|horizontal)\\s+style\\b",
+        r"\b(?:in\s+)?(?:a\s+)?(?:cinematic|premium|beautiful|high[- ]quality|photorealistic|realistic|vertical|horizontal)\s+style\b",
         " ", working, flags=re.IGNORECASE,
     )
-    working = re.sub(r"\\s+", " ", working).strip(" .,:;!?-")
+    working = re.sub(r"\s+", " ", working).strip(" .,:;!?-")
     full = _clean_phrase(working) or _clean_phrase(raw) or raw[:180]
     if not full:
         return [raw[:180]]
 
     candidates: list[str] = [full]
     clauses = re.split(
-        r"\\s*(?:,|;|\\bthen\\b|\\bwhile\\b|\\bafter\\b|\\bbefore\\b|\\band\\b|\\bfollowed by\\b)\\s*",
+        r"\s*(?:,|;|\bthen\b|\bwhile\b|\bafter\b|\bbefore\b|\band\b|\bfollowed by\b)\s*",
         working, flags=re.IGNORECASE,
     )
     useful_clauses = [_clean_phrase(part) for part in clauses]
@@ -118,7 +118,7 @@ def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) 
     output: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        value = re.sub(r"\\s+", " ", candidate).strip(" -")
+        value = re.sub(r"\s+", " ", candidate).strip(" -")
         folded = value.casefold()
         if len(value) < 3 or len(value) > 100 or len(value.split()) < 2 or folded in seen:
             continue
