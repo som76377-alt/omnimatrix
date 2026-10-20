@@ -366,11 +366,11 @@
     if (!selector) return;
     const text = String(brief || "");
     let target = "";
-    if (/\\b(?:vertical|portrait|9\\s*[:x/]\\s*16|9\\s+by\\s+16|tiktok|reels?|shorts?)\\b/i.test(text)) {
+    if (/\b(?:vertical|portrait|9\s*[:x/]\s*16|9\s+by\s+16|tiktok|reels?|shorts?)\b/i.test(text)) {
       target = "720x1280";
-    } else if (/\\b(?:square|1\\s*[:x/]\\s*1|1\\s+by\\s+1)\\b/i.test(text)) {
+    } else if (/\b(?:square|1\s*[:x/]\s*1|1\s+by\s+1)\b/i.test(text)) {
       target = "720x720";
-    } else if (/\\b(?:horizontal|landscape|wide|16\\s*[:x/]\\s*9|16\\s+by\\s+9)\\b/i.test(text)) {
+    } else if (/\b(?:horizontal|landscape|wide|16\s*[:x/]\s*9|16\s+by\s+9)\b/i.test(text)) {
       target = "1280x720";
     }
     if (target && Array.from(selector.options).some((option) => option.value === target)) {
