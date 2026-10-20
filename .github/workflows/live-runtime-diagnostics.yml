@@ -1,0 +1,46 @@
+name: Temporary live runtime diagnostics
+
+on:
+  push:
+    branches:
+      - fix/android-webm-recording-finalization
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check public runtime health without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 https://omnitrix-studio.onrender.com/api/mobile/health -o /tmp/health.json
+          python - <<'PY'
+          import json
+          with open("/tmp/health.json", encoding="utf-8") as f:
+              data = json.load(f)
+          allowed = (
+              "ok", "provider_mode", "gemini_key_detected",
+              "openrouter_key_detected", "public_chat_enabled",
+              "specialists_configured", "specialist_runtime_active",
+              "reasoning_specialist_available", "preferred_reasoning_model",
+              "reasoning_route_status",
+          )
+          print(json.dumps({key: data.get(key) for key in allowed}, indent=2))
+          PY
+      - name: Check multimodal model configuration without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 https://omnitrix-studio.onrender.com/api/mobile/creative/status -o /tmp/creative.json
+          python - <<'PY'
+          import json
+          with open("/tmp/creative.json", encoding="utf-8") as f:
+              data = json.load(f)
+          allowed = ("ok", "provider", "model", "configured", "runtime_health_checked")
+          print(json.dumps({key: data.get(key) for key in allowed}, indent=2))
+          PY
