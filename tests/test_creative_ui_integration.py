@@ -53,8 +53,29 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot)", self.studio_js)
         self.assertIn('waitForVideoEvent(video, "loadedmetadata"', self.studio_js)
         self.assertIn("possible black/blank output", self.studio_js)
+        self.assertIn("majority of sampled frames are near-black/blank", self.studio_js)
+        self.assertIn("Export blocked — no video was saved", self.studio_js)
+        self.assertIn("motionDetected", self.studio_js)
+        self.assertIn("frameDelta", self.studio_js)
+        self.assertIn("function createCanvasVideoCapture(source, fps)", self.studio_js)
+        self.assertIn("source.captureStream(0)", self.studio_js)
+        self.assertLess(self.studio_js.index('"video/webm;codecs=vp8"'), self.studio_js.index('"video/webm;codecs=vp9"'))
+        self.assertIn("The first timeline clip never decoded a video frame", self.studio_js)
         self.assertIn("This is technical QA, not a guarantee of artistic quality.", self.studio_js)
         self.assertIn("could not be verified", self.studio_js)
+
+    def test_original_animation_is_decoded_and_motion_checked_before_import(self):
+        start = self.studio_js.index("async function renderOriginalMotionClip(brief)")
+        end = self.studio_js.index("async function requestGeneratedImage(brief)", start)
+        original = self.studio_js[start:end]
+        self.assertIn("await inspectRenderedVideo(blob, duration, [], [])", original)
+        self.assertIn("if (!inspection.motionDetected)", original)
+        self.assertIn("No clip was imported", original)
+        self.assertLess(original.index("await inspectRenderedVideo(blob, duration, [], [])"), original.index("const output = new File([blob]"))
+        render = self.studio_js.split("async function renderVideo(options)", 1)[1].split("async function ensureCurrentPreviewSource()", 1)[0]
+        self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start(500)"))
+        self.assertIn("inspectionFailure", render)
+        self.assertIn("no video was saved", render.lower())
 
     def test_graphics_engineer_outputs_only_bounded_native_layers(self):
         self.assertIn("STRICT ANTI-SLOP RULES", self.director)
