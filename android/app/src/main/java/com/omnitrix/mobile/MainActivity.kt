@@ -958,7 +958,10 @@ private class RuntimeClient(context: Context) {
     ): JSONObject = withContext(Dispatchers.IO) {
         val connection = URL(address).openConnection() as HttpURLConnection
         connection.requestMethod = method
-        connection.connectTimeout = 20000
+        // Render's free instance can take longer than 20 seconds to wake after idle.
+        // Use a longer connection timeout for the hosted backend so the first
+        // health check/chat request can survive the cold start instead of failing early.
+        connection.connectTimeout = if (address.contains("onrender.com")) 60000 else 20000
         connection.readTimeout = if (address.contains("onrender.com")) 120000 else 20000
         connection.useCaches = false
         connection.setRequestProperty("Accept", "application/json")
