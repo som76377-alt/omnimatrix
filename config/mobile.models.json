@@ -17,7 +17,7 @@
         "cost_class": "user_provided_free_quota",
         "estimated_cost_usd": 0,
         "agent_approved_cost": true,
-        "timeout_seconds": 15,
+        "timeout_seconds": 30,
         "max_retries": 0,
         "standard_fallback_model": "omnitrix-fast-fallback"
       }
