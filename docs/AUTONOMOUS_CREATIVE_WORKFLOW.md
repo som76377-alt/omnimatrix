@@ -20,6 +20,8 @@ The renderer remains browser-local Canvas + MediaRecorder WebM. The current buil
 
 ## Intended phone workflow
 
+An explicit video-creation request submitted in the main Omnitrix web chat is detected by the UI and handed off in the same tab to Creative Studio. The brief travels through tab-scoped session storage rather than the URL. This is a UI handoff, not a general-purpose backend browser tool; explanatory questions and messages with uploaded chat attachments remain in ordinary chat.
+
 1. Open Creative Studio from the same core Studio tab in which the authenticated Python runtime is connected. Asset API routes require the runtime token.
 2. Put the subject, audience, target duration, aspect ratio and style constraints in **Director's Brief**. For example: “Create a 12-second vertical science explainer showing how an induction stove heats a pan; documentary realism; two or three purposeful explanatory labels; no decorative particles or fake interfaces.”
 3. Keep **Wikimedia Commons** selected for a no-key source, then press **Auto-assemble Draft**. The app only auto-imports supported formats whose search metadata exposes a licence name and licence URL.
