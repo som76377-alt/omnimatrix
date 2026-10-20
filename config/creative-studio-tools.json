@@ -240,6 +240,35 @@
         "the provider result needs manual review for action continuity, audio synchronization and factual content"
       ],
       "notes": "Uses the current Gemini Interactions API. The direct AI-video path is distinct from the local Canvas/WebM renderer and is not used as a silent fallback. Server-side GEMINI_API_KEY, paid video-model access, and the owner-managed OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true flag are required. The flag is off by default. A returned job or response is not proof of a good clip; inspect the actual saved video."
+    },
+    {
+      "id": "manim-scientific-renderer",
+      "label": "Manim scientific diagram renderer",
+      "status": "registered-template-tool-runtime-install-required",
+      "runtime": "python-subprocess",
+      "cost_class": "zero_provider_cost_compute_quota_dependent",
+      "source": "https://docs.manim.community/",
+      "license": "MIT",
+      "capabilities": [
+        "structured-node-arrow-diagrams",
+        "mathematical-science-scene-rendering",
+        "mp4-output",
+        "bounded-render-time",
+        "validated-artifact-size"
+      ],
+      "security": [
+        "fixed-scene-template",
+        "no-user-supplied-python",
+        "maximum-eight-nodes",
+        "maximum-twelve-arrows",
+        "90-second-timeout",
+        "100mb-output-cap"
+      ],
+      "requirements": [
+        "manim executable installed in backend worker",
+        "OMNITRIX_ARTIFACT_DIR writable for durable output"
+      ],
+      "notes": "Tool is registered in the default Omnitrix registry. It returns an explicit unavailable result if the host does not have Manim installed. It is not yet wired into Creative Studio's scene/timeline manifest and no hosted runtime probe has been performed."
     }
   ]
 }
