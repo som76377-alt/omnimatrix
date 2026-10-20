@@ -118,7 +118,7 @@ def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) 
     output: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        value = re.sub(r"\s+", " ", candidate).strip(" -")
+        value = re.sub(r"\s+", " ", candidate).strip(" -").lower()
         folded = value.casefold()
         if len(value) < 3 or len(value) > 100 or len(value.split()) < 2 or folded in seen:
             continue
