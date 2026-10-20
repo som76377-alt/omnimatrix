@@ -839,7 +839,7 @@
   function requiresHighFidelitySubject(brief) {
     // The current procedural Canvas renderer is not capable of believable humans/animals.
     // Fail closed rather than publish a crude stick/shape figure as if it met the brief.
-    return /\\b(man|men|woman|women|person|people|human|adult|boy|girl|child|baby|actor|presenter|host|crowd|face|dog|cat|bird|horse|animal|pet)\\b/i.test(String(brief || ""));
+    return /\b(man|men|woman|women|person|people|human|adult|boy|girl|child|baby|actor|presenter|host|crowd|face|dog|cat|bird|horse|animal|pet)\b/i.test(String(brief || ""));
   }
 
   async function assembleOriginalGraphicFallback(brief) {
