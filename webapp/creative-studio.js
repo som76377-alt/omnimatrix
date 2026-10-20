@@ -542,7 +542,29 @@
       const height = dimensions[1] || 720;
       const aspectRatio = width > height ? "16:9" : "9:16";
       if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
-      onlineStatus("Submitting a paid direct video-generation request. No asset search or download will run.", "");
+      // Preflight is a GET only: it confirms owner enablement and key presence
+      // before making any paid POST request.
+      const readinessResponse = await fetch(
+        nativeMode ? "./api/mobile/creative/video-status" : "./api/creative/video-status",
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: nativeMode ? { Accept: "application/json" } : { Accept: "application/json", Authorization: "Bearer " + token }
+        }
+      );
+      let readiness;
+      try { readiness = await readinessResponse.json(); }
+      catch { throw new Error("The paid-video readiness route returned unreadable JSON."); }
+      if (!readinessResponse.ok || !readiness || readiness.ok !== true) {
+        throw new Error((readiness && readiness.error) || "Could not check paid-video readiness.");
+      }
+      if (!readiness.enabled) {
+        throw new Error(readiness.message || "The server owner has not enabled paid AI media generation.");
+      }
+      if (!readiness.key_configured) {
+        throw new Error("The server does not have GEMINI_API_KEY configured. This is an owner setup step; no paid request was made.");
+      }
+      onlineStatus("Submitting a paid direct video-generation request to " + (readiness.model || "the configured model") + ". No asset search or download will run.", "");
       const startResponse = await fetch(
         nativeMode ? "./api/mobile/creative/generate-video" : "./api/creative/generate-video",
         {
