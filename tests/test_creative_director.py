@@ -200,9 +200,9 @@ class CreativeDirectorTests(unittest.TestCase):
         self.assertEqual(valid["operations"][0]["clip_ids"], ["clip-2", "clip-1"])
 
     def test_model_status_does_not_claim_live_health(self):
-        self.assertFalse(creative_model_status({})["available"])
+        self.assertFalse(creative_model_status({})["configured"])
         status = creative_model_status({"GEMINI_API_KEY": "present", "OMNITRIX_MULTIMODAL_MODEL": "demo-model"})
-        self.assertTrue(status["available"])
+        self.assertTrue(status["configured"])
         self.assertFalse(status["runtime_health_checked"])
         self.assertEqual(status["model"], "demo-model")
 
