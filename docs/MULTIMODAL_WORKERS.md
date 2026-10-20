@@ -13,7 +13,7 @@ entire task complete. One worker failure must not erase evidence produced by ano
 - **OpenRouter:** text reasoning and critique. Do not assume the selected model supports image, audio, or video.
 - **Qwen3-Omni:** optional local multimodal inference; requires compatible runtime, model weights, and hardware.
 - **Qwen3-VL:** optional local visual question answering; preserve image/frame references.
-- **PaddleOCR:** OCR and layout hints; preserve coordinates when available and mark uncertain text.
+- **PaddleOCR:** OCR text extraction; preserve confidence/coordinates when returned and mark uncertain text.
 - **Docling:** document structure, page text, and tables; preserve page/table provenance.
 - **Qwen3-ASR:** optional local speech transcription; preserve timestamps if produced.
 - **faster-whisper:** local transcription with segment timestamps; do not claim speaker identity unless supported.
@@ -70,14 +70,24 @@ perception as a guarantee; combine models with OCR, crops, metadata and temporal
 - Enforce file size/count, context/token, concurrency, timeout, temporary-storage and spend
   limits at the orchestration boundary. Clean up temporary and provider-side uploads when possible.
 
-## Activation status and next milestones
-The router, task/evidence contracts, capability declarations and availability probes are
-implemented independently of credentials. The existing attachment code remains the current
-Gemini path. These worker definitions are not yet wired into every chat route. Provider
-execution adapters, durable task persistence, truthful runtime model labels, Android
-integration, and live provider/device tests remain separate milestones. Never label a model
-as active unless the actual adapter reports it handled the task.
+## Current integration status and remaining limits
 
+The capability router, typed task/evidence contracts, bounded handoffs, failure classification, Gemini attachment adapter, OpenRouter text adapter, and optional local workers are integrated. Single-file chat attachments use the coordinator. Multi-file attachments enter the coordinator as one Gemini-compatible batch request; if the batch is incomplete, the workflow preserves its evidence and tries supported local extraction sequentially in input order. It stops at the first file that cannot be processed, so it does not silently skip unknown files.
+
+The server reports the toolchain inventory and safe multimodal journal status. Attachment responses expose the actual file-processing worker/model when known. The Android client displays that route identity separately from the model that writes the final chat answer. These labels identify the path that handled the file; they are not a claim that every model is configured or healthy.
+
+### Durable outcome journal (opt-in)
+
+Set \`OMNITRIX_MULTIMODAL_JOURNAL_PATH\` to a file-backed SQLite path on persistent storage to record task lifecycle/outcome metadata. When the variable is unset, journaling is disabled. A path on an ephemeral container filesystem is not durable across redeploys.
+
+The journal records capability names, source type, attempted worker IDs, selected worker/model, result/failure status, and completed step IDs. It intentionally excludes user prompts, attachment names and paths, extracted text, raw media, API keys and provider response bodies. Journal write failures do not fail the user request. This is an audit/outcome journal, **not** an asynchronous queue and **not** a crash-safe task-resume or replay system.
+
+### Not implemented or not verified
+
+- Qwen3-Omni, Qwen3-VL and Qwen3-ASR remain inventory-only. No Transformers-based model execution is enabled by this integration.
+- The coordinator does not promise human-level perception. OCR, transcripts, scene boundaries and stream metadata are labelled as limited extraction, not equivalent to visual/audio/video understanding.
+- The CI tests are offline. A green CI run does not verify a live provider key/quota, server deployment configuration, mobile installation on a physical device, or end-to-end provider media handling.
+- Retry and handoff budgets are bounded. The coordinator does not yet provide background workers, cancellation/resume across process restarts, or a durable task queue.
 
 ## Explicit local-tool activation
 
