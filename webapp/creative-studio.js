@@ -428,7 +428,7 @@
         body: JSON.stringify({
           consent: true,
           prompt: String(brief || "").slice(0, 1500) +
-            "\\nCompose for a " + width + " by " + height + " video frame. Create a specific, accurate visual for the subject; no captions, no interface, no decorative particles."
+            "\\nCreate one original, professionally art-directed frame for a motion-graphics explainer at " + width + " by " + height + " pixels. Prioritise the exact subject and mechanism in the brief, believable geometry, a clear focal point, deliberate composition, crisp edges, restrained matte colours and generous negative space for later typography. Avoid generic stock-photo composition, collage, fake interfaces or HUDs, decorative particles, random circles, glows, glossy plastic, excessive gradients, watermarks, logos, captions, misspelled text, and invented physical details. Do not split objects into arbitrary wedges or pieces unless explicitly requested. The image is a scene asset, not a finished video."
         })
       }
     );
@@ -452,17 +452,17 @@
   }
 
   async function assembleOriginalGraphicFallback(brief) {
-    onlineStatus("No suitable source clips were found. The graphics engineer is creating an original three-scene vector explainer…", "");
+    onlineStatus("Creating original scenes first. No web download is involved; checking whether the configured image-generation model is reachable…", "");
     const files = await createOriginalGraphicCards(brief);
     let imageGenerated = false;
-    if ($("auto-creative-consent").checked) {
-      try {
-        onlineStatus("No suitable source media. Asking the configured image model for one original scene…", "");
-        files.unshift(await requestGeneratedImage(brief));
-        imageGenerated = true;
-      } catch (error) {
-        onlineStatus("AI image generation unavailable (" + String(error.message || error) + "). Using original vector graphics instead.", "");
-      }
+    // A direct Create Video prompt authorises processing that prompt for the requested creation.
+    // Existing local media is never sent by this image-generation request.
+    try {
+      onlineStatus("Requesting one original image from the configured image model…", "");
+      files.unshift(await requestGeneratedImage(brief));
+      imageGenerated = true;
+    } catch (error) {
+      onlineStatus("Original AI image generation is unavailable (" + String(error.message || error) + "). Continuing with locally drawn vector scenes; no generated image is being claimed.", "");
     }
     const before = new Set(state.assets.map((asset) => asset.name));
     await importFiles(files);
@@ -493,8 +493,10 @@
       ? "An original AI-generated image plus original vector graphics were assembled. Inspect factual details and composition before publishing."
       : "Original motion-graphics draft assembled from locally drawn vector scenes. A configured image model was unavailable or not authorised.", "success");
     if ($("auto-creative-consent").checked) {
+      // Preview sharing is separately consent-gated; the model may direct and critique this draft.
       await finishDraftAutomatically(state.lastAutoDraftClipIds);
-    } else if (state.autoRenderOnAssembly) {
+    } else {
+      // CREATE VIDEO must actually render when invoked manually, not merely assemble a timeline.
       await renderVideo();
     }
   }
@@ -688,6 +690,11 @@
       return null;
     }
     queryInput.value = query;
+    if (provider === "original") {
+      renderOnlineResults({ provider: "original", items: [] });
+      onlineStatus("Original creation mode does not search or download web assets. Press CREATE VIDEO to generate original graphics and render a WebM.", "success");
+      return { provider, query, items: [], original_creation_mode: true };
+    }
     if (state.onlineSearchBusy) return null;
     if (provider === "pinterest") {
       const link = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
@@ -873,7 +880,20 @@
       return;
     }
     setPreviewResolutionFromBrief(brief);
-    const provider = $("online-asset-provider").value || "commons";
+    const provider = $("online-asset-provider").value || "original";
+    // Prompt-to-video starts with original graphics. Online media is an explicit, optional source choice.
+    if (provider === "original") {
+      if (state.project.timeline.length && !window.confirm("Append an original graphics draft to your existing timeline? Existing shots will be kept.")) return;
+      $("build-from-brief").disabled = true;
+      try {
+        await assembleOriginalGraphicFallback(brief);
+      } catch (error) {
+        onlineStatus("Original creation failed: " + String(error.message || error) + ". No online media was required or downloaded.", "error");
+      } finally {
+        $("build-from-brief").disabled = false;
+      }
+      return;
+    }
     if (provider === "pinterest") {
       onlineStatus("Pinterest is a reference-only source. Creating an original graphics draft instead of scraping Pins.", "");
       await assembleOriginalGraphicFallback(brief);

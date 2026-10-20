@@ -67,5 +67,16 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("At least one selected shot must remain in the edit", self.studio_js)
 
 
+
+    def test_prompt_to_video_defaults_to_original_generation_and_always_renders(self):
+        self.assertIn('<option value="original" selected>Original graphics + AI image generation (default)</option>', self.studio_html)
+        self.assertIn('if (provider === "original")', self.studio_js)
+        self.assertIn("await assembleOriginalGraphicFallback(brief)", self.studio_js)
+        fallback = self.studio_js.split("async function assembleOriginalGraphicFallback(brief)", 1)[1].split("\\n  function renderAssets()", 1)[0]
+        self.assertIn("await requestGeneratedImage(brief)", fallback)
+        self.assertIn("await renderVideo()", fallback)
+        self.assertIn("this is not a generative text-to-video model", self.studio_html.lower())
+        self.assertNotIn('if ($("auto-creative-consent").checked) {\\n      try {\\n        onlineStatus("No suitable source media.', fallback)
+
 if __name__ == "__main__":
     unittest.main()

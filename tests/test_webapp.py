@@ -95,7 +95,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("layers: Array.isArray(clip.layers)", self.creative_js)
         self.assertIn("explicit consent", self.creative_html.lower())
         self.assertIn("post-render visual criticism is not yet available", self.creative_html.lower())
-        self.assertIn("configured-not-connected", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
+        self.assertIn("integrated-shared-model-role", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
         self.assertIn('"status": "integrated"', (ROOT / "config/creative-studio-tools.json").read_text(encoding="utf-8"))
         self.assertIn('"./api/creative/analyze"', self.creative_js)
         self.assertIn('"./api/mobile/creative/analyze"', self.creative_js)
