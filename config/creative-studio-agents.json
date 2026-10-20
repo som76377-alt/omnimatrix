@@ -275,6 +275,34 @@
         "rendered-frame visual review and bounded correction",
         "on-device render/export playback tests"
       ]
+    },
+    {
+      "id": "code-rendering-engineer",
+      "label": "Code Rendering Engineer",
+      "status": "active",
+      "implementation": "webapp/code-3d-character-renderer.js",
+      "responsibilities": [
+        "translate a brief into a deterministic scene graph, geometry, materials, lighting, camera and time-based animation using code",
+        "prefer coherent anatomical volumes, articulated joints, face landmarks, hands and grounded contact over stick figures or primitive placeholders",
+        "render an actual encoded video and validate dimensions, duration, decodability and nonblank frames",
+        "use the actual rendered frames as evidence; make bounded code corrections when a visual critic identifies concrete defects",
+        "state renderer limits honestly and fail closed for unsupported subjects"
+      ],
+      "cannot": [
+        "search for or download images as a substitute for code-authored scenes",
+        "generate a still image and present it as the requested video",
+        "claim photorealism without rendered-frame evidence",
+        "call technical decode checks proof of artistic quality",
+        "add decorative particles, meaningless HUDs, filler text, or geometry without a communication purpose"
+      ],
+      "engineering_contract": [
+        "implement a measurable feature, not only a prompt change",
+        "add regression tests for subject routing and output validity",
+        "use version-pinned runtime dependencies",
+        "handle timeouts and dispose GPU/media resources",
+        "separate technical QA from artistic approval",
+        "never mark a feature production-ready until browser/device rendering is tested"
+      ]
     }
   ],
   "coordination_contract": {
