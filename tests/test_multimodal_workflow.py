@@ -118,6 +118,8 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertEqual(result["analyzed"], 2)
         self.assertIn("Gemini completed first file", result["context"])
         self.assertIn("OCR text for second file", result["context"])
+        self.assertIn("\n\n", result["context"])
+        self.assertNotIn("\\n\\n", result["context"])
         self.assertEqual(fallback.call_count, 2)
         self.assertEqual(fallback.call_args_list[0].args[0]["name"], "two.png")
         self.assertEqual(fallback.call_args_list[1].args[0]["name"], "three.png")
