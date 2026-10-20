@@ -422,7 +422,13 @@ def search_creative_assets(
             return {"ok": True, "provider": "google", "query": q, "items": [], "count": 0,
                     "manual_reference_only": True, "search_url": search_url,
                     "note": "Google's image-search API is unavailable to new customers. Open Google Images, choose an image, copy its direct image address, and import it below. Direct imports are unverified and intended for private drafts until rights are checked."}
-        items = _google_images_search(q, limit, env)
+        try:
+            items = _google_images_search(q, limit, env)
+        except CreativeAssetError:
+            search_url = "https://www.google.com/search?" + urllib.parse.urlencode({"tbm": "isch", "q": q})
+            return {"ok": True, "provider": "google", "query": q, "items": [], "count": 0,
+                    "manual_reference_only": True, "search_url": search_url,
+                    "note": "Google's image-search API is unavailable for this configuration. Open Google Images, choose an image, copy its direct image address, and import it below. Direct imports are unverified and intended for private drafts until rights are checked."}
     elif provider == "pexels":
         api_key = str(env.get("PEXELS_API_KEY", "")).strip()
         if not api_key:
