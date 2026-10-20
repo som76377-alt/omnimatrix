@@ -698,6 +698,7 @@
       $("creative-brief").focus();
       return;
     }
+    setPreviewResolutionFromBrief(brief);
     const provider = $("online-asset-provider").value || "commons";
     if (provider === "pinterest") {
       onlineStatus("Pinterest is for inspiration links here, not reusable source media. Switch to Wikimedia Commons or configured Pexels for importable assets.", "error");
