@@ -1030,8 +1030,10 @@
     }
     setPreviewResolutionFromBrief(brief);
     if (needsDirectAiVideo(brief)) {
-      if ($("paid-video-consent").checked) await generateDirectAiVideo(brief);
-      else onlineStatus("This prompt needs genuine moving people/animals or spoken dialogue. Static images and generic vector cards are not an acceptable substitute. No web search or model call was made. Approve the paid AI-video cost above and tap GENERATE REAL AI VIDEO + AUDIO.", "error");
+      onlineStatus(
+        "This prompt needs genuine moving people/animals or spoken dialogue. Static images and generic vector cards are not an acceptable substitute. No web search or paid model call was made. Review the cost, check the separate paid-video approval, then press GENERATE REAL AI VIDEO + AUDIO.",
+        "error"
+      );
       return;
     }
     const provider = $("online-asset-provider").value || "original";
