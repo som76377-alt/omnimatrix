@@ -75,7 +75,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         fallback = self.studio_js.split("async function assembleOriginalGraphicFallback(brief)", 1)[1].split("\\n  function renderAssets()", 1)[0]
         self.assertIn("await requestGeneratedImage(brief)", fallback)
         self.assertIn("await renderVideo()", fallback)
-        self.assertIn("This is not a generative text-to-video model", self.studio_html)
+        self.assertIn("this is not a generative text-to-video model", self.studio_html.lower())
         self.assertNotIn('if ($("auto-creative-consent").checked) {\\n      try {\\n        onlineStatus("No suitable source media.', fallback)
 
 if __name__ == "__main__":
