@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "Omnitrix Creative Studio",
-  "status": "coordination-contract-defined-runtime-enforcement-pending",
+  "status": "contract-defined-manifest-module-added-runtime-enforcement-pending",
   "source_of_truth": "one versioned production manifest per video job",
   "manifest": {
     "required_sections": [
@@ -107,6 +107,8 @@
     "manim_adapter_integrated": false,
     "motion_canvas_adapter_integrated": false,
     "blender_adapter_integrated": false,
-    "note": "This contract records the required design. Do not label coordination or renderer support active until a runtime path consumes and validates this manifest."
+    "note": "The core registry now includes a constrained Manim diagram tool and core/creative_production.py provides a standalone manifest ledger. The existing Creative Studio timeline does not yet consume the ledger or import Manim outputs automatically; hosted Manim availability and a real render are unverified.",
+    "shared_manifest_module_implemented": true,
+    "manim_tool_registered": true
   }
 }
