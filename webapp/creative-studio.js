@@ -423,7 +423,7 @@
       const clip = createClip(asset);
       clip.duration = targetSeconds / generated.length;
       clip.fit = "contain";
-      clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "slide-left" : "none";
+      clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "pan-left" : "none";
       clip.title = "";
       clip.subtitle = "";
       state.project.timeline.push(clip);
@@ -801,8 +801,8 @@
     setPreviewResolutionFromBrief(brief);
     const provider = $("online-asset-provider").value || "commons";
     if (provider === "pinterest") {
-      onlineStatus("Pinterest is for inspiration links here, not reusable source media. Switch to Wikimedia Commons or configured Pexels for importable assets.", "error");
-      await searchOnlineAssets();
+      onlineStatus("Pinterest is a reference-only source. Creating an original graphics draft instead of scraping Pins.", "");
+      await assembleOriginalGraphicFallback(brief);
       return;
     }
     if (state.project.timeline.length && !window.confirm("Append a new draft to your existing timeline? Existing shots will be kept.")) return;
@@ -810,7 +810,10 @@
     try {
       if (!$("online-asset-query").value.trim()) $("online-asset-query").value = deriveAssetQuery(brief);
       let data = await searchOnlineAssets();
-      if (!data || !Array.isArray(data.items)) return;
+      if (!data || !Array.isArray(data.items)) {
+        await assembleOriginalGraphicFallback(brief);
+        return;
+      }
       let eligible = data.items.filter(supportedOnlineAsset);
       if (!eligible.length) {
         if (provider === "pinterest") {
