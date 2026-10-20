@@ -3462,14 +3462,24 @@
       renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
       state.lastAutoDraftClipIds = [clip.id];
       await saveProject(false);
+      onlineStatus("The diagram is on the editable timeline. Verifying the actual generated video before delivering it…", "");
+      const actualDuration = Number(asset.duration) || Math.max(4.2, steps.length * 1.35);
+      let inspection;
+      try {
+        inspection = await inspectRenderedVideo(output.file, actualDuration, [], []);
+      } catch (error) {
+        throw new Error("The diagram was added to the timeline, but playback verification failed; it was not marked ready for export. " + String(error.message || error));
+      }
+      const delivery = await deliverRenderedVideo(output.file, output.file.name);
       const rendererLabel = output.renderer === "Manim" ? "Manim MP4" : "local browser WebM";
       onlineStatus(
-        rendererLabel + " added to the timeline. " +
+        rendererLabel + " was rendered, reopened and decoded, then " + delivery + ". " +
+        inspection.sampledFrames + " output frames passed technical checks. " +
+        (inspection.warnings.length ? "QA warnings: " + inspection.warnings.join("; ") + ". " : "") +
         (fallbackReason ? "Manim fallback reason: " + fallbackReason + " " : "") +
-        output.note + " Inspect the exported video and the science before publishing.",
-        "success"
+        output.note + " This does not verify scientific correctness or guarantee zero visual defects. The editable diagram is also on the timeline; use RENDER VIDEO to export the full project.",
+        inspection.warnings.length ? "error" : "success"
       );
-      await renderVideo();
     } catch (error) {
       onlineStatus("Science diagram was not marked complete: " + String(error.message || error), "error");
     } finally {
