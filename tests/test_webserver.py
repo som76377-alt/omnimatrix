@@ -130,7 +130,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertTrue(body["ok"])
         search_assets.assert_called_once_with(
-            "induction coil", provider="commons", kind="any", limit=8
+            "induction coil", provider="commons", kind="any", limit=12
         )
 
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
