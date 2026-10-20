@@ -409,9 +409,61 @@
     return files;
   }
 
+  async function requestGeneratedImage(brief) {
+    const nativeMode = isNativeMobileStudio();
+    const token = aiRuntimeToken();
+    if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
+    const width = canvas.width || 1280;
+    const height = canvas.height || 720;
+    const response = await fetch(
+      nativeMode ? "./api/mobile/creative/generate-image" : "./api/creative/generate-image",
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(nativeMode ? {} : { Authorization: "Bearer " + token })
+        },
+        body: JSON.stringify({
+          consent: true,
+          prompt: String(brief || "").slice(0, 1500) +
+            "\\nCompose for a " + width + " by " + height + " video frame. Create a specific, accurate visual for the subject; no captions, no interface, no decorative particles."
+        })
+      }
+    );
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("The image-generation route returned unreadable JSON."); }
+    if (!response.ok || !data || data.ok !== true || !data.image_base64) {
+      throw new Error((data && data.error) || "The image provider did not return a usable image.");
+    }
+    const binary = atob(data.image_base64);
+    if (binary.length < 1024 || binary.length > 6 * 1024 * 1024) {
+      throw new Error("The generated image is empty or exceeds the local import limit.");
+    }
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const mime = ["image/png", "image/jpeg", "image/webp"].includes(data.mime_type) ? data.mime_type : "image/png";
+    const extension = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+    return new File([bytes], "omnitrix-ai-generated-" + crypto.randomUUID().slice(0, 8) + "." + extension, {
+      type: mime, lastModified: Date.now()
+    });
+  }
+
   async function assembleOriginalGraphicFallback(brief) {
     onlineStatus("No suitable source clips were found. The graphics engineer is creating an original three-scene vector explainer…", "");
     const files = await createOriginalGraphicCards(brief);
+    let imageGenerated = false;
+    if ($("auto-creative-consent").checked) {
+      try {
+        onlineStatus("No suitable source media. Asking the configured image model for one original scene…", "");
+        files.unshift(await requestGeneratedImage(brief));
+        imageGenerated = true;
+      } catch (error) {
+        onlineStatus("AI image generation unavailable (" + String(error.message || error) + "). Using original vector graphics instead.", "");
+      }
+    }
     const before = new Set(state.assets.map((asset) => asset.name));
     await importFiles(files);
     const generated = state.assets.filter((asset) => files.some((file) => file.name === asset.name) && !before.has(asset.name));
@@ -422,7 +474,7 @@
     generated.forEach((asset, index) => {
       const clip = createClip(asset);
       clip.duration = targetSeconds / generated.length;
-      clip.fit = "contain";
+      clip.fit = asset.name.startsWith("omnitrix-ai-generated-") ? "cover" : "contain";
       clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "pan-left" : "none";
       clip.title = "";
       clip.subtitle = "";
@@ -434,7 +486,9 @@
     renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
     await saveProject(false);
     state.lastAutoDraftClipIds = added.map((clip) => clip.id);
-    onlineStatus("Original motion-graphics draft assembled. It uses locally drawn vector scenes, not generated photographs. A configured visual model may direct it only after consent.", "success");
+    onlineStatus(imageGenerated
+      ? "An original AI-generated image plus original vector graphics were assembled. Inspect factual details and composition before publishing."
+      : "Original motion-graphics draft assembled from locally drawn vector scenes. A configured image model was unavailable or not authorised.", "success");
     if ($("auto-creative-consent").checked) {
       await finishDraftAutomatically(state.lastAutoDraftClipIds);
     } else if (state.autoRenderOnAssembly) {
@@ -2841,6 +2895,7 @@
     });
     $("build-from-brief").addEventListener("click", async () => {
       state.autoRenderOnAssembly = true;
+      $("auto-creative-consent").checked = true;
       try { await buildDraftFromBrief(); }
       finally { state.autoRenderOnAssembly = false; }
     });
