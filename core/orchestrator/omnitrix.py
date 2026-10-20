@@ -27,7 +27,7 @@ from core.models.messages import (
     ModelToolResult,
 )
 from core.models.types import ModelToolDefinition
-from core.models.registry import ModelRegistry
+from core.models.registry import ModelDefinition, ModelRegistry
 from core.models.providers.bootstrap import build_adapter_registry
 from core.orchestrator.planning import (
     PlanApproval,
@@ -1356,6 +1356,33 @@ class Omnitrix:
             raise ValueError(f"Agent stage '{stage}' unexpectedly requested tools.")
         return response.content
 
+    def _configured_standard_fallback(
+        self,
+        failed_model: ModelDefinition,
+        required_capabilities: frozenset[str],
+    ) -> ModelDefinition | None:
+        """Resolve an explicitly configured, fast cross-provider fallback for standard chat."""
+        fallback_name = failed_model.metadata.get("standard_fallback_model")
+        if not isinstance(fallback_name, str) or not fallback_name.strip():
+            return None
+        try:
+            candidate = self.registry.get(fallback_name)
+        except KeyError:
+            return None
+        if (
+            not candidate.enabled
+            or candidate.provider == failed_model.provider
+            or not required_capabilities.issubset(candidate.capabilities)
+        ):
+            return None
+        try:
+            adapter = self.adapter_registry.get(candidate.name)
+        except KeyError:
+            return None
+        if not adapter.is_available():
+            return None
+        return candidate
+
     def _execute_task_inner(
         self,
         task: Task,
@@ -1532,17 +1559,25 @@ class Omnitrix:
                     and request.continuation is None
                     and tool_iterations == 0
                 ):
-                    if default_model.name != selected_model.name:
-                        fallback_model = default_model
-                    elif agent_plan is not None:
-                        candidate = self._select_agent_model(
-                            agent_plan.primary,
-                            default_model,
-                            required_capabilities=task.requirements.capabilities,
-                            prefer_fallback=False,
+                    if (
+                        task.metadata.get("task_complexity") == "standard"
+                        and default_model.name == selected_model.name
+                    ):
+                        fallback_model = self._configured_standard_fallback(
+                            default_model, task.requirements.capabilities
                         )
-                        if candidate.name != selected_model.name:
-                            fallback_model = candidate
+                    if fallback_model is None:
+                        if default_model.name != selected_model.name:
+                            fallback_model = default_model
+                        elif agent_plan is not None:
+                            candidate = self._select_agent_model(
+                                agent_plan.primary,
+                                default_model,
+                                required_capabilities=task.requirements.capabilities,
+                                prefer_fallback=False,
+                            )
+                            if candidate.name != selected_model.name:
+                                fallback_model = candidate
 
                 if fallback_model is None:
                     raise
