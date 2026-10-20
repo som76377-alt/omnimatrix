@@ -454,3 +454,8 @@ input::placeholder,textarea::placeholder{color:#697160}
 }
 
 .ai-use-note{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.45;max-width:70ch}
+
+.paid-video-consent{margin-top:10px;border-color:var(--line);background:#12160f}
+.paid-video-consent strong{color:var(--green)}
+#generate-ai-video{margin-top:8px;width:100%;white-space:normal;line-height:1.35}
+#generate-ai-video:disabled{opacity:.45;cursor:not-allowed}
