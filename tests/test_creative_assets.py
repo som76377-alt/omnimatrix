@@ -119,7 +119,7 @@ class CreativeAssetSearchTests(unittest.TestCase):
                     _validate_download_url(url, frozenset({"upload.wikimedia.org"}))
 
     def test_download_refuses_pinterest_as_a_media_provider(self):
-        with self.assertRaisesRegex(CreativeAssetError, "Commons or configured Pexels"):
+        with self.assertRaisesRegex(CreativeAssetError, "Only Commons"):
             download_creative_asset(
                 "https://www.pinterest.com/pin/example", provider="pinterest"
             )
@@ -149,9 +149,11 @@ class CreativeAssetSearchTests(unittest.TestCase):
             search_creative_assets("coil", provider="commons", limit=99, environ={})
 
 
-    def test_google_search_requires_documented_api_credentials(self):
-        with self.assertRaisesRegex(CreativeAssetError, "GOOGLE_CSE_API_KEY"):
-            search_creative_assets("induction pan", provider="google", environ={})
+    def test_google_search_falls_back_to_manual_reference_without_legacy_api_credentials(self):
+        result = search_creative_assets("induction pan", provider="google", environ={})
+        self.assertTrue(result["manual_reference_only"])
+        self.assertIn("google.com/search?", result["search_url"])
+        self.assertIn("tbm=isch", result["search_url"])
 
     def test_google_search_normalizes_unverified_image_results(self):
         payload = {"items": [{"title": "Induction pan", "link": "https://images.example.test/pan.jpg", "mime": "image/jpeg", "displayLink": "example.test", "image": {"contextLink": "https://example.test/article", "thumbnailLink": "https://images.example.test/thumb.jpg"}}]}
