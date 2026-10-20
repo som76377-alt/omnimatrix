@@ -1577,6 +1577,9 @@
           name: String(stored.name || clip.name || "Selected shot").slice(0, 160),
           preview_data_url: preview,
           duration: Number(clip.duration) || 0,
+          source_duration: Number(stored.duration) || 0,
+          source_in: Number(clip.sourceIn) || 0,
+          media_type: String(stored.type || ""),
           motion: String(clip.motion || "none"),
           fit: String(clip.fit || "cover")
         });
@@ -1683,6 +1686,11 @@
           case "set_duration":
             if (typeof op.duration_seconds !== "number" || !Number.isFinite(op.duration_seconds) ||
                 op.duration_seconds < 0.5 || op.duration_seconds > 600) throw new Error("Invalid shot duration; nothing was applied.");
+            const sourceAsset = assetById(clip.assetId);
+            if (sourceAsset && sourceAsset.type.startsWith("video/") && Number(sourceAsset.duration) > 0 &&
+                op.duration_seconds > Math.max(0, Number(sourceAsset.duration) - (Number(clip.sourceIn) || 0))) {
+              throw new Error("The proposed shot duration exceeds the remaining video source; nothing was applied.");
+            }
             clip.duration = op.duration_seconds;
             break;
           case "set_motion":
