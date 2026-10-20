@@ -284,3 +284,59 @@ input::placeholder,textarea::placeholder{color:#697160}
   .render-state{font-size:10px}
   .studio-footer{font-size:10px}
 }
+
+
+/* Readable typography baseline across Creative Studio, including compact/mobile layouts.
+   Keep code, raw identifiers and actual timeline data monospaced only where useful. */
+.studio-header,.studio-header button,.studio-header a,.project-name-wrap label,
+.field-group label,.brief-copy label,.button,.eyebrow,.header-state,.project-meta,
+.dropzone,.dropzone-cta,.upload-progress small,.asset-name,.asset-meta,
+.asset-quick-add,.empty-state,.panel-foot,.asset-thumb .video-badge,
+.resolution-tag,.preview-tools select,.scrub-labels,.render-state,.timeline-actions,
+.timeline-clip-sub,.inspector-footer,.export-summary span,.agent-label,.studio-footer,
+.layer-editor-heading,.graphic-layer-select,.layer-order-button,.layer-empty {
+  font-family:var(--sans);
+  font-stretch:normal;
+  letter-spacing:0;
+}
+.wordmark small{font:500 11px/1.4 var(--sans);letter-spacing:.02em}
+.header-state,.project-meta{font:500 12px/1.45 var(--sans)}
+.project-name-wrap label,.field-group label,.brief-copy label{font:600 12px/1.45 var(--sans)}
+.button{font:650 12px/1.3 var(--sans);letter-spacing:0}
+.button.small{font-size:12px}
+.eyebrow{font:650 12px/1.45 var(--sans);letter-spacing:.02em;text-transform:none}
+.dropzone strong{font-size:15px;line-height:1.4}
+.dropzone>span:not(.upload-glyph):not(.dropzone-cta){font-size:13px;line-height:1.55}
+.dropzone-cta{font:650 13px/1.4 var(--sans);letter-spacing:0}
+.upload-progress small{font:12px/1.5 var(--sans)}
+.asset-name{font:600 13px/1.45 var(--sans);min-height:36px;letter-spacing:0}
+.asset-meta{font:12px/1.5 var(--sans);letter-spacing:0;overflow-wrap:anywhere}
+.asset-quick-add{font:600 12px/1.35 var(--sans);letter-spacing:0;min-height:34px}
+.empty-state span{font-size:13px;line-height:1.6}
+.empty-state strong{font-size:14px}
+.panel-foot{font:12px/1.6 var(--sans);letter-spacing:0}
+.asset-thumb .video-badge{font:600 11px/1.25 var(--sans)}
+.resolution-tag,.preview-tools select,.scrub-labels,.render-state,.timeline-actions,
+.timeline-clip-sub,.inspector-footer,.export-summary span,.agent-label,.studio-footer {
+  font-size:12px;
+  line-height:1.45;
+  letter-spacing:0;
+}
+.timeline-clip-sub,.inspector-footer,.studio-footer{font-size:11.5px}
+.agent-label{font-size:11.5px;font-weight:650}
+.preview-overlay-label{font:600 11.5px/1.45 var(--sans);letter-spacing:0}
+.layer-add-row .button{font-size:11.5px}
+.graphic-layer-select{font:12px/1.4 var(--sans)}
+.layer-order-button{font:600 13px/1 var(--sans)}
+.layer-empty{font-size:12px;line-height:1.6}
+.layer-editor-heading strong{font-size:13px}
+@media(max-width:680px){
+  .wordmark small{font-size:10.5px}
+  .header-state,.project-meta{font-size:11.5px}
+  .button,.button.small{font-size:12px}
+  .asset-name{font-size:12.5px;min-height:35px}
+  .asset-meta{font-size:11.5px}
+  .asset-quick-add{font-size:11.5px}
+  .dropzone>span:not(.upload-glyph):not(.dropzone-cta){font-size:12.5px}
+  .render-state,.studio-footer{font-size:11px}
+}
