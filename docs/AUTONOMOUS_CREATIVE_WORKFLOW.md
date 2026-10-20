@@ -18,7 +18,7 @@
 - For the native app, the prompt-only path calls bounded, rate-limited public Commons endpoints. It does not require a Codespaces runtime token. This route is restricted to Commons rather than arbitrary download URLs, and it limits asset searches/imports.
 - The native app saves a generated WebM to `Movies/Omnitrix` (on modern Android) and shows an **OPEN VIDEO** action. A bounded 24 MB video-file save limit is in place to avoid excessive memory use while passing WebM through the mobile bridge.
 - Prompts mentioning vertical/portrait, 9:16, Reels, TikTok or Shorts select 720×1280 output; square terms select 720×720; horizontal/landscape/16:9 selects 1280×720. Other prompts retain the current export setting.
-- The optional thumbnail-based AI director remains on the authenticated full web Studio path; native prompt-only generation does not claim an AI visual review. The native workflow still creates an actual local-rendered video even when no visual model is configured.
+- The native Studio can now query the server-side visual-model status and submit consented resized previews to the same structured director endpoint through a bounded mobile route. The mobile model endpoint is rate-limited per IP and globally; it still reports unavailable when no Gemini key is configured. Post-render critique only runs when consent is enabled and a model is configured.
 
 ## Quality and capability limits
 
@@ -40,7 +40,7 @@ True cross-dissolves, independently mixed music/narration tracks, advanced colou
 
 - Pinterest is reference-only until an authorised API/permission-based integration exists. The app does not bypass logins, rate limits or platform controls.
 - The public native asset endpoints support Commons only, cap search results and apply per-client rate limiting; they are not a generic proxy or arbitrary URL fetcher.
-- Original local media stays in the browser/WebView library unless a user separately requests an AI visual-analysis operation in the authenticated web Studio. That opt-in sends resized previews rather than original media.
+- Original local media stays in the browser/WebView library. AI analysis sends resized previews and limited clip metadata only after consent; the native endpoint is bounded by per-IP and global rate limits. Full original media is not uploaded by this analysis path.
 - Download URLs are provider-allowlisted, redirects are validated, MIME types are checked, and each imported asset is capped at 24 MB.
 - The AI returns a structured proposal rather than executable code; client and server validators enforce operation allowlists and numeric bounds.
 - Anti-slop guardrails reduce predictable layout and unsupported claims; they cannot guarantee visual quality. Inspect actual frames, timing, asset relevance, attribution and playback.
