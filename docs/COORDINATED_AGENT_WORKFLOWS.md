@@ -55,7 +55,8 @@ Manim now has a registered, constrained tool that generates a fixed Python scene
 - [ ] Add query expansion, result deduplication, relevance ranking and visual verification to asset search.
 - [ ] Add independent critic routing and final-export inspection.
 - [ ] Add per-provider timeout, cancellation, bounded retry and cost controls.
-- [ ] Add integration tests for parallel dependency execution, no duplicate ownership, failed worker handoff, cost-consent enforcement and final QA failure.
+- [x] Add integration regressions for parallel-ready handoffs, exclusive artifact ownership, failed dependency blocking/recovery, paid-tool cost/consent policy, and final-QA failure/release-gate behavior (`tests/test_coordinated_agent_workflows.py`).
+- [ ] Implement actual independent specialist dispatch and concurrent worker execution; the regression suite verifies coordination state transitions, not live worker execution.
 - [ ] Verify the target deployment and mobile app against a real test job.
 
 This design is not complete until the runtime checklist is implemented and tests run. Do not describe this staged contract as an operational multi-agent system.
