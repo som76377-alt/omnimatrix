@@ -18,7 +18,8 @@
         "estimated_cost_usd": 0,
         "agent_approved_cost": true,
         "timeout_seconds": 15,
-        "max_retries": 0
+        "max_retries": 0,
+        "standard_fallback_model": "omnitrix-fast-fallback"
       }
     },
     {
@@ -45,6 +46,29 @@
         "profile_note": "Zero-price specialist candidate for genuinely complex work. Standard conversation and straightforward tasks prefer the budget-eligible primary model; specialist routing is based on task complexity, not exam labels. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free-route availability/terms may change; do not send confidential, personal, or sensitive content. High reasoning effort is requested only when this specialist profile is selected; reasoning text is excluded from application responses.",
         "reasoning_effort": "high",
         "exclude_reasoning": true
+      }
+    },
+    {
+      "name": "omnitrix-fast-fallback",
+      "provider": "openrouter",
+      "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "capabilities": [
+        "reasoning",
+        "coding"
+      ],
+      "context_window": 262144,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY",
+        "max_output_tokens": 2048,
+        "timeout_seconds": 30,
+        "reasoning_effort": "low",
+        "exclude_reasoning": true,
+        "data_policy": "no_confidential_or_personal_data",
+        "profile_note": "Latency-bounded fallback for standard tasks only when the primary model times out or fails. Uses lower reasoning effort and a limited output budget for quick recovery; do not use as the primary model for complex tasks."
       }
     }
   ]
