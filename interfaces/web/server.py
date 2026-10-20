@@ -1539,13 +1539,13 @@ def make_handler(
                         limit = min(12, max(1, requested_limit))
                         self._send_json(search_creative_assets(
                             self._first_query("q", ""),
-                            provider="commons",
+                            provider=self._first_query("provider", "commons"),
                             kind=self._first_query("kind", "any"),
                             limit=limit,
                         ))
                     else:
                         content, content_type, filename = download_creative_asset(
-                            self._first_query("url", ""), provider="commons"
+                            self._first_query("url", ""), provider=self._first_query("provider", "commons")
                         )
                         self._send_bytes(content, content_type, filename)
                 except ValueError as exc:
