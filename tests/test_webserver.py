@@ -104,19 +104,36 @@ class StudioServerTests(unittest.TestCase):
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
         models = {model["name"]: model for model in config["models"]}
-        self.assertEqual(set(models), {"omnitrix-primary", "reasoning-nemotron-super-free"})
+        self.assertEqual(
+            set(models),
+            {
+                "omnitrix-primary",
+                "reasoning-nemotron-super-free",
+                "omnitrix-fast-fallback",
+            },
+        )
 
         baseline = models["omnitrix-primary"]
         self.assertEqual(baseline["provider"], "google")
         self.assertEqual(baseline["model_id"], "gemini-3.8-flash")
         self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
+        self.assertEqual(baseline["metadata"]["timeout_seconds"], 15)
+        self.assertEqual(baseline["metadata"]["max_retries"], 0)
+        self.assertEqual(baseline["metadata"]["standard_fallback_model"], "omnitrix-fast-fallback")
 
         reasoning = models["reasoning-nemotron-super-free"]
         self.assertEqual(reasoning["provider"], "openrouter")
         self.assertEqual(reasoning["model_id"], "nvidia/nemotron-3-super-120b-a12b:free")
         self.assertEqual(reasoning["metadata"]["api_key_env"], "OPENROUTER_API_KEY")
         self.assertEqual(reasoning["metadata"]["estimated_cost_usd"], 0)
+
+        fast_fallback = models["omnitrix-fast-fallback"]
+        self.assertEqual(fast_fallback["provider"], "openrouter")
+        self.assertEqual(fast_fallback["model_id"], reasoning["model_id"])
+        self.assertEqual(fast_fallback["metadata"]["timeout_seconds"], 30)
+        self.assertEqual(fast_fallback["metadata"]["max_output_tokens"], 2048)
+        self.assertEqual(fast_fallback["metadata"]["reasoning_effort"], "low")
 
     def test_mobile_backend_discovery_points_to_hosted_service(self):
         manifest = json.loads((ROOT / "config" / "mobile-backend.json").read_text(encoding="utf-8"))
