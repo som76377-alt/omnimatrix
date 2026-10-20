@@ -16,7 +16,7 @@
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
     onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
-    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false,
+    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false, aiVideoBusy: false,
     autoCriticRevisionPerformed: false
   };
   const canvas = $("preview-canvas");
@@ -427,6 +427,8 @@
         },
         body: JSON.stringify({
           consent: true,
+          paid_cost_acknowledged: true,
+          aspect_ratio: width > height ? "16:9" : height > width ? "9:16" : "1:1",
           prompt: String(brief || "").slice(0, 1500) +
             "\\nCreate one original, professionally art-directed frame for a motion-graphics explainer at " + width + " by " + height + " pixels. Prioritise the exact subject and mechanism in the brief, believable geometry, a clear focal point, deliberate composition, crisp edges, restrained matte colours and generous negative space for later typography. Avoid generic stock-photo composition, collage, fake interfaces or HUDs, decorative particles, random circles, glows, glossy plastic, excessive gradients, watermarks, logos, captions, misspelled text, and invented physical details. Do not split objects into arbitrary wedges or pieces unless explicitly requested. The image is a scene asset, not a finished video."
         })
@@ -452,17 +454,19 @@
   }
 
   async function assembleOriginalGraphicFallback(brief) {
-    onlineStatus("Creating original scenes first. No web download is involved; checking whether the configured image-generation model is reachable…", "");
+    onlineStatus("Creating an original local motion-graphics draft. No web search or download is involved.", "");
     const files = await createOriginalGraphicCards(brief);
     let imageGenerated = false;
-    // A direct Create Video prompt authorises processing that prompt for the requested creation.
-    // Existing local media is never sent by this image-generation request.
-    try {
-      onlineStatus("Requesting one original image from the configured image model…", "");
-      files.unshift(await requestGeneratedImage(brief));
-      imageGenerated = true;
-    } catch (error) {
-      onlineStatus("Original AI image generation is unavailable (" + String(error.message || error) + "). Continuing with locally drawn vector scenes; no generated image is being claimed.", "");
+    // Raster image generation is paid and therefore happens only after this
+    // per-run checkbox explicitly acknowledges the estimated image cost.
+    if ($("auto-creative-consent").checked) {
+      try {
+        onlineStatus("Requesting one original 1K image from the configured image model (estimated US$0.04)…", "");
+        files.unshift(await requestGeneratedImage(brief));
+        imageGenerated = true;
+      } catch (error) {
+        onlineStatus("AI image generation failed (" + String(error.message || error) + "). Continuing with local vector graphics; no AI image is being claimed.", "error");
+      }
     }
     const before = new Set(state.assets.map((asset) => asset.name));
     await importFiles(files);
@@ -498,6 +502,151 @@
     } else {
       // CREATE VIDEO must actually render when invoked manually, not merely assemble a timeline.
       await renderVideo();
+    }
+  }
+
+
+  function needsDirectAiVideo(brief) {
+    const text = String(brief || "");
+    const subject = /\b(man|woman|person|people|someone|somebody|human|adult|boy|girl|child|actor|presenter|host|dog|cat|bird|horse|animal|character)\b/i.test(text);
+    const action = /\b(wav(?:e|es|ing)|say(?:s|ing)?|speak(?:s|ing)?|talk(?:s|ing)?|walk(?:s|ing)?|run(?:s|ning)?|dance(?:s|ing)?|sing(?:s|ing)?|laugh(?:s|ing)?|smil(?:e|es|ing)|gestur(?:e|es|ing)|turn(?:s|ing)?|jump(?:s|ing)?|nod(?:s|ding)?|present(?:s|ing)?)\b/i.test(text);
+    return (subject && action) || /\b(live action|realistic footage|talking head|spoken dialogue|person speaking to camera)\b/i.test(text);
+  }
+
+  async function generateDirectAiVideo(brief) {
+    const consent = $("paid-video-consent");
+    const button = $("generate-ai-video");
+    const text = String(brief || "").trim();
+    if (!text) {
+      onlineStatus("Write the video brief first, then approve the direct AI-video cost and start generation.", "error");
+      $("creative-brief").focus();
+      return;
+    }
+    if (!consent || !consent.checked) {
+      onlineStatus("No paid video request was sent. Check the cost approval first. Estimated 720p cost is about US$0.80 for an 8-second clip.", "error");
+      return;
+    }
+    if (state.aiVideoBusy) {
+      onlineStatus("A direct AI-video job is already running in this Studio tab.", "error");
+      return;
+    }
+    if (state.project.timeline.length && !window.confirm("Replace the current timeline with the new AI video? Existing media in the local library will be kept.")) return;
+    state.aiVideoBusy = true;
+    if (button) button.disabled = true;
+    $("build-from-brief").disabled = true;
+    const nativeMode = isNativeMobileStudio();
+    const token = aiRuntimeToken();
+    try {
+      const dimensions = String($("preview-scale").value || "1280x720").split("x").map(Number);
+      const width = dimensions[0] || 1280;
+      const height = dimensions[1] || 720;
+      const aspectRatio = width > height ? "16:9" : "9:16";
+      if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
+      onlineStatus("Submitting a paid direct video-generation request. No asset search or download will run.", "");
+      const startResponse = await fetch(
+        nativeMode ? "./api/mobile/creative/generate-video" : "./api/creative/generate-video",
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...(nativeMode ? {} : { Authorization: "Bearer " + token })
+          },
+          body: JSON.stringify({
+            consent: true,
+            paid_cost_acknowledged: true,
+            prompt: text.slice(0, 4000),
+            aspect_ratio: aspectRatio,
+            resolution: "720p"
+          })
+        }
+      );
+      let startData;
+      try { startData = await startResponse.json(); }
+      catch { throw new Error("The AI-video route returned unreadable JSON."); }
+      if (!startResponse.ok || !startData || startData.ok !== true || !startData.job_id) {
+        throw new Error((startData && startData.error) || "The direct AI-video job could not start.");
+      }
+      const jobBase = (nativeMode ? "./api/mobile/creative/video-jobs/" : "./api/creative/video-jobs/") + encodeURIComponent(startData.job_id);
+      const deadline = Date.now() + 12 * 60 * 1000;
+      let statusData = null;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        const statusResponse = await fetch(jobBase, {
+          method: "GET", cache: "no-store",
+          headers: nativeMode ? { Accept: "application/json" } : { Accept: "application/json", Authorization: "Bearer " + token }
+        });
+        try { statusData = await statusResponse.json(); }
+        catch { throw new Error("The video-job status route returned unreadable JSON."); }
+        if (!statusResponse.ok || !statusData || statusData.ok !== true) {
+          throw new Error((statusData && statusData.error) || "The video-generation job could not be checked.");
+        }
+        if (statusData.status === "failed") throw new Error(statusData.error || "The video model failed to generate a clip.");
+        if (statusData.status === "completed") break;
+        onlineStatus("Gemini Omni Flash is generating actual moving footage and audio (" + (statusData.model || startData.model || "model ID unavailable") + "). No public assets are being searched. Keep this tab open.", "");
+      }
+      if (!statusData || statusData.status !== "completed") {
+        throw new Error("The video is still processing after 12 minutes. The server may still be working; check job status before starting another paid request.");
+      }
+      onlineStatus("Video generation completed. Retrieving the returned video file…", "");
+      const resultResponse = await fetch(jobBase + "?consume=1", {
+        method: "GET", cache: "no-store",
+        headers: nativeMode ? { Accept: "application/json" } : { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      let result;
+      try { result = await resultResponse.json(); }
+      catch { throw new Error("The generated-video result returned unreadable JSON."); }
+      if (!resultResponse.ok || !result || result.ok !== true || !result.video_base64) {
+        throw new Error((result && result.error) || "The model finished but did not return usable video bytes.");
+      }
+      const binary = atob(result.video_base64);
+      if (binary.length < 2048 || binary.length > 24 * 1024 * 1024) {
+        throw new Error("The generated video is empty or exceeds the 24 MB mobile transfer limit.");
+      }
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const mimeType = ["video/mp4", "video/webm"].includes(result.mime_type) ? result.mime_type : "video/mp4";
+      const blob = new Blob([bytes], { type: mimeType });
+      const fileName = String(result.file_name || ("omnitrix-ai-video-" + crypto.randomUUID().slice(0, 8) + ".mp4"));
+      let delivery = "";
+      try { delivery = await deliverRenderedVideo(blob, fileName); }
+      catch (error) { delivery = "not saved by the device: " + String(error.message || error); }
+
+      const file = new File([blob], fileName, { type: mimeType, lastModified: Date.now() });
+      let savedToLibrary = false;
+      try {
+        await importFiles([file]);
+        const asset = state.assets.find((item) => item.name === file.name);
+        if (asset) {
+          const clip = createClip(asset);
+          clip.duration = Math.max(0.5, Number(asset.duration) || 8);
+          clip.fit = "cover";
+          clip.motion = "none";
+          clip.title = "";
+          clip.subtitle = "";
+          state.project.timeline = [clip];
+          state.selectedAssetId = asset.id;
+          state.selectedClipId = clip.id;
+          state.currentClipId = clip.id;
+          state.playhead = 0;
+          renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
+          await saveProject(false);
+          savedToLibrary = true;
+        }
+      } catch (_) {}
+      onlineStatus(
+        "Actual AI-generated video received from " + (result.model || statusData.model || "the configured video model") +
+        ". Delivery: " + delivery + (savedToLibrary ? "; added to your editable project library." : "; it may not have been added to the local project library.") +
+        " Inspect movement and audio before publishing.",
+        savedToLibrary ? "success" : "error"
+      );
+    } catch (error) {
+      onlineStatus(String(error.message || error), "error");
+    } finally {
+      state.aiVideoBusy = false;
+      if (button) button.disabled = !consent.checked;
+      $("build-from-brief").disabled = false;
     }
   }
 
@@ -880,6 +1029,11 @@
       return;
     }
     setPreviewResolutionFromBrief(brief);
+    if (needsDirectAiVideo(brief)) {
+      if ($("paid-video-consent").checked) await generateDirectAiVideo(brief);
+      else onlineStatus("This prompt needs genuine moving people/animals or spoken dialogue. Static images and generic vector cards are not an acceptable substitute. No web search or model call was made. Approve the paid AI-video cost above and tap GENERATE REAL AI VIDEO + AUDIO.", "error");
+      return;
+    }
     const provider = $("online-asset-provider").value || "original";
     // Prompt-to-video starts with original graphics. Online media is an explicit, optional source choice.
     if (provider === "original") {
@@ -2092,7 +2246,7 @@
 
   async function deliverRenderedVideo(blob, fileName) {
     if (isNativeMobileStudio()) {
-      if (!(blob instanceof Blob) || !blob.size) throw new Error("The renderer returned an empty WebM.");
+      if (!(blob instanceof Blob) || !blob.size) throw new Error("The generated video file is empty.");
       if (blob.size > 24 * 1024 * 1024) {
         throw new Error("This render is over the 24 MB mobile-save limit. Choose a shorter duration or lower resolution, then render again.");
       }
@@ -2958,9 +3112,14 @@
     });
     $("build-from-brief").addEventListener("click", async () => {
       state.autoRenderOnAssembly = true;
-      $("auto-creative-consent").checked = true;
       try { await buildDraftFromBrief(); }
       finally { state.autoRenderOnAssembly = false; }
+    });
+    $("paid-video-consent").addEventListener("change", () => {
+      $("generate-ai-video").disabled = !$("paid-video-consent").checked || state.aiVideoBusy;
+    });
+    $("generate-ai-video").addEventListener("click", () => {
+      generateDirectAiVideo(String($("creative-brief").value || "").trim());
     });
     $("auto-creative-consent").addEventListener("change", () => {
       if ($("auto-creative-consent").checked && state.lastAutoDraftClipIds.length) {
@@ -3057,13 +3216,16 @@
         if (launchParams.get("autoDraft") === "1") {
           // The full prompt is passed in same-tab session storage, not in a query string.
           window.history.replaceState(null, "", window.location.pathname);
-          state.autoRenderOnAssembly = true;
-          // A direct prompt-to-video request authorizes the bounded creative
-          // workflow. Model preview analysis only runs when a provider is
-          // actually configured and reachable; status remains explicit.
-          $("auto-creative-consent").checked = true;
-          await buildDraftFromBrief();
-          state.autoRenderOnAssembly = false;
+          // A chat prompt never authorizes a paid provider call. Human-motion
+          // requests are held for explicit paid-video consent; the default
+          // original-graphics flow does not search or download web assets.
+          if (needsDirectAiVideo(inboundBrief)) {
+            onlineStatus("Prompt received. This needs actual movement and audio, not a still-image slideshow. No web search or paid model call was started; approve the estimated cost above to generate the clip.", "");
+          } else {
+            state.autoRenderOnAssembly = true;
+            await buildDraftFromBrief();
+            state.autoRenderOnAssembly = false;
+          }
         }
       }
       const storedCount = state.assets.length;
