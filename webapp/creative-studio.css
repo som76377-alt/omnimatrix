@@ -474,13 +474,13 @@ input::placeholder,textarea::placeholder{color:#697160}
 
 /* Mobile usability: the document is the scroll surface, not nested cards. */
 @media(max-width:760px){
-  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto;touch-action:pan-y}
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto;touch-action:auto}
   .studio-shell,.studio-grid,.studio-grid>.panel,.asset-panel,.preview-panel,.inspector-panel,.export-panel{
-    height:auto;min-height:0;max-height:none;overflow:visible;touch-action:pan-y;overscroll-behavior:auto
+    height:auto;min-height:0;max-height:none;overflow:visible;touch-action:auto;overscroll-behavior:auto
   }
   .studio-grid{grid-template-columns:minmax(0,1fr);align-items:stretch}
   .asset-grid,.timeline-list,.online-asset-results,.graphic-layer-list,.ai-selection-list{
-    max-height:none;height:auto;overflow:visible;overscroll-behavior:auto;touch-action:pan-y
+    max-height:none;height:auto;overflow:visible;overscroll-behavior:auto;touch-action:auto
   }
   .canvas-wrap{overflow:hidden;touch-action:pan-y}
   #preview-canvas{touch-action:pan-y}
