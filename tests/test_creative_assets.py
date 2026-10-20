@@ -149,5 +149,26 @@ class CreativeAssetSearchTests(unittest.TestCase):
             search_creative_assets("coil", provider="commons", limit=99, environ={})
 
 
+    def test_google_search_requires_documented_api_credentials(self):
+        with self.assertRaisesRegex(CreativeAssetError, "GOOGLE_CSE_API_KEY"):
+            search_creative_assets("induction pan", provider="google", environ={})
+
+    def test_google_search_normalizes_unverified_image_results(self):
+        payload = {"items": [{"title": "Induction pan", "link": "https://images.example.test/pan.jpg", "mime": "image/jpeg", "displayLink": "example.test", "image": {"contextLink": "https://example.test/article", "thumbnailLink": "https://images.example.test/thumb.jpg"}}]}
+        parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse("https://images.example.test/pan.jpg")
+        with patch("core.creative_assets._read_json", return_value=payload), patch("core.creative_assets._validate_public_image_url", return_value=parsed):
+            result = search_creative_assets("induction pan", provider="google", environ={"GOOGLE_CSE_API_KEY": "key", "GOOGLE_CSE_CX": "cx"})
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["provider"], "google")
+        self.assertFalse(result["items"][0]["rights_verified"])
+        self.assertIn("private draft", result["items"][0]["license"])
+
+    def test_google_import_rejects_local_and_non_https_urls(self):
+        validator = __import__("core.creative_assets", fromlist=["_validate_public_image_url"])._validate_public_image_url
+        for url in ("http://example.com/pan.jpg", "https://127.0.0.1/pan.jpg", "https://localhost/pan.jpg"):
+            with self.subTest(url=url):
+                with self.assertRaises(CreativeAssetError):
+                    validator(url)
+
 if __name__ == "__main__":
     unittest.main()
