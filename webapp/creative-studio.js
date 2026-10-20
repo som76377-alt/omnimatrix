@@ -281,7 +281,11 @@
   function recorderWebmMimeType() {
     // VP8 is the more broadly interoperable WebM baseline for Android/WebView.
     const candidates = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm"];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    const selected = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+    if (!selected) {
+      throw new Error("This browser cannot record a supported WebM video format. Open Creative Studio in an up-to-date Chrome-based browser.");
+    }
+    return selected;
   }
 
   async function inspectFile(file) {
@@ -740,7 +744,7 @@
           else resolve(result);
         };
         try {
-          recorder.start(250);
+          recorder.start();
           const startedAt = performance.now();
           forceCaptureFrame(capture.requestFrame);
           let lastCaptureAt = startedAt;
@@ -832,27 +836,41 @@
     });
   }
 
+  function isHumanSubject(brief) {
+    return /\b(man|men|woman|women|person|people|human|adult|boy|girl|child|baby|actor|presenter|host|crowd|face)\b/i.test(String(brief || ""));
+  }
+
+  function isUnsupportedAnimalSubject(brief) {
+    return /\b(dog|cat|bird|horse|animal|pet|wolf|fox|lion|tiger|bear|rabbit)\b/i.test(String(brief || ""));
+  }
+
   async function assembleOriginalGraphicFallback(brief) {
-    onlineStatus("Drawing one original animated scene from the brief locally. No online search or asset download is needed.", "");
-    const file = await renderOriginalMotionClip(brief);
+    if (isUnsupportedAnimalSubject(brief)) {
+      throw new Error("QUALITY GATE: this code renderer currently supports a procedural 3D human, not believable animal anatomy. No line-and-circle or placeholder substitute was rendered or exported.");
+    }
+    onlineStatus("CODE-FIRST RENDER: authoring the scene in code, animating it, encoding the video, then running technical checks. No asset search or image generation is used.", "");
+    let file;
+    if (isHumanSubject(brief)) {
+      if (!window.OmnitrixCode3D || typeof window.OmnitrixCode3D.renderVideo !== "function") {
+        throw new Error("The procedural 3D character renderer did not load. No low-fidelity human substitute will be used.");
+      }
+      const dims = String($("preview-scale").value || "960x540").split("x").map(Number);
+      const match = String(brief).match(/\b(\d{1,2})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+      const result = await window.OmnitrixCode3D.renderVideo({
+        brief,
+        width: dims[0] || 960,
+        height: dims[1] || 540,
+        duration: match ? Number(match[1]) : 6
+      });
+      file = result.file;
+      onlineStatus("Procedural 3D character rendered from code. Technical video verification is next; visual approval is still required.", "");
+    } else {
+      file = await renderOriginalMotionClip(brief);
+    }
     const priorIds = new Set(state.assets.map((asset) => asset.id));
     await importFiles([file]);
     const asset = state.assets.find((item) => !priorIds.has(item.id) && item.name === file.name);
     if (!asset) throw new Error("The animation was rendered, but could not be added to the local media library.");
-
-    // A separate, explicitly consented AI still may be retained as an optional reference,
-    // but it never gets inserted as a fake substitute for motion or as another title card.
-    let referenceNote = "";
-    if ($("auto-creative-consent").checked) {
-      try {
-        onlineStatus("The animated clip is ready. Generating the separately approved optional image reference…", "");
-        const referenceFile = await requestGeneratedImage(brief);
-        await importFiles([referenceFile]);
-        referenceNote = " One separately generated AI image was added to the library as an optional reference, not inserted as a duplicate slide.";
-      } catch (error) {
-        referenceNote = " Optional AI image was unavailable (" + String(error.message || error).slice(0, 150) + "); the original animation was still created.";
-      }
-    }
 
     const clip = createClip(asset);
     clip.duration = Math.max(0.5, Number(asset.duration) || 8);
@@ -869,17 +887,15 @@
     renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
     await saveProject(false);
     state.lastAutoDraftClipIds = [clip.id];
-    const actionNote = needsDirectAiVideo(brief)
-      ? " The free renderer made a stylised vector action, not photorealistic footage."
-      : " The clip is a custom animated concept, not a stock template.";
-    onlineStatus("Created one continuous original animated clip with topic-derived visuals and motion. No three-card title template was used." + actionNote + referenceNote, "success");
+    onlineStatus("Code-rendered animation added to the timeline. Technical file checks do not prove artistic quality; inspect rendered frames before treating it as final.", "success");
     if ($("auto-creative-consent").checked) {
       await finishDraftAutomatically(state.lastAutoDraftClipIds);
     } else {
-      // The create action exports the generated result rather than leaving an unfinished timeline.
+      onlineStatus("Technical render complete but not visually approved. Enable per-run visual-review consent to let the critic inspect rendered frames and request corrections.", "");
       await renderVideo();
     }
   }
+
 
   function needsDirectAiVideo(brief) {
     const text = String(brief || "");
@@ -1433,154 +1449,26 @@
   }
 
   async function buildDraftFromBrief() {
-    if (state.onlineImportBusy || state.onlineSearchBusy) {
-      onlineStatus("Another asset task is running. Wait for it to finish before starting a second one.", "error");
-      return;
-    }
     const brief = String($("creative-brief").value || "").trim();
     if (!brief) {
       onlineStatus("Write your desired video in Director's Brief first, then press Auto-assemble Draft.", "error");
       $("creative-brief").focus();
       return;
     }
+    if (state.onlineImportBusy || state.onlineSearchBusy || state.aiVideoBusy || state.autoFinishBusy) {
+      onlineStatus("Another creative task is running. Wait for it to finish before starting a new render.", "error");
+      return;
+    }
     setPreviewResolutionFromBrief(brief);
-    if (needsDirectAiVideo(brief)) {
-      onlineStatus("This brief includes a person/animal action. The free local route will draw a stylised animated character rather than fake realistic footage. For photorealistic movement and native audio, use the separate paid video option.", "");
-    }
-    const provider = $("online-asset-provider").value || "original";
-    // Prompt-to-video starts with original graphics. Online media is an explicit, optional source choice.
-    if (provider === "original") {
-      if (state.project.timeline.length && !window.confirm("Append an original graphics draft to your existing timeline? Existing shots will be kept.")) return;
-      $("build-from-brief").disabled = true;
-      try {
-        await assembleOriginalGraphicFallback(brief);
-      } catch (error) {
-        onlineStatus("Original creation failed: " + String(error.message || error) + ". No online media was required or downloaded.", "error");
-      } finally {
-        $("build-from-brief").disabled = false;
-      }
-      return;
-    }
-    if (provider === "pinterest") {
-      onlineStatus("Pinterest is a reference-only source. Creating an original graphics draft instead of scraping Pins.", "");
-      await assembleOriginalGraphicFallback(brief);
-      return;
-    }
-    if (state.project.timeline.length && !window.confirm("Append a new draft to your existing timeline? Existing shots will be kept.")) return;
+    if (state.project.timeline.length && !window.confirm("Append a code-generated draft to your existing timeline? Existing shots will be kept.")) return;
     $("build-from-brief").disabled = true;
     try {
-      if (!$("online-asset-query").value.trim()) $("online-asset-query").value = deriveAssetQuery(brief);
-      let data = await searchOnlineAssets();
-      if (!data || !Array.isArray(data.items)) {
-        await assembleOriginalGraphicFallback(brief);
-        return;
-      }
-      let eligible = data.items.filter(supportedOnlineAsset);
-      if (!eligible.length) {
-        if (provider === "pinterest") {
-          onlineStatus("Pinterest is a reference source, not a direct import provider. Creating an original motion-graphics draft instead.", "");
-        }
-        await assembleOriginalGraphicFallback(brief);
-        return;
-      }
-      const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
-      const ranked = eligible.map((item, index) => {
-        const haystack = (item.title + " " + item.description).toLowerCase();
-        const score = terms.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
-        return { item, index, score };
-      }).sort((a, b) => b.score - a.score || a.index - b.index);
-      const selected = [];
-      const seen = new Set();
-      for (const row of ranked) {
-        const key = String(row.item.title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        selected.push(row.item);
-        if (selected.length >= 4) break;
-      }
-      if (!selected.length) {
-        onlineStatus("Web results were not usable. Creating an original animated scene instead; nothing was downloaded.", "");
-        await assembleOriginalGraphicFallback(brief);
-        return;
-      }
-      const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
-      const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
-      const importedIds = [];
-      for (let i = 0; i < selected.length; i += 1) {
-        onlineStatus("Building draft: importing selected asset " + (i + 1) + " of " + selected.length + "…", "");
-        try {
-          const id = await importOnlineAsset(selected[i], false);
-          importedIds.push(id);
-        } catch (error) {
-          onlineStatus("The selected web asset could not be downloaded (" + String(error.message || error).slice(0, 160) + "). Stopping the search/import path and creating an original animated scene instead.", "");
-          await assembleOriginalGraphicFallback(brief);
-          return;
-        }
-      }
-      // Add the selected assets as one batch after all downloads/metadata checks succeed.
-      const startIndex = state.project.timeline.length;
-      importedIds.forEach((id) => addAssetToTimeline(id));
-      const draftClips = state.project.timeline.slice(startIndex);
-      const baseDuration = targetSeconds / Math.max(1, draftClips.length);
-      const title = extractBriefTitle(brief);
-      draftClips.forEach((clip, index) => {
-        const asset = assetById(clip.assetId);
-        let duration = Math.min(6, Math.max(2, baseDuration));
-        if (asset && asset.type.startsWith("video/") && Number(asset.duration) > 0) {
-          duration = Math.min(duration, Number(asset.duration));
-          clip.motion = "none";
-        } else {
-          clip.motion = index === 0 ? "slow-zoom" : "none";
-        }
-        clip.duration = Math.max(0.5, duration);
-        clip.fit = "cover";
-        clip.title = index === 0 ? title : "";
-        clip.subtitle = "";
-        clip.titlePosition = "bottom";
-        clip.titleColor = "#f1f3e8";
-        clip.titleSize = 44;
-        clip.titleFont = "sans";
-        clip.layers = Array.isArray(clip.layers) ? clip.layers : [];
-      });
-      state.selectedClipId = draftClips[0] ? draftClips[0].id : state.selectedClipId;
-      state.currentClipId = state.selectedClipId;
-      state.playhead = Math.max(0, startIndex >= 0 ? state.project.timeline.slice(0, startIndex).reduce((sum, clip) => sum + clip.duration, 0) : 0);
-      renderTimeline();
-      renderInspector();
-      renderGraphicLayers();
-      updateStats();
-      drawFrame();
-      await saveProject(false);
-      state.lastAutoDraftClipIds = draftClips.map((clip) => clip.id).slice(0, 6);
-      const automaticDirection = $("auto-creative-consent").checked;
-      $("ai-director-panel").hidden = false;
-      renderAiSelectionList();
-      // Select only the newly assembled clips, never earlier project shots.
-      const draftIds = new Set(state.lastAutoDraftClipIds);
-      $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
-        checkbox.checked = draftIds.has(checkbox.value);
-      });
-      updateAiControls();
-
-      if (automaticDirection) {
-        // This path requires the explicit per-run checkbox above.
-        await finishDraftAutomatically(state.lastAutoDraftClipIds);
-      } else {
-        onlineStatus(
-          "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results.",
-          "success"
-        );
-        await loadAiModelStatus();
-        if (state.autoRenderOnAssembly) {
-          onlineStatus("The main chat requested a video, so the local basic draft is being exported now. No thumbnails were shared with a model. For richer AI-directed edits on a future run, explicitly enable the visual-direction consent.", "success");
-          renderVideo();
-        }
-        $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      // The default prompt-to-video path is code-only. Ignore the asset-source selector:
+      // never search/download media or generate still images as a substitute for authored motion.
+      await assembleOriginalGraphicFallback(brief);
     } catch (error) {
-      onlineStatus(String(error.message || error), "error");
+      onlineStatus("CODE-FIRST CREATION BLOCKED/FAILED: " + String(error.message || error) + ". No image search, image generation, or fallback figure was used.", "error");
     } finally {
-      state.onlineImportBusy = false;
       $("build-from-brief").disabled = false;
     }
   }
@@ -2468,8 +2356,13 @@
       video.addEventListener(eventName, onReady, { once: true });
       video.addEventListener("error", onError, { once: true });
       timer = window.setTimeout(() => {
+        const mediaError = video.error
+          ? " mediaErrorCode=" + video.error.code + (video.error.message ? " mediaError=" + video.error.message : "")
+          : "";
+        const details = " readyState=" + video.readyState + " networkState=" + video.networkState +
+          " mimeType=" + String(video.currentSrc ? video.currentSrc.split("#")[0].slice(0, 80) : "not-set") + mediaError;
         cleanup();
-        reject(new Error("Timed out while checking the exported video."));
+        reject(new Error("Timed out while checking the exported video (" + eventName + ")." + details));
       }, timeoutMs);
       if (eventName === "loadedmetadata" && video.readyState >= 1) onReady();
       if (eventName === "loadeddata" && video.readyState >= 2) onReady();
@@ -2924,7 +2817,7 @@
         $("render-video-bottom").disabled = false;
         updateTransport();
       };
-      recorder.start(500);
+      recorder.start();
       state.isPlaying = true;
       forceCaptureFrame(state.captureFrameRequest);
       state.lastCaptureRequestAt = performance.now();
@@ -3866,7 +3759,7 @@
       recorder.onerror = () => finish(new Error("The browser recorder failed while creating the animated diagram."));
       recorder.onstop = () => finish(null);
       try {
-        recorder.start(250);
+        recorder.start();
         forceCaptureFrame(capture.requestFrame);
         const startAt = performance.now();
         lastCaptureAt = startAt;

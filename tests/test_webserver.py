@@ -118,6 +118,9 @@ class StudioServerTests(unittest.TestCase):
         self.assertIn('id="file-tree"', body)
         self.assertIn("default-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
+        self.assertIn("script-src 'self' https://cdn.jsdelivr.net", csp)
+        self.assertIn("connect-src 'self' https://api.github.com https://cdn.jsdelivr.net", csp)
+        self.assertIn("media-src 'self' blob: data:", csp)
 
     def test_pinterest_asset_search_route_is_authenticated_and_reference_only(self):
         status, body = self.request(
@@ -300,7 +303,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(baseline["model_id"], "gemini-3.8-flash")
         self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
-        self.assertEqual(baseline["metadata"]["timeout_seconds"], 15)
+        self.assertEqual(baseline["metadata"]["timeout_seconds"], 30)
         self.assertEqual(baseline["metadata"]["max_retries"], 0)
         self.assertEqual(baseline["metadata"]["standard_fallback_model"], "omnitrix-fast-fallback")
 

@@ -1652,10 +1652,11 @@ def make_handler(
             self.send_header("X-Frame-Options", "DENY")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; script-src 'self'; "
+                "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
-                "connect-src 'self' https://api.github.com; "
+                "connect-src 'self' https://api.github.com https://cdn.jsdelivr.net; "
+                "media-src 'self' blob: data:; "
                 "img-src 'self' data: blob: https://upload.wikimedia.org https://images.pexels.com; base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'",
             )

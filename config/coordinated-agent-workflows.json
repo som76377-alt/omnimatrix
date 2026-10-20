@@ -184,14 +184,19 @@
       ],
       "outputs": [
         "patch",
-        "test_report"
+        "test_report",
+        "rendered artifact when implementing a renderer",
+        "acceptance and visual QA report"
       ],
       "may_start_after": [
         "approved_implementation_plan"
       ],
       "must_not": [
         "edit_files_owned_by_another_active_coder_task",
-        "claim_tests_passed_without_execution"
+        "claim_tests_passed_without_execution",
+        "substitute prompts or plans for the requested implementation",
+        "claim realism without inspecting rendered output",
+        "skip regression tests for new renderer paths"
       ]
     },
     {
@@ -209,7 +214,35 @@
       ],
       "must_not": [
         "approve_based_only_on_agent_claims",
-        "skip_failed_acceptance_checks"
+        "skip_failed_acceptance_checks",
+        "approve a video based only on source code or a plan when rendered frames are available",
+        "treat decode success as artistic quality"
+      ]
+    },
+    {
+      "id": "code_rendering_engineer",
+      "owns": [
+        "procedural_scene_code",
+        "3d_geometry_and_materials",
+        "camera_lighting_animation",
+        "video_encoding",
+        "render_qa"
+      ],
+      "outputs": [
+        "scene_source",
+        "rendered_video",
+        "technical_qa_report",
+        "visual_review_report"
+      ],
+      "may_start_after": [
+        "job_brief.json"
+      ],
+      "must_not": [
+        "search_or_download_images_as_a_video_substitute",
+        "generate_still_images_as_a_video_substitute",
+        "use_stick_figures_for_believable_human_requests",
+        "claim_photorealism_without_visual_evidence",
+        "mark_unreviewed_output_as_approved"
       ]
     }
   ],
@@ -296,5 +329,24 @@
     "persisted_production_job_api": true,
     "specialist_dispatch": false,
     "note": "The shared manifest now persists scene assignments, task dependencies, exclusive artifact ownership, worker handoff revisions and unverified artifact references through authenticated plan/status/task-update routes. These routes coordinate and record work; they do not automatically invoke separate specialist models or mark final output verified."
+  },
+  "prompt_to_video_contract": {
+    "mode": "code_only",
+    "primary_method": "write scene, geometry, materials, lighting, camera, animation and render code; encode actual video",
+    "asset_search_allowed": false,
+    "generated_still_substitute_allowed": false,
+    "paid_ai_video_fallback_allowed": false,
+    "required_steps": [
+      "parse brief and acceptance criteria",
+      "create scene and motion using code",
+      "render encoded video",
+      "verify file opens and decodes",
+      "inspect actual rendered frames with visual critic when consented",
+      "apply bounded corrections for concrete defects",
+      "report technical QA separately from artistic approval"
+    ],
+    "human_subject_policy": "Use procedural 3D human renderer; reject crude stick/line/circle figures. Do not claim photorealism without visual evidence.",
+    "unsupported_subject_policy": "Fail closed with a clear limitation instead of exporting placeholders.",
+    "status_truth": "Never claim visual approval unless actual rendered frames were inspected; never claim the model wrote or ran code without evidence."
   }
 }

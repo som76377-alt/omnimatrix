@@ -22,6 +22,60 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn('sessionStorage.getItem("omnitrix-creative-brief-pending")', self.studio_js)
         self.assertIn("await buildDraftFromBrief()", self.studio_js)
 
+    def test_prompt_to_video_is_code_only_and_never_searches_or_generates_still_images(self):
+        start = self.studio_js.index("async function buildDraftFromBrief()")
+        end = self.studio_js.index("function renderAssets()", start)
+        prompt_to_video = self.studio_js[start:end]
+        self.assertIn("await assembleOriginalGraphicFallback(brief)", prompt_to_video)
+        self.assertNotIn("searchOnlineAssets()", prompt_to_video)
+        self.assertNotIn("importOnlineAsset(", prompt_to_video)
+        self.assertNotIn("requestGeneratedImage(", prompt_to_video)
+        renderer_start = self.studio_js.index("async function assembleOriginalGraphicFallback(brief)")
+        renderer_end = self.studio_js.index("function needsDirectAiVideo(brief)", renderer_start)
+        renderer = self.studio_js[renderer_start:renderer_end]
+        self.assertIn("window.OmnitrixCode3D.renderVideo", renderer)
+        self.assertIn("isUnsupportedAnimalSubject(brief)", renderer)
+        self.assertNotIn("requestGeneratedImage(", renderer)
+        module = (ROOT / "webapp" / "code-3d-character-renderer.js").read_text(encoding="utf-8")
+        self.assertIn("new T.WebGLRenderer", module)
+        self.assertIn("canvas.captureStream(24)", module)
+        self.assertIn("new MediaRecorder", module)
+        self.assertIn("new T.LatheGeometry", module)
+        self.assertIn("No asset search", renderer)
+
+    def test_code_first_video_policy_forbids_asset_search_and_requires_visual_review(self):
+        import json
+        agents = json.loads((ROOT / "config" / "creative-studio-agents.json").read_text(encoding="utf-8"))
+        contract = agents["execution_contract"]
+        self.assertEqual(contract["prompt_to_video_mode"], "code_only")
+        self.assertTrue(contract["prompt_to_video_must_not_search_assets"])
+        self.assertTrue(contract["prompt_to_video_must_not_generate_still_images_as_video_substitute"])
+        self.assertTrue(contract["rendered_video_visual_review_required_for_final_status"])
+        engineer = next(agent for agent in agents["agents"] if agent["id"] == "code-rendering-engineer")
+        self.assertIn("coherent anatomical volumes", " ".join(engineer["responsibilities"]))
+        self.assertIn("claim photorealism without rendered-frame evidence", engineer["cannot"])
+        self.assertIn("actual rendered frames", " ".join(engineer["responsibilities"]))
+        policy = (ROOT / "docs" / "AUTONOMOUS_CREATIVE_WORKFLOW.md").read_text(encoding="utf-8")
+        self.assertIn("Do not search the web", policy)
+        self.assertIn("crude lines, circles", policy)
+        self.assertIn("unapproved technical draft", policy)
+        coordinated = json.loads((ROOT / "config" / "coordinated-agent-workflows.json").read_text(encoding="utf-8"))
+        contract = coordinated["prompt_to_video_contract"]
+        self.assertEqual(contract["mode"], "code_only")
+        self.assertFalse(contract["asset_search_allowed"])
+        self.assertFalse(contract["generated_still_substitute_allowed"])
+        self.assertIn("inspect actual rendered frames with visual critic when consented", contract["required_steps"])
+        agents_config = json.loads((ROOT / "config" / "agents.json").read_text(encoding="utf-8"))
+        coder = next(agent for agent in agents_config["agents"] if agent["role"] == "coding")
+        critic = next(agent for agent in agents_config["agents"] if agent["role"] == "critic")
+        self.assertIn("actual output", coder["instructions"])
+        self.assertIn("never pass off line-and-circle stick figures", coder["instructions"])
+        self.assertIn("actual rendered/exported artifact", critic["instructions"])
+        renderer_role = next(role for role in coordinated["roles"] if role["id"] == "code_rendering_engineer")
+        self.assertIn("use_stick_figures_for_believable_human_requests", renderer_role["must_not"])
+        html = (ROOT / "webapp" / "creative-studio.html").read_text(encoding="utf-8")
+        self.assertLess(html.index('src="./code-3d-character-renderer.js"'), html.index('src="./creative-studio.js"'))
+
     def test_online_asset_sources_are_explicit_and_license_aware(self):
         for element_id in (
             "online-asset-query", "online-asset-provider", "search-online-assets",
@@ -73,7 +127,11 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("No clip was imported", original)
         self.assertLess(original.index("await inspectRenderedVideo(blob, duration, [], [])"), original.index("const output = new File([blob]"))
         render = self.studio_js.split("async function renderVideo(options)", 1)[1].split("async function ensureCurrentPreviewSource()", 1)[0]
-        self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start(500)"))
+        self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start()"))
+        self.assertNotIn("recorder.start(250)", self.studio_js)
+        self.assertNotIn("recorder.start(500)", self.studio_js)
+        self.assertIn("Timed out while checking the exported video (", self.studio_js)
+        self.assertIn("if (!selected)", self.studio_js)
         self.assertIn("inspectionFailure", render)
         self.assertIn("no video was saved", render.lower())
 

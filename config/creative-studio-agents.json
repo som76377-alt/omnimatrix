@@ -7,7 +7,15 @@
     "tool_outputs_are_untrusted_until_verified": true,
     "generated_edit_plans_must_be_reversible": true,
     "model_private_reasoning_is_never_requested_for_display": true,
-    "zero_cost_default": true
+    "zero_cost_default": true,
+    "prompt_to_video_mode": "code_only",
+    "prompt_to_video_must_not_search_assets": true,
+    "prompt_to_video_must_not_generate_still_images_as_video_substitute": true,
+    "rendered_video_visual_review_required_for_final_status": true,
+    "block_low_fidelity_human_animal_output": true,
+    "human_subject_renderer": "webapp/code-3d-character-renderer.js",
+    "human_renderer_status": "procedural_3d_not_photorealistic_requires_visual_review",
+    "unsupported_animal_subjects": "block_without_placeholder"
   },
   "agents": [
     {
@@ -33,7 +41,7 @@
     {
       "id": "online-asset-scout",
       "label": "Online asset scout",
-      "status": "integrated-source-bounded",
+      "status": "manual-only-not-used-by-prompt-to-video",
       "implementation": "core/creative_assets.py + authenticated /api/creative/search route",
       "model_required": false,
       "responsibilities": [
@@ -47,12 +55,15 @@
         "treat missing licence metadata as verified reuse permission",
         "crawl arbitrary websites or download from unapproved hosts",
         "bypass platform access controls or scrape Pinterest"
+      ],
+      "limitations": [
+        "Never invoke this role from the default prompt-to-video workflow; video scenes must be authored and rendered with code."
       ]
     },
     {
       "id": "visual-search-planner",
       "label": "Visual search query planner",
-      "status": "integrated-deterministic-fallback",
+      "status": "manual-only-not-used-by-prompt-to-video",
       "implementation": "core/creative_search_planner.py + webapp/creative-studio.js",
       "model_required": false,
       "responsibilities": [
@@ -65,7 +76,8 @@
         "this is deterministic phrase decomposition, not an LLM semantic planner",
         "it does not visually inspect results or guarantee semantic relevance",
         "Google Images remains reference-link based for new API customers",
-        "Pinterest remains reference-link only until OAuth and approved API access exist"
+        "Pinterest remains reference-link only until OAuth and approved API access exist",
+        "Not part of default prompt-to-video; the default creation path must not formulate asset-search queries."
       ],
       "release_gate": [
         "query-variant tests for action prompts and science prompts",
@@ -84,12 +96,18 @@
         "apply deterministic shot settings",
         "compose text overlays",
         "apply supported pan and zoom presets",
-        "record a local WebM draft"
+        "record a local WebM draft",
+        "run the code-first render and require actual encoded-file technical QA before import",
+        "route human briefs to the procedural Three.js code renderer",
+        "require rendered-frame visual review before artistic approval"
       ],
       "cannot": [
         "edit original source files destructively",
         "claim support for unimplemented effects",
-        "silently use paid compute"
+        "silently use paid compute",
+        "use online assets or generated still images as a substitute for code-authored video scenes",
+        "mark a render as visually approved without a frame-level visual critique",
+        "claim the procedural 3D character is photorealistic without evidence"
       ]
     },
     {
@@ -230,6 +248,60 @@
         "container CPU/memory/process limits",
         "artifact persistence and Studio timeline import",
         "visual inspection of final rendered output"
+      ]
+    },
+    {
+      "id": "code-video-renderer",
+      "label": "Code-first video renderer",
+      "status": "active-local-with-human-animal-quality-gate",
+      "implementation": "webapp/creative-studio.js",
+      "model_required": false,
+      "responsibilities": [
+        "construct original scenes procedurally in code",
+        "animate scene state over time and render a complete encoded video",
+        "reopen the encoded file and verify decoding, dimensions, duration, blank frames and meaningful motion",
+        "request visual critique of rendered frames only with explicit per-run consent",
+        "label technical drafts as unapproved until visual critique succeeds"
+      ],
+      "cannot": [
+        "search for or download images/assets during prompt-to-video",
+        "generate still images as a substitute for motion",
+        "pass off a stick/line/circle figure as a believable human",
+        "claim artistic approval from technical checks alone"
+      ],
+      "release_gate": [
+        "code-only prompt-to-video regression tests",
+        "human/animal low-fidelity quality gate",
+        "rendered-frame visual review and bounded correction",
+        "on-device render/export playback tests"
+      ]
+    },
+    {
+      "id": "code-rendering-engineer",
+      "label": "Code Rendering Engineer",
+      "status": "active",
+      "implementation": "webapp/code-3d-character-renderer.js",
+      "responsibilities": [
+        "translate a brief into a deterministic scene graph, geometry, materials, lighting, camera and time-based animation using code",
+        "prefer coherent anatomical volumes, articulated joints, face landmarks, hands and grounded contact over stick figures or primitive placeholders",
+        "render an actual encoded video and validate dimensions, duration, decodability and nonblank frames",
+        "use the actual rendered frames as evidence; make bounded code corrections when a visual critic identifies concrete defects",
+        "state renderer limits honestly and fail closed for unsupported subjects"
+      ],
+      "cannot": [
+        "search for or download images as a substitute for code-authored scenes",
+        "generate a still image and present it as the requested video",
+        "claim photorealism without rendered-frame evidence",
+        "call technical decode checks proof of artistic quality",
+        "add decorative particles, meaningless HUDs, filler text, or geometry without a communication purpose"
+      ],
+      "engineering_contract": [
+        "implement a measurable feature, not only a prompt change",
+        "add regression tests for subject routing and output validity",
+        "use version-pinned runtime dependencies",
+        "handle timeouts and dispose GPU/media resources",
+        "separate technical QA from artistic approval",
+        "never mark a feature production-ready until browser/device rendering is tested"
       ]
     }
   ],
