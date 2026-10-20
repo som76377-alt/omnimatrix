@@ -357,13 +357,14 @@
     for (const clause of clauses) {
       candidates.push(subject && actions.has(clause.split(/\\s+/)[0].toLowerCase()) ? subject + " " + clause : clause);
     }
-    if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
+    if (subject && words.some((word) => actions.has(word.toLowerCase()))) candidates.push(subject + " " + (words.find((word) => actions.has(word.toLowerCase())) || ""));
     if (subject && words.some((word) => ["wave","waves","waving"].includes(word.toLowerCase()))) {
       candidates.push("person waving", subject + " waving", "hand waving greeting");
     }
     if (subject && words.some((word) => ["hi","hello","greeting","greetings"].includes(word.toLowerCase()))) {
       candidates.push(subject + " greeting", "person saying hello", "person greeting");
     }
+    if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
     for (let i = 0; i < words.length - 1; i += 1) candidates.push(words[i] + " " + words[i + 1]);
     const seen = new Set();
     return candidates.map((candidate) => candidate.trim())
