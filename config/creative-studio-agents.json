@@ -205,11 +205,37 @@
         "perform a second AI critique of the corrected final render",
         "guarantee visual quality or eliminate every form of AI slop"
       ]
+    },
+    {
+      "id": "manim-renderer",
+      "label": "Manim scientific renderer",
+      "status": "registered-structured-tool-runtime-install-required",
+      "implementation": "core/tools/implementations/manim_renderer.py",
+      "model_required": false,
+      "responsibilities": [
+        "render validated scientific and mathematical node-arrow diagrams to MP4",
+        "accept artifact labels and bounded coordinates rather than arbitrary source code",
+        "return an explicit unavailable result when Manim is not installed",
+        "report render timeout, output path, output size and technical failure honestly"
+      ],
+      "cannot": [
+        "execute model-written Python",
+        "claim to be available until the host executable is present",
+        "replace assets owned by another renderer without an explicit task assignment",
+        "claim the MP4 has passed visual or scientific review merely because it rendered"
+      ],
+      "release_gate": [
+        "Manim executable/version probe on the actual deployed host",
+        "representative scene render and MP4 decode validation",
+        "container CPU/memory/process limits",
+        "artifact persistence and Studio timeline import",
+        "visual inspection of final rendered output"
+      ]
     }
   ],
   "coordination_contract": {
     "source_of_truth": "config/creative-production-contract.json",
-    "status": "contract-defined-runtime-enforcement-pending",
+    "status": "manifest_module_added_full_studio_runtime_enforcement_pending",
     "rule": "Specialist labels must not imply independent execution. The target runtime uses one shared production manifest with stable artifact IDs, scoped ownership, dependency edges, and a task ledger.",
     "runtime_enforced": false
   }
