@@ -93,6 +93,24 @@ class CreativeAssetSearchTests(unittest.TestCase):
                 "https://www.pinterest.com/pin/example", provider="pinterest"
             )
 
+    def test_commons_search_automatically_broadens_specific_queries(self):
+        def fake_search(query, kind, limit):
+            if query == "induction stove":
+                return [{
+                    "id": "commons-1", "asset_url": "https://upload.wikimedia.org/one.jpg",
+                    "title": "Induction stove", "provider": "commons",
+                }]
+            return []
+
+        with patch("core.creative_assets._commons_search", side_effect=fake_search) as search:
+            result = search_creative_assets(
+                "induction stove magnetic field pan atoms", provider="commons", limit=4, environ={}
+            )
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["query"], "induction stove magnetic field pan atoms")
+        self.assertIn("induction stove", result["search_queries"])
+        self.assertGreaterEqual(search.call_count, 2)
+
     def test_invalid_limits_and_query_are_rejected(self):
         with self.assertRaises(CreativeAssetError):
             search_creative_assets("x" * 181, provider="commons", environ={})
