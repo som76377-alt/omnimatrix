@@ -1595,6 +1595,125 @@
     target.className = "render-message" + (isError ? " error" : " success");
   }
 
+  function waitForVideoEvent(video, eventName, timeoutMs, failureMessage) {
+    return new Promise((resolve, reject) => {
+      let timer = 0;
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        video.removeEventListener(eventName, onReady);
+        video.removeEventListener("error", onError);
+      };
+      const onReady = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error(failureMessage || "The exported video could not be decoded.")); };
+      video.addEventListener(eventName, onReady, { once: true });
+      video.addEventListener("error", onError, { once: true });
+      timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out while checking the exported video."));
+      }, timeoutMs);
+      if (eventName === "loadedmetadata" && video.readyState >= 1) onReady();
+      if (eventName === "loadeddata" && video.readyState >= 2) onReady();
+    });
+  }
+
+  async function inspectRenderedVideo(blob, expectedDuration) {
+    if (!(blob instanceof Blob) || !blob.size) throw new Error("The browser returned an empty video file.");
+    if (blob.size < 2048) throw new Error("The exported video is unexpectedly tiny and may be incomplete.");
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.setAttribute("aria-hidden", "true");
+    video.style.position = "fixed";
+    video.style.left = "-10000px";
+    video.style.width = "2px";
+    video.style.height = "2px";
+    document.body.append(video);
+    const warnings = [];
+    try {
+      const metadata = waitForVideoEvent(video, "loadedmetadata", 12000, "The exported WebM could not be reopened for verification.");
+      video.src = url;
+      video.load();
+      await metadata;
+      const duration = Number(video.duration);
+      const width = Number(video.videoWidth);
+      const height = Number(video.videoHeight);
+      if (!Number.isFinite(duration) || duration <= 0 || width <= 0 || height <= 0) {
+        throw new Error("The exported file did not expose valid playable video metadata.");
+      }
+      if (Number.isFinite(expectedDuration) && expectedDuration > 0) {
+        const tolerance = Math.max(1.25, expectedDuration * 0.12);
+        if (Math.abs(duration - expectedDuration) > tolerance) {
+          warnings.push("duration differs from the timeline (" + duration.toFixed(2) + "s vs " + expectedDuration.toFixed(2) + "s)");
+        }
+      }
+      const probe = document.createElement("canvas");
+      probe.width = 64;
+      probe.height = 36;
+      const probeContext = probe.getContext("2d", { willReadFrequently: true });
+      if (!probeContext) throw new Error("The browser could not create the local frame-inspection canvas.");
+      const times = Array.from(new Set([
+        Math.min(duration * 0.02, 0.08),
+        duration * 0.25,
+        duration * 0.5,
+        duration * 0.75,
+        Math.max(0, duration - Math.min(duration * 0.02, 0.08))
+      ].map((time) => Math.max(0, Math.min(duration - 0.01, time)).toFixed(3)))).map(Number);
+      const frameStats = [];
+      await waitForVideoEvent(video, "loadeddata", 8000, "The exported video did not decode its first frame.");
+      for (const time of times) {
+        if (Math.abs(video.currentTime - time) > 0.02) {
+          const seek = new Promise((resolve, reject) => {
+            const cleanup = () => {
+              window.clearTimeout(timer);
+              video.removeEventListener("seeked", onSeeked);
+              video.removeEventListener("error", onError);
+            };
+            const onSeeked = () => { cleanup(); resolve(); };
+            const onError = () => { cleanup(); reject(new Error("A sampled frame could not be decoded.")); };
+            const timer = window.setTimeout(() => {
+              cleanup();
+              reject(new Error("Timed out seeking within the exported video."));
+            }, 5000);
+            video.addEventListener("seeked", onSeeked, { once: true });
+            video.addEventListener("error", onError, { once: true });
+            video.currentTime = time;
+          });
+          await seek;
+        }
+        probeContext.drawImage(video, 0, 0, probe.width, probe.height);
+        const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
+        let sum = 0;
+        let squared = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const luma = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+          sum += luma;
+          squared += luma * luma;
+        }
+        const count = pixels.length / 4;
+        const mean = sum / count;
+        const variance = Math.max(0, squared / count - mean * mean);
+        frameStats.push({ time, mean, variance });
+      }
+      const suspiciousDark = frameStats.filter((frame) => frame.mean < 5 && frame.variance < 3);
+      if (suspiciousDark.length) {
+        warnings.push("possible black/blank output near " + suspiciousDark.map((frame) => frame.time.toFixed(1) + "s").join(", "));
+      }
+      return {
+        ok: true, decodable: true, duration, width, height,
+        sampledFrames: frameStats.length,
+        warnings
+      };
+    } finally {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
   async function renderVideo() {
     if (state.exporting) return;
     if (!state.project.timeline.length) { showMessage("Add at least one shot before rendering.", true); return; }
@@ -1605,6 +1724,7 @@
     pausePreview();
     const dimensions = $("preview-scale").value.split("x").map(Number);
     const original = { width: canvas.width, height: canvas.height };
+    const expectedDuration = totalDuration();
     canvas.width = dimensions[0] || 1280;
     canvas.height = dimensions[1] || 720;
     state.playhead = 0;
@@ -1627,7 +1747,7 @@
       state.recorder = recorder;
       recorder.ondataavailable = (event) => { if (event.data && event.data.size) state.chunks.push(event.data); };
       recorder.onerror = (event) => showMessage("Recorder error: " + ((event.error && event.error.message) || "unknown browser recording error"), true);
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const blob = new Blob(state.chunks, { type: recorder.mimeType || "video/webm" });
         outputStream.getTracks().forEach((track) => track.stop());
         canvas.width = original.width;
@@ -1640,6 +1760,15 @@
         $("render-video-bottom").disabled = false;
         drawFrame();
         if (blob.size) {
+          let inspection = null;
+          let inspectionFailure = "";
+          showMessage("Checking the actual WebM file locally (decode, duration, size and sampled frames)…", false);
+          try {
+            inspection = await inspectRenderedVideo(blob, expectedDuration);
+          } catch (error) {
+            inspectionFailure = String(error.message || error);
+          }
+          // Keep the actual encoded artifact available even if browser decoding QA cannot complete.
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = url;
@@ -1648,7 +1777,30 @@
           link.click();
           link.remove();
           setTimeout(() => URL.revokeObjectURL(url), 60000);
-          showMessage("Render complete · " + formatBytes(blob.size) + " · downloaded as WebM. Keep original source media for future edits.", false);
+          if (inspection && inspection.ok) {
+            const dimensionsLabel = inspection.width + "×" + inspection.height;
+            if (inspection.warnings.length) {
+              showMessage(
+                "WebM exported and decoded · " + formatBytes(blob.size) + " · " + dimensionsLabel + " · " +
+                inspection.duration.toFixed(2) + "s. QA warning: " + inspection.warnings.join("; ") +
+                ". The file was downloaded, but inspect these points before publishing.",
+                true
+              );
+            } else {
+              showMessage(
+                "WebM exported, reopened and decoded locally · " + formatBytes(blob.size) + " · " +
+                dimensionsLabel + " · " + inspection.duration.toFixed(2) + "s · " +
+                inspection.sampledFrames + " sampled frames checked. This is technical QA, not an AI artistic review.",
+                false
+              );
+            }
+          } else {
+            showMessage(
+              "A " + formatBytes(blob.size) + " WebM was generated and downloaded, but its playback could not be verified: " +
+              (inspectionFailure || "unknown decode error") + ". Open the file and inspect it before publishing.",
+              true
+            );
+          }
         } else {
           showMessage("The browser returned an empty video file. Try a shorter sequence or lower resolution.", true);
         }
