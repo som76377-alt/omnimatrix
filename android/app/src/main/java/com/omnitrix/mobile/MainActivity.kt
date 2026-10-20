@@ -107,11 +107,11 @@ private enum class AppTab(val title: String) {
 
 internal object VideoPromptIntent {
     private val creationCommand = Regex(
-        """^(?:please\\s+)?(?:create|make|generate|produce|render|edit|assemble|animate|build|turn|convert)\\b""",
+        """^(?:please\s+)?(?:create|make|generate|produce|render|edit|assemble|animate|build|turn|convert)\b""",
         RegexOption.IGNORE_CASE
     )
     private val mediaTarget = Regex(
-        """\\b(?:video|videos|clip|reel|shorts?|animation|motion\\s+graphics)\\b""",
+        """\b(?:video|videos|clip|reel|shorts?|animation|motion\s+graphics)\b""",
         RegexOption.IGNORE_CASE
     )
 
