@@ -1748,20 +1748,6 @@ def make_handler(
             if route == "/api/mobile/creative/video-status":
                 self._send_json(_paid_creative_media_status())
                 return
-            if route.startswith("/api/creative/manim-jobs/"):
-                remainder = route[len("/api/creative/manim-jobs/"):]
-                if remainder.endswith("/artifact"):
-                    job_id = remainder[:-len("/artifact")].rstrip("/")
-                    artifact = runtime.manim_job_artifact(job_id)
-                    if artifact is None:
-                        self._send_json({"ok": False, "error": "Manim artifact is not available or failed integrity validation."}, 404)
-                    else:
-                        content, filename = artifact
-                        self._send_bytes(content, "video/mp4", filename)
-                else:
-                    result = runtime.manim_job_status(remainder)
-                    self._send_json(result, 200 if result.get("ok") else 404)
-                return
             if route.startswith("/api/mobile/creative/jobs/"):
                 job_id = route.rsplit("/", 1)[-1]
                 result = runtime.creative_job_status(job_id)
@@ -1817,6 +1803,20 @@ def make_handler(
                     )
                     return
                 try:
+                    if route.startswith("/api/creative/manim-jobs/"):
+                        remainder = route[len("/api/creative/manim-jobs/"):]
+                        if remainder.endswith("/artifact"):
+                            job_id = remainder[:-len("/artifact")].rstrip("/")
+                            artifact = runtime.manim_job_artifact(job_id)
+                            if artifact is None:
+                                self._send_json({"ok": False, "error": "Manim artifact is not available or failed integrity validation."}, 404)
+                            else:
+                                content, filename = artifact
+                                self._send_bytes(content, "video/mp4", filename)
+                        else:
+                            result = runtime.manim_job_status(remainder)
+                            self._send_json(result, 200 if result.get("ok") else 404)
+                        return
                     if route == "/api/creative/search":
                         raw_limit = self._first_query("limit", "10")
                         try:
