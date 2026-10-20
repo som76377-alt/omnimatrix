@@ -724,7 +724,7 @@
       const token = aiRuntimeToken();
       if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
       onlineStatus("Downloading a bounded copy of “" + (item.title || "asset") + "”…", "");
-      const params = new URLSearchParams({ provider: nativeMode ? "commons" : item.provider, url: item.asset_url });
+      const params = new URLSearchParams({ provider: item.provider, url: item.asset_url });
       const endpoint = nativeMode ? "./api/mobile/creative/assets/download?" : "./api/creative/assets/download?";
       const response = await fetch(endpoint + params.toString(), {
         method: "GET", cache: "no-store",
