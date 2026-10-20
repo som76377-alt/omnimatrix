@@ -53,7 +53,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot)", self.studio_js)
         self.assertIn('waitForVideoEvent(video, "loadedmetadata"', self.studio_js)
         self.assertIn("possible black/blank output", self.studio_js)
-        self.assertIn("This is technical QA, not an AI artistic review.", self.studio_js)
+        self.assertIn("This is technical QA, not a guarantee of artistic quality.", self.studio_js)
         self.assertIn("could not be verified", self.studio_js)
 
     def test_graphics_engineer_outputs_only_bounded_native_layers(self):
