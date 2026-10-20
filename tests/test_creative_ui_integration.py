@@ -88,7 +88,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("function needsDirectAiVideo(brief)", self.studio_js)
         self.assertIn("This prompt needs genuine moving people/animals or spoken dialogue.", self.studio_js)
         self.assertIn('if (needsDirectAiVideo(brief))', self.studio_js)
-        self.assertIn('generateDirectAiVideo(requestedBrief)', self.studio_js)
+        self.assertIn('generateDirectAiVideo(String($("creative-brief").value || "").trim())', self.studio_js)
         self.assertIn('await renderVideo()', self.studio_js)
         self.assertIn('No web search or download will run.', self.studio_js)
 
