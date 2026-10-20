@@ -31,26 +31,36 @@ class CreativeAssetSearchTests(unittest.TestCase):
     def test_image_generation_parses_bounded_inline_image_response(self):
         image_bytes = b"\x89PNG\r\n\x1a\n" + (b"image-data" * 150)
         response_body = {
-            "candidates": [{
-                "content": {"parts": [{
-                    "inlineData": {
-                        "mimeType": "image/png",
-                        "data": base64.b64encode(image_bytes).decode("ascii"),
-                    }
-                }]}
-            }]
+            "model": "gemini-nano-banana-2.1",
+            "steps": [{
+                "type": "model_output",
+                "content": [{
+                    "type": "image",
+                    "mime_type": "image/png",
+                    "data": base64.b64encode(image_bytes).decode("ascii"),
+                }],
+            }],
         }
         response = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
         response.__enter__.return_value.read.return_value = json.dumps(response_body).encode("utf-8")
-        with patch("core.creative_assets.urllib.request.urlopen", return_value=response):
+        with patch("core.creative_assets.urllib.request.urlopen", return_value=response) as send:
             result = generate_creative_image(
                 "An original technical illustration of an induction stove",
                 environ={"GEMINI_API_KEY": "test-key"},
             )
         self.assertTrue(result["ok"])
+        self.assertEqual(result["provider"], "google")
+        self.assertEqual(result["model"], "gemini-nano-banana-2.1")
         self.assertEqual(result["mime_type"], "image/png")
         self.assertEqual(base64.b64decode(result["image_base64"]), image_bytes)
         self.assertLessEqual(result["size_bytes"], 6 * 1024 * 1024)
+        request = send.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/v1beta/interactions"))
+        self.assertEqual(request.get_header("X-goog-api-key"), "test-key")
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(payload["model"], "gemini-nano-banana-2.1")
+        self.assertEqual(payload["response_format"]["type"], "image")
+        self.assertEqual(payload["response_format"]["aspect_ratio"], "16:9")
 
     def test_pexels_requires_explicit_server_side_key(self):
         with patch("core.creative_assets._read_json") as read_json:
