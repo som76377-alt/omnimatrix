@@ -1024,11 +1024,11 @@
     return {
       id: crypto.randomUUID(),
       type: type,
-      name: (type === "text" ? "Text" : type === "rect" ? "Rectangle" : "Circle") + " " + count,
+      name: (type === "text" ? "Text" : type === "rect" ? "Rectangle" : type === "circle" ? "Circle" : type === "line" ? "Line" : "Arrow") + " " + count,
       text: type === "text" ? "New graphic" : "",
       x: 50, y: type === "text" ? 76 : 50,
-      width: type === "text" ? 70 : 22,
-      height: type === "text" ? 12 : 16,
+      width: type === "text" ? 70 : (type === "line" || type === "arrow" ? 32 : 22),
+      height: type === "text" ? 12 : (type === "line" || type === "arrow" ? 1 : 16),
       fontSize: 44,
       color: "#d6fa62", opacity: 1, font: "sans", animation: "fade-in"
     };
@@ -1052,7 +1052,7 @@
       const select = document.createElement("button");
       select.type = "button";
       select.className = "graphic-layer-select";
-      select.textContent = (layer.type === "text" ? "T" : layer.type === "rect" ? "▰" : "●") + "  " + (layer.name || "Graphic layer");
+      select.textContent = (layer.type === "text" ? "T" : layer.type === "rect" ? "▰" : layer.type === "circle" ? "●" : layer.type === "line" ? "／" : "→") + "  " + (layer.name || "Graphic layer");
       select.addEventListener("click", () => {
         state.selectedGraphicLayerId = layer.id;
         renderGraphicLayers();
@@ -1112,6 +1112,8 @@
     $("add-text-layer").addEventListener("click", () => addGraphicLayer("text"));
     $("add-rect-layer").addEventListener("click", () => addGraphicLayer("rect"));
     $("add-circle-layer").addEventListener("click", () => addGraphicLayer("circle"));
+    $("add-line-layer").addEventListener("click", () => addGraphicLayer("line"));
+    $("add-arrow-layer").addEventListener("click", () => addGraphicLayer("arrow"));
     const fields = {
       "graphic-layer-name": ["name", (v) => v.slice(0, 100)],
       "graphic-layer-text": ["text", (v) => v.slice(0, 300)],
@@ -1374,6 +1376,28 @@
         ctx.beginPath();
         ctx.ellipse(x, y, width / 2, height / 2, 0, 0, Math.PI * 2);
         ctx.fill();
+      } else if (layer.type === "line" || layer.type === "arrow") {
+        const x1 = x - width / 2;
+        const y1 = y - height / 2;
+        const x2 = x + width / 2;
+        const y2 = y + height / 2;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = Math.max(2, W * 0.0025);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        if (layer.type === "arrow") {
+          const head = Math.max(8, Math.min(W, H) * 0.022);
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+          ctx.closePath();
+          ctx.fill();
+        }
       } else if (layer.type === "text" && layer.text) {
         const fontSize = Math.max(10, Math.round((Number(layer.fontSize) || 44) * W / 960));
         const family = layer.font === "serif" ? 'Georgia, "Times New Roman", serif'
@@ -2157,7 +2181,7 @@
             clip.titleColor = op.color;
             break;
           case "add_graphic_layer": {
-            const allowedLayerTypes = new Set(["text", "rect", "circle"]);
+            const allowedLayerTypes = new Set(["text", "rect", "circle", "line", "arrow"]);
             const allowedAnimations = new Set(["none", "fade-in", "slide-up", "slide-left", "scale-in"]);
             const numberInRange = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
             if (!allowedLayerTypes.has(op.layer_type) || !allowedAnimations.has(op.animation) ||
