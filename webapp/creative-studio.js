@@ -433,8 +433,13 @@
     state.currentClipId = state.selectedClipId;
     renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
     await saveProject(false);
-    onlineStatus("Original motion-graphics draft assembled. It uses locally drawn vector scenes, not generated photographs or a connected image model.", "success");
-    if (state.autoRenderOnAssembly) await renderVideo();
+    state.lastAutoDraftClipIds = added.map((clip) => clip.id);
+    onlineStatus("Original motion-graphics draft assembled. It uses locally drawn vector scenes, not generated photographs. A configured visual model may direct it only after consent.", "success");
+    if ($("auto-creative-consent").checked) {
+      await finishDraftAutomatically(state.lastAutoDraftClipIds);
+    } else if (state.autoRenderOnAssembly) {
+      await renderVideo();
+    }
   }
 
   function updatePreviewResolution() {
@@ -2827,7 +2832,11 @@
       const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
       window.open(url, "_blank", "noopener,noreferrer");
     });
-    $("build-from-brief").addEventListener("click", buildDraftFromBrief);
+    $("build-from-brief").addEventListener("click", async () => {
+      state.autoRenderOnAssembly = true;
+      try { await buildDraftFromBrief(); }
+      finally { state.autoRenderOnAssembly = false; }
+    });
     $("auto-creative-consent").addEventListener("change", () => {
       if ($("auto-creative-consent").checked && state.lastAutoDraftClipIds.length) {
         finishDraftAutomatically(state.lastAutoDraftClipIds);
