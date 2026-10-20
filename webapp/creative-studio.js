@@ -836,18 +836,37 @@
     });
   }
 
-  function requiresHighFidelitySubject(brief) {
-    // The current procedural Canvas renderer is not capable of believable humans/animals.
-    // Fail closed rather than publish a crude stick/shape figure as if it met the brief.
-    return /\b(man|men|woman|women|person|people|human|adult|boy|girl|child|baby|actor|presenter|host|crowd|face|dog|cat|bird|horse|animal|pet)\b/i.test(String(brief || ""));
+  function isHumanSubject(brief) {
+    return /\b(man|men|woman|women|person|people|human|adult|boy|girl|child|baby|actor|presenter|host|crowd|face)\b/i.test(String(brief || ""));
+  }
+
+  function isUnsupportedAnimalSubject(brief) {
+    return /\b(dog|cat|bird|horse|animal|pet|wolf|fox|lion|tiger|bear|rabbit)\b/i.test(String(brief || ""));
   }
 
   async function assembleOriginalGraphicFallback(brief) {
-    if (requiresHighFidelitySubject(brief)) {
-      throw new Error("QUALITY GATE: this renderer cannot produce a believable human/animal yet. No line-and-circle substitute was rendered or exported. The code-first 3D character renderer must be implemented and visually verified before this request can pass.");
+    if (isUnsupportedAnimalSubject(brief)) {
+      throw new Error("QUALITY GATE: this code renderer currently supports a procedural 3D human, not believable animal anatomy. No line-and-circle or placeholder substitute was rendered or exported.");
     }
-    onlineStatus("CODE-FIRST RENDER: building the scene from procedural code, animating it frame by frame, rendering WebM, then checking the encoded video. No asset search or image generation is used.", "");
-    const file = await renderOriginalMotionClip(brief);
+    onlineStatus("CODE-FIRST RENDER: authoring the scene in code, animating it, encoding the video, then running technical checks. No asset search or image generation is used.", "");
+    let file;
+    if (isHumanSubject(brief)) {
+      if (!window.OmnitrixCode3D || typeof window.OmnitrixCode3D.renderVideo !== "function") {
+        throw new Error("The procedural 3D character renderer did not load. No low-fidelity human substitute will be used.");
+      }
+      const dims = String($("preview-scale").value || "960x540").split("x").map(Number);
+      const match = String(brief).match(/\b(\d{1,2})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+      const result = await window.OmnitrixCode3D.renderVideo({
+        brief,
+        width: dims[0] || 960,
+        height: dims[1] || 540,
+        duration: match ? Number(match[1]) : 6
+      });
+      file = result.file;
+      onlineStatus("Procedural 3D character rendered from code. Technical video verification is next; visual approval is still required.", "");
+    } else {
+      file = await renderOriginalMotionClip(brief);
+    }
     const priorIds = new Set(state.assets.map((asset) => asset.id));
     await importFiles([file]);
     const asset = state.assets.find((item) => !priorIds.has(item.id) && item.name === file.name);
@@ -868,14 +887,15 @@
     renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
     await saveProject(false);
     state.lastAutoDraftClipIds = [clip.id];
-    onlineStatus("Rendered an original code-generated animation and passed encoded-video technical checks. This is not yet visually approved; inspect the rendered frames before treating it as final.", "success");
+    onlineStatus("Code-rendered animation added to the timeline. Technical file checks do not prove artistic quality; inspect rendered frames before treating it as final.", "success");
     if ($("auto-creative-consent").checked) {
       await finishDraftAutomatically(state.lastAutoDraftClipIds);
     } else {
-      onlineStatus("Technical render complete. Artistic visual review was not authorized, so this remains an unapproved draft. Enable the per-run visual-review consent to have the critic inspect rendered frames and request a correction.", "");
+      onlineStatus("Technical render complete but not visually approved. Enable per-run visual-review consent to let the critic inspect rendered frames and request corrections.", "");
       await renderVideo();
     }
   }
+
 
   function needsDirectAiVideo(brief) {
     const text = String(brief || "");
