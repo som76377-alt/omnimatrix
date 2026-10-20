@@ -662,8 +662,8 @@ class StudioRuntime:
                 if not output_path.is_file() or output_path.is_symlink():
                     raise RuntimeError("The renderer's reported artifact is not a regular file.")
                 size = output_path.stat().st_size
-                if size <= 0 or size > 100 * 1024 * 1024:
-                    raise RuntimeError("The rendered MP4 failed the output size gate.")
+                if size <= 0 or size > 24 * 1024 * 1024:
+                    raise RuntimeError("The rendered MP4 exceeds the 24 MB Studio media-import limit.")
                 digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
                 manifest.register_artifact(
                     "final_mp4", kind="video/mp4", owner_task_id="render-diagram",
