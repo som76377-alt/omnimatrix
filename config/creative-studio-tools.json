@@ -24,6 +24,38 @@
       "notes": "Original media and generated thumbnails are stored in browser IndexedDB. Browser storage can be cleared or quota-limited."
     },
     {
+      "id": "online-asset-search",
+      "label": "License-aware online asset search",
+      "status": "integrated-source-bounded",
+      "runtime": "authenticated-python-server",
+      "cost_class": "zero_incremental_cost_for_commons_optional_provider_keys",
+      "capabilities": [
+        "wikimedia-commons-search",
+        "licence-and-attribution-metadata",
+        "optional-pexels-photo-video-search",
+        "pinterest-reference-links-only",
+        "allowlisted-https-downloads",
+        "24mb-per-asset-cap"
+      ],
+      "notes": "The draft picker ranks by title, description and licence metadata, not visual model judgement. Pinterest Pins are not scraped or automatically downloaded. This is bounded asset-source access, not an unrestricted web crawler."
+    },
+    {
+      "id": "native-graphics-motion",
+      "label": "Graphics and motion engineer",
+      "status": "integrated-consent-gated-proposal-role",
+      "runtime": "shared-creative-director-model-call-and-browser-canvas",
+      "cost_class": "provider-quota-or-charges-on-explicit-opt-in",
+      "capabilities": [
+        "editable-text-shapes",
+        "rectangles-circles-lines-arrows",
+        "bounded-entry-motion",
+        "strict-anti-slop-prompt",
+        "max-three-extra-layers-per-shot",
+        "schema-validated-native-layer-operations"
+      ],
+      "notes": "This role shares the director's model call and is not an independent model. It cannot generate raster imagery or claim full keyframed animation. Visual relevance still requires inspecting the actual export."
+    },
+    {
       "id": "canvas-compositor",
       "label": "Canvas compositor",
       "status": "integrated",
@@ -137,9 +169,11 @@
         "schema-validated-shot-duration",
         "supported-motion-and-framing-proposals",
         "title-and-subtitle-proposals",
-        "review-before-local-apply"
+        "validated-native-graphics-layer-proposals",
+        "per-run-consented-auto-apply",
+        "local-auto-webm-export"
       ],
-      "notes": "Uses the existing multimodal coordinator and configured model. Only up to six selected resized JPEG thumbnails are sent after explicit consent; provider/model identity is reported from the completed worker where available. This is not a post-render critic and does not implement between-shot transitions or audio tracks."
+      "notes": "Uses the shared multimodal coordinator and configured model. Up to four new draft shots may be sent as resized JPEG thumbnails only after explicit per-run consent; a manual-review path also remains available. Provider/model identity is reported from the completed worker where available. It is not a post-render critic and does not implement true cross-dissolves, independent audio tracks or full-video temporal inspection."
     }
   ]
 }
