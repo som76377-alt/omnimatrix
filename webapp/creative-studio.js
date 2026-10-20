@@ -338,7 +338,7 @@
   }
 
   function buildVisualSearchQueries(query) {
-    let value = String(query || "").trim();
+    let value = String(query || "").trim().toLowerCase();
     value = value.replace(/^\s*(?:please\s+)?(?:create|make|generate|produce|build|find|search(?:\s+for)?)\s+/i, "");
     value = value.replace(/^\s*(?:a|an|the)?\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated)\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\s+(?:(?:of|about|showing|explaining|where|in\s+which)\s+)?/i, "");
     value = value.replace(/\b(?:in\s+)?\d{1,3}\s*(?:seconds?|secs?|s)\b|\b(?:9:16|16:9|1:1)\b/gi, " ");
@@ -785,7 +785,7 @@
       const heading = document.createElement("strong");
       heading.textContent = "Pinterest visual-reference searches";
       const copy = document.createElement("span");
-      copy.textContent = "Omnitrix split the brief into focused searches so you can browse separate subjects/actions. This is reference-only today: account-connected Pin search needs an approved Pinterest app and OAuth; Pins are not scraped.";
+      copy.textContent = "Omnitrix split the brief into focused searches so you can browse separate subjects/actions. This is reference-only today: account-connected Pin search needs an approved Pinterest app and OAuth; Pins are not copied automatically or scraped by Omnitrix.";
       const list = document.createElement("div");
       list.className = "online-reference-links";
       const links = Array.isArray(response.search_links) ? response.search_links : [{ query: response.query || "", url: response.search_url }];
