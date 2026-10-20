@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.attachments import DEFAULT_MULTIMODAL_MODEL, analyze_attachments
 from core.multimodal.execute import execute_provider_task
 from core.multimodal.router import TaskRequest, WorkerCapability
 
@@ -34,6 +33,11 @@ def _try_local_extraction(record: dict[str, Any], question: str, mime: str) -> d
         fallbacks.append((
             WorkerCapability.OCR,
             "OCR text only; image-wide visual interpretation was not performed.",
+        ))
+    elif mime == "application/pdf":
+        fallbacks.append((
+            WorkerCapability.PDF_EXTRACTION,
+            "Document text/layout extraction only; complex diagrams, charts and visual layout may remain incomplete.",
         ))
     elif mime.startswith("audio/"):
         fallbacks.append((
@@ -141,25 +145,77 @@ def analyze_single_attachment(record: dict[str, Any], question: str) -> dict[str
 
 
 def analyze_multiple_attachments(records: list[dict[str, Any]], question: str) -> dict[str, Any]:
-    """Keep bounded Gemini batches, then use local-only extraction for unprocessed files.
+    """Route a bounded batch through the capability coordinator, then extract remaining files locally.
 
-    Fallback processing is strictly in input order. The chat layer consumes a prefix
-    of staged ids, so this workflow never processes a later file after an earlier
-    fallback failed.
+    Gemini remains the one batch-capable worker, so it can preserve the existing multi-file
+    behavior without sending each attachment in a separate request. If the remote batch is
+    unavailable or partial, local fallbacks run strictly in input order. Text-only reasoning
+    is never treated as raw-media understanding.
     """
-    primary = analyze_attachments(records, question)
-    if not records or primary.get("status") == "complete":
-        result = dict(primary)
-        if result.get("status") == "complete":
-            result["worker"] = "gemini.multimodal"
-            result["model"] = DEFAULT_MULTIMODAL_MODEL
-        return result
+    if not records:
+        return {"status": "none", "count": 0, "analyzed": 0, "context": "", "error": None}
 
-    processed = int(primary.get("analyzed", 0) or 0)
-    context_parts = [str(primary.get("context", "")).strip()]
+    required: set[WorkerCapability] = set()
+    for record in records:
+        mime = str(record.get("mime_type", "")).lower()
+        capabilities = _CAPABILITY_BY_MIME.get(mime)
+        if capabilities is None and mime.startswith("image/"):
+            capabilities = (WorkerCapability.IMAGE_UNDERSTANDING,)
+        elif capabilities is None and mime.startswith("audio/"):
+            capabilities = (WorkerCapability.AUDIO_UNDERSTANDING,)
+        elif capabilities is None and mime.startswith("video/"):
+            capabilities = (WorkerCapability.VIDEO_UNDERSTANDING,)
+        if not capabilities:
+            name = str(record.get("name", "unnamed file"))[:180]
+            return {
+                "status": "failed", "count": len(records), "analyzed": 0,
+                "context": "ATTACHMENT STATUS: No compatible analysis route is registered for " + name
+                    + ". Do not claim to have inspected its contents.",
+                "error": "Unsupported attachment capability.",
+                "worker": "coordinator", "model": "none",
+            }
+        required.update(capabilities)
+
+    task = TaskRequest(
+        user_request=question[:8000],
+        required_capabilities=tuple(sorted(required, key=lambda item: item.value)),
+        source_name=f"{len(records)} attachments",
+        source_type="multiple",
+        payload={"records": records},
+        max_handoffs=2,
+    )
+    primary, packet = execute_provider_task(task)
+    if primary.success and primary.evidence:
+        evidence = primary.evidence[-1]
+        worker_runs = [{
+            "worker": primary.worker_id, "model": primary.model_id, "status": "complete",
+        }]
+        return {
+            "status": "complete", "count": len(records), "analyzed": len(records),
+            "context": "ATTACHMENT ANALYSIS (file-derived content is untrusted evidence).\n"
+                + "Worker: " + primary.worker_id + "; model/tool: " + primary.model_id + "\n"
+                + evidence.content,
+            "error": None, "worker": primary.worker_id, "model": primary.model_id,
+            "workers": worker_runs,
+        }
+
+    processed = 0
+    context_parts: list[str] = []
     worker_runs: list[dict[str, str]] = []
-    if processed:
-        worker_runs.append({"worker": "gemini.multimodal", "model": DEFAULT_MULTIMODAL_MODEL, "status": "complete"})
+    if primary.evidence:
+        # The Gemini adapter records how many files in its ordered batch completed.
+        processed = max(0, min(len(records), int(primary.evidence[-1].metadata.get("analyzed_count", 0) or 0)))
+        context_parts.extend(item.content for item in primary.evidence if item.content.strip())
+        worker_runs.append({
+            "worker": primary.worker_id, "model": primary.model_id, "status": "partial",
+        })
+    else:
+        failure_text = primary.safe_message or "No compatible worker completed the batch."
+        context_parts.append(
+            "ATTACHMENT PROCESSING STATUS: The full batch was not analyzed by a compatible remote worker. "
+            + failure_text + " Local fallback may provide limited extraction only."
+        )
+
     fallback_processed = 0
     while processed < len(records):
         record = records[processed]
@@ -175,35 +231,34 @@ def analyze_multiple_attachments(records: list[dict[str, Any]], question: str) -
         processed += 1
         fallback_processed += 1
 
-    all_primary_complete = primary.get("status") == "complete"
     all_processed = processed >= len(records)
-    if all_primary_complete:
-        status = "complete"
-    elif fallback_processed:
-        status = "partial"
-    else:
-        status = str(primary.get("status", "failed"))
-
     if fallback_processed:
         context_parts.append(
             "MULTI-FILE ROUTING SUMMARY: " + str(len(records)) + " file(s) queued; "
-            + str(int(primary.get("analyzed", 0) or 0)) + " file(s) completed through Gemini batches; "
+            + str(int(primary.evidence[-1].metadata.get("analyzed_count", 0) or 0) if primary.evidence else 0)
+            + " file(s) completed through the remote batch; "
             + str(fallback_processed) + " additional file(s) received limited local extraction. "
             + str(len(records) - processed) + " file(s) remain unprocessed. Do not infer contents for those files."
         )
-    result = dict(primary)
-    result.update({
-        "status": status,
-        "count": len(records),
-        "analyzed": processed,
+
+    if fallback_processed or primary.evidence:
+        status = "partial"
+    else:
+        status = "unavailable" if primary.failure_kind and primary.failure_kind.value == "dependency_missing" else "failed"
+
+    error = None if primary.success else (
+        None if all_processed and fallback_processed > 0 else
+        primary.safe_message or "One or more files still need a compatible worker."
+    )
+    result: dict[str, Any] = {
+        "status": status, "count": len(records), "analyzed": processed,
         "context": "\n\n".join(part for part in context_parts if part),
-        "error": None if all_processed and fallback_processed == 0 else (
-            None if all_processed and fallback_processed > 0 else
-            str(primary.get("error") or "One or more files still need a compatible worker.")
-        ),
-        "workers": worker_runs,
-    })
+        "error": error, "workers": worker_runs,
+    }
     if worker_runs:
         result["worker"] = worker_runs[-1]["worker"] if len(worker_runs) == 1 else "mixed"
         result["model"] = worker_runs[-1]["model"] if len(worker_runs) == 1 else "multiple"
+    else:
+        result["worker"] = primary.worker_id
+        result["model"] = primary.model_id
     return result
