@@ -1396,7 +1396,7 @@ private fun OmnitrixApp() {
         savedVideoName = ""
         videoStudioUrl = ""
         videoStudioMessage = if (pendingVideoPrompt.isNotBlank()) {
-            "Connecting to Studio, then building a draft from your prompt…"
+            "Connecting to Studio and loading creation options…"
         } else {
             "Connecting to Creative Studio…"
         }
@@ -1408,7 +1408,7 @@ private fun OmnitrixApp() {
                 if (thisRequest == videoRequestKey) {
                     videoStudioUrl = base
                     videoStudioMessage = if (pendingVideoPrompt.isNotBlank()) {
-                        "Connected. Looking for reusable public assets and preparing your video."
+                        "Connected. Prompt loaded. Original graphics skip web search; real generated video with audio is a separate paid option."
                     } else {
                         "Connected. Describe your video below; adding assets is optional."
                     }
@@ -1672,7 +1672,7 @@ private fun OmnitrixApp() {
                             if (uri != null) {
                                 try {
                                     val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(uri, "video/webm")
+                                        setDataAndType(uri, if (savedVideoName.endsWith(".mp4", ignoreCase = true)) "video/mp4" else "video/webm")
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
                                     context.startActivity(intent)
@@ -1893,7 +1893,7 @@ private fun VideoStudioScreen(
         }
     }
     Column(Modifier.fillMaxSize().background(Black)) {
-        AppHeader("Video Studio", detail = "PROMPT → EDITABLE DRAFT → WEBM")
+        AppHeader("Video Studio", detail = "PROMPT → ORIGINAL GRAPHICS / AI VIDEO")
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1992,24 +1992,29 @@ private class CreativeStudioNativeBridge(
     fun saveVideoBase64(fileName: String, mimeType: String, encoded: String): String {
         var destination: Uri? = null
         return try {
-            require(mimeType.lowercase().startsWith("video/webm")) { "Only rendered WebM video is accepted." }
+            val videoMime = mimeType.substringBefore(';').trim().lowercase()
+            require(videoMime == "video/webm" || videoMime == "video/mp4") {
+                "Only MP4 and WebM generated videos are accepted."
+            }
             require(encoded.isNotBlank() && encoded.length <= 34 * 1024 * 1024) {
                 "The encoded video exceeds the phone-save limit."
             }
             val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
             require(bytes.size in 2048..(24 * 1024 * 1024)) {
-                "The rendered video is empty or exceeds the 24 MB save limit."
+                "The generated video is empty or exceeds the 24 MB save limit."
             }
+            val suffix = if (videoMime == "video/mp4") ".mp4" else ".webm"
             val safeName = fileName
                 .replace(Regex("[^A-Za-z0-9._-]+"), "-")
                 .trim('-', '.', '_')
                 .take(90)
-                .ifBlank { "omnitrix-video-draft.webm" }
-                .let { if (it.endsWith(".webm", ignoreCase = true)) it else "$it.webm" }
+                .ifBlank { "omnitrix-ai-video" }
+                .replace(Regex("\\.(mp4|webm)$", RegexOption.IGNORE_CASE), "")
+                .let { it + suffix }
             val resolver = context.contentResolver
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "video/webm")
+                put(MediaStore.MediaColumns.MIME_TYPE, videoMime)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Omnitrix")
                     put(MediaStore.MediaColumns.IS_PENDING, 1)

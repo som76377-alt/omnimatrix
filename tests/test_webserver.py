@@ -166,20 +166,105 @@ class StudioServerTests(unittest.TestCase):
         start.assert_called_once()
 
     def test_mobile_image_generation_requires_consent_and_uses_configured_provider(self):
-        with patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "true"}), \
+             patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
              patch("interfaces.web.server.generate_creative_image", return_value={
-                 "ok": True, "provider": "google", "model": "gemini-2.5-flash-image",
+                 "ok": True, "provider": "google", "model": "gemini-nano-banana-2.1",
                  "mime_type": "image/png", "image_base64": "cG5n",
              }) as generate:
             status, body = self.request(
                 "/api/mobile/creative/generate-image",
                 method="POST",
-                body={"consent": True, "prompt": "Original induction stove illustration"},
+                body={
+                    "consent": True, "paid_cost_acknowledged": True,
+                    "prompt": "Original induction stove illustration",
+                },
                 authorized=False,
             )
         self.assertEqual(status, 200, body)
         self.assertTrue(body["ok"])
-        generate.assert_called_once_with("Original induction stove illustration")
+        generate.assert_called_once_with(
+            "Original induction stove illustration", aspect_ratio="16:9"
+        )
+
+    def test_mobile_image_generation_rejects_missing_paid_cost_acknowledgement(self):
+        with patch("interfaces.web.server.generate_creative_image") as generate:
+            status, body = self.request(
+                "/api/mobile/creative/generate-image",
+                method="POST",
+                body={"consent": True, "prompt": "Original portrait illustration"},
+                authorized=False,
+            )
+        self.assertEqual(status, 400)
+        self.assertIn("cost acknowledgement", body["error"].lower())
+        generate.assert_not_called()
+
+    def test_mobile_video_generation_rejects_missing_paid_cost_acknowledgement(self):
+        with patch("interfaces.web.server.start_creative_video_job") as start:
+            status, body = self.request(
+                "/api/mobile/creative/generate-video",
+                method="POST",
+                body={"consent": True, "prompt": "A person waving and saying hi"},
+                authorized=False,
+            )
+        self.assertEqual(status, 400)
+        self.assertIn("paid-video cost acknowledgement", body["error"].lower())
+        start.assert_not_called()
+
+    def test_mobile_video_generation_starts_direct_provider_job_only_after_cost_ack(self):
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "true"}), \
+             patch("interfaces.web.server._allow_public_creative_video_request", return_value=True), \
+             patch("interfaces.web.server.start_creative_video_job", return_value={
+                 "ok": True, "job_id": "a" * 32, "status": "queued",
+                 "provider": "google", "model": "gemini-omni-1.1-flash",
+                 "estimated_cost_usd": 0.8,
+             }) as start:
+            status, body = self.request(
+                "/api/mobile/creative/generate-video",
+                method="POST",
+                body={
+                    "consent": True, "paid_cost_acknowledged": True,
+                    "prompt": "A man waves and says hi",
+                    "aspect_ratio": "9:16", "resolution": "720p",
+                },
+                authorized=False,
+            )
+        self.assertEqual(status, 202, body)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["model"], "gemini-omni-1.1-flash")
+        start.assert_called_once_with(
+            "A man waves and says hi", aspect_ratio="9:16", resolution="720p"
+        )
+
+
+    def test_mobile_video_status_reports_default_off_without_calling_model(self):
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "false"}):
+            status, body = self.request(
+                "/api/mobile/creative/video-status",
+                authorized=False,
+            )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["enabled"])
+        self.assertIn("OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true", body["message"])
+        self.assertIn("model", body)
+        self.assertNotIn("GEMINI_API_KEY", json.dumps(body.get("message", "")))
+
+    def test_mobile_paid_video_generation_is_disabled_by_default(self):
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "false"}), \
+             patch("interfaces.web.server.start_creative_video_job") as start:
+            status, body = self.request(
+                "/api/mobile/creative/generate-video",
+                method="POST",
+                body={
+                    "consent": True, "paid_cost_acknowledged": True,
+                    "prompt": "A man waves and says hi",
+                },
+                authorized=False,
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("code"), "paid_media_disabled")
+        start.assert_not_called()
 
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))

@@ -47,12 +47,17 @@
       <div class="brief-copy">
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
-        <p id="agent-state">Describe the result. Omnitrix will research available media, assemble a draft and render it. Advanced controls stay out of the way. Post-render visual criticism is not yet available on the native path.</p>
-        <p class="ai-use-note">Create Video starts with original graphics and attempts one image from the configured image model. The video itself is rendered locally as WebM; this is not a generative text-to-video model. Image generation needs a working server-side model key. Online media is optional.</p>
+        <p id="agent-state">Original graphics are the no-search default. Real moving footage with spoken audio uses a separate paid AI video model and requires explicit approval. No public asset search is required.</p>
+        <p class="ai-use-note">Choose original motion graphics for a local WebM draft, or approve the estimated cost below to request a real generated MP4 with movement and audio. Model-generated images have a separate per-image cost approval. The app must report provider failures instead of disguising them as finished AI work.</p>
         <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Ready when you are.</p>
       </div>
       <div class="brief-actions">
-        <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE VIDEO</button>
+        <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE MOTION-GRAPHICS DRAFT</button>
+        <label class="auto-creative-consent paid-video-consent" for="paid-video-consent">
+          <input id="paid-video-consent" type="checkbox">
+          <span><strong>Approve one real AI-generated video</strong> Uses Gemini Omni Flash to generate moving footage and native audio. Google's paid API is approximately US$0.10 per generated second at 720p (about US$0.80 for an 8-second clip); actual length and charges can vary. No video-generation call starts until this is checked and you tap the button.</span>
+        </label>
+        <button class="button primary create-video-button" id="generate-ai-video" type="button" disabled>GENERATE REAL AI VIDEO + AUDIO</button>
         <details class="advanced-brief-controls">
           <summary>Advanced</summary>
           <button class="button quiet" id="save-brief" type="button">SAVE BRIEF</button>
@@ -141,9 +146,9 @@
           </div>
           <label class="auto-creative-consent" for="auto-creative-consent">
             <input id="auto-creative-consent" type="checkbox">
-            <span><strong>Optional: let the Director + graphics engineer finish and check this draft.</strong> For this run only, I authorise sending up to four resized source-preview thumbnails and, after export, up to four small frames from the actual rendered WebM to the configured visual model. Original media files are not uploaded. The model may propose validated edits, and Omnitrix may apply one bounded correction pass and re-render once. This is the same model role, not an independent second opinion. Provider quotas or charges may apply; I will inspect the final file before publishing.</span>
+            <span><strong>Optional: generate one original AI image and request AI-directed review.</strong> For this run, I approve one original 1K image (about US$0.04) and, if I request AI direction, sending up to four resized previews and up to four sampled frames from the rendered draft to the configured model. Original media files are not uploaded. The same creative-director model may propose validated edits and one bounded re-render. This does not authorize the separate paid AI-video call above. I will inspect the result before publishing.</span>
           </label>
-          <p class="online-asset-note">Google Images uses the configured Google Custom Search API. Selected images may be imported into a private draft if the source host permits it; rights are not verified, so check the original page before sharing or publishing. Pinterest remains a reference source in this build; save a chosen Pin image to Gallery and upload it above.</p>
+          <p class="online-asset-note">Internet sourcing is optional and off the default creation path. Wikimedia Commons is an open-media archive, not a general-purpose search engine for every scene. Search results are not proof that a source visually matches your prompt; inspect source and rights before reuse. Pinterest is reference-only.</p>
           <div class="online-asset-results" id="online-asset-results"></div>
           </details>
         </section>
