@@ -40,6 +40,31 @@ from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
 from core.creative_assets import CreativeAssetError, download_creative_asset, search_creative_assets
+
+# Public mobile Creative Studio uses Wikimedia Commons only. Keep this endpoint
+# useful without a local runtime token while bounding requests from any one IP.
+_PUBLIC_CREATIVE_RATE_LOCK = threading.Lock()
+_PUBLIC_CREATIVE_REQUESTS: dict[str, deque[float]] = {}
+_PUBLIC_CREATIVE_RATE_WINDOW_SECONDS = 60.0
+_PUBLIC_CREATIVE_RATE_LIMIT = 24
+
+
+def _allow_public_creative_request(client_ip: str) -> bool:
+    now = time.monotonic()
+    key = str(client_ip or "unknown")[:120]
+    with _PUBLIC_CREATIVE_RATE_LOCK:
+        bucket = _PUBLIC_CREATIVE_REQUESTS.setdefault(key, deque())
+        while bucket and now - bucket[0] >= _PUBLIC_CREATIVE_RATE_WINDOW_SECONDS:
+            bucket.popleft()
+        if len(bucket) >= _PUBLIC_CREATIVE_RATE_LIMIT:
+            return False
+        bucket.append(now)
+        if len(_PUBLIC_CREATIVE_REQUESTS) > 1024:
+            for stale_key in list(_PUBLIC_CREATIVE_REQUESTS)[:128]:
+                if stale_key != key:
+                    _PUBLIC_CREATIVE_REQUESTS.pop(stale_key, None)
+        return True
+
 from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
@@ -1461,6 +1486,37 @@ def make_handler(
                 except Exception as exc:
                     LOGGER.warning("Public attachment listing failed: %s", type(exc).__name__)
                     self._send_json({"ok": False, "error": "Attachment list is temporarily unavailable."}, 500)
+                return
+            if route in {"/api/mobile/creative/search", "/api/mobile/creative/assets/download"}:
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                if not _allow_public_creative_request(client_ip):
+                    self._send_json({"ok": False, "error": "Creative Studio is temporarily rate-limited for this connection. Try again in a minute.", "code": "rate_limited"}, 429)
+                    return
+                try:
+                    if route == "/api/mobile/creative/search":
+                        raw_limit = self._first_query("limit", "8")
+                        try:
+                            requested_limit = int(raw_limit)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("Asset search limit must be an integer between 1 and 8.") from exc
+                        limit = min(8, max(1, requested_limit))
+                        self._send_json(search_creative_assets(
+                            self._first_query("q", ""),
+                            provider="commons",
+                            kind=self._first_query("kind", "any"),
+                            limit=limit,
+                        ))
+                    else:
+                        content, content_type, filename = download_creative_asset(
+                            self._first_query("url", ""), provider="commons"
+                        )
+                        self._send_bytes(content, content_type, filename)
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 400)
+                except Exception as exc:
+                    LOGGER.warning("Public mobile creative request failed: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Online creative assets are temporarily unavailable."}, 502)
                 return
             if route.startswith("/api/"):
                 if not self._authorized():
