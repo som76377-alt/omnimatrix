@@ -34,7 +34,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: omnitrix-android-build
+  group: omnitrix-android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
