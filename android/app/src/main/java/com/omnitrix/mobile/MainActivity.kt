@@ -85,7 +85,6 @@ private val Green = Color(0xFFD0FF55)
 private val White = Color(0xFFF0F2E8)
 private val Grey = Color(0xFFA4AD98)
 private val Red = Color(0xFFFF6B6B)
-private val Mono = FontFamily.Monospace
 private val Pixel = FontFamily(Font(R.font.pixelify_sans, weight = FontWeight.Normal))
 private const val REPOSITORY = "som76377-alt/omnimatrix"
 private const val HOSTED_BACKEND_DISCOVERY_URL =
@@ -1423,7 +1422,7 @@ private fun OmnitrixApp() {
         ),
         typography = Typography()
     ) {
-        CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Mono, color = White)) {
+        CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = FontFamily.SansSerif, color = White)) {
             Scaffold(
             containerColor = Black,
             contentWindowInsets = WindowInsets.safeDrawing,
@@ -1741,15 +1740,15 @@ private fun OmnitrixApp() {
 @Composable
 private fun AppHeader(title: String, detail: String? = null, activityLabel: String? = null) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 10.dp, bottom = 12.dp)) {
-        Text("OMNITRIX", color = Green, fontSize = 12.sp, letterSpacing = 2.4.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        Text("OMNITRIX", color = Green, fontSize = 14.sp, letterSpacing = .4.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
         if (!activityLabel.isNullOrBlank()) {
             Spacer(Modifier.height(3.dp))
             Text(
                 activityLabel,
                 color = if (activityLabel.startsWith("THINKING") || activityLabel.startsWith("MODEL RESPONSE")) Green else Grey,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                fontFamily = Mono
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontFamily = FontFamily.SansSerif
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -1881,18 +1880,18 @@ private fun ChatScreen(
                             else -> Green
                         },
                         fontSize = 12.sp,
-                        letterSpacing = 1.1.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = Mono
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.SansSerif
                     )
                     if (!isUserMessage && !message.modelLabel.isNullOrBlank()) {
                         Spacer(Modifier.height(3.dp))
                         Text(
                             message.modelLabel.orEmpty(),
                             color = Grey,
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            fontFamily = Mono
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            fontFamily = FontFamily.SansSerif
                         )
                     }
                     Spacer(Modifier.height(7.dp))
@@ -1920,48 +1919,51 @@ private fun ChatScreen(
                 ) {
                     attachments.forEach { attachment ->
                         Row(
-                            Modifier.fillMaxWidth().background(SurfaceRaised, RoundedCornerShape(2.dp)).padding(horizontal = 9.dp, vertical = 7.dp),
+                            Modifier.fillMaxWidth().background(SurfaceRaised, RoundedCornerShape(5.dp)).padding(horizontal = 11.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(attachment.name, color = White, fontSize = 11.sp, maxLines = 1)
+                                Text(attachment.name, color = White, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.SansSerif, maxLines = 1)
                                 Text(
                                     when (attachment.status) {
-                                        "READY" -> "READY · " + if (attachment.sizeBytes > 0L) android.text.format.Formatter.formatShortFileSize(LocalContext.current, attachment.sizeBytes) else "uploaded"
-                                        "FAILED" -> "UPLOAD FAILED · " + attachment.error
-                                        else -> "UPLOADING TO OMNITRIX"
+                                        "READY" -> "Ready · " + if (attachment.sizeBytes > 0L) android.text.format.Formatter.formatShortFileSize(LocalContext.current, attachment.sizeBytes) else "Uploaded"
+                                        "FAILED" -> "Upload failed · " + attachment.error
+                                        else -> "Uploading to Omnitrix"
                                     },
                                     color = if (attachment.status == "FAILED") Red else Grey,
-                                    fontSize = 9.sp,
+                                    fontSize = 12.sp,
                                     maxLines = 2,
-                                    lineHeight = 12.sp
+                                    lineHeight = 16.sp,
+                                    fontFamily = FontFamily.SansSerif
                                 )
                             }
                             TextButton(
                                 onClick = { onRemoveAttachment(attachment) },
                                 enabled = !busy && attachment.status != "UPLOADING"
-                            ) { Text("×", color = Grey, fontSize = 16.sp) }
+                            ) { Text("×", color = Grey, fontSize = 20.sp, fontFamily = FontFamily.SansSerif) }
                         }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = onAttach, enabled = connected && !busy && attachments.none { it.status == "UPLOADING" }) {
-                    Text("+ ATTACH FILES", color = if (connected && !busy) Green else Grey, fontSize = 11.sp, fontFamily = Mono)
+                    Text("+ Attach files", color = if (connected && !busy) Green else Grey, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
                 }
                 Text(
-                    "IMAGES · PDF · AUDIO · VIDEO",
+                    "Images · PDF · audio · video",
                     color = Grey,
-                    fontSize = 8.sp,
-                    fontFamily = Mono
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = FontFamily.SansSerif
                 )
             }
             Text(
-                "Files are staged in Omnitrix. Pressing SEND may share them with Google Gemini for analysis.",
+                "Files stay staged in Omnitrix until you send them. Sending may share them with Google Gemini for analysis.",
                 color = Grey,
-                fontSize = 8.sp,
-                lineHeight = 11.sp
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontFamily = FontFamily.SansSerif
             )
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TerminalField(
@@ -1989,7 +1991,7 @@ private fun ChatScreen(
                     ),
                     contentPadding = PaddingValues(horizontal = 14.dp)
                 ) {
-                    Text(if (busy) "WAIT" else "SEND", color = if (busy) Grey else Black, fontFamily = Mono, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(if (busy) "Wait" else "Send", color = if (busy) Grey else Black, fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -2280,14 +2282,14 @@ private fun TerminalField(
     ) {
         BasicTextField(
             value = value, onValueChange = onValueChange, enabled = enabled, singleLine = singleLine,
-            textStyle = TextStyle(color = White, fontFamily = Mono, fontSize = if (large) 16.sp else 14.sp, lineHeight = if (large) 24.sp else 19.sp),
+            textStyle = TextStyle(color = White, fontFamily = FontFamily.SansSerif, fontSize = if (large) 16.sp else 14.sp, lineHeight = if (large) 24.sp else 19.sp),
             cursorBrush = SolidColor(Green),
             visualTransformation = visualTransformation,
             keyboardOptions = KeyboardOptions(capitalization = capitalization, keyboardType = keyboardType),
             modifier = Modifier.weight(1f).defaultMinSize(minHeight = if (large) 26.dp else 22.dp),
             decorationBox = { inner ->
                 Box {
-                    if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, color = Grey, fontFamily = Mono, fontSize = if (large) 16.sp else 14.sp)
+                    if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, color = Grey, fontFamily = FontFamily.SansSerif, fontSize = if (large) 16.sp else 14.sp)
                     inner()
                 }
             }
