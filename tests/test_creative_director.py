@@ -288,5 +288,55 @@ class CreativeDirectorTests(unittest.TestCase):
         self.assertEqual(result["operations"][0]["layer_type"], "arrow")
         self.assertEqual(result["operations"][0]["width"], 24)
 
+    def test_visual_director_can_remove_one_irrelevant_candidate_with_a_reason(self):
+        assets = [
+            {"asset_id": "asset-1", "clip_id": "clip-1", "name": "unrelated.png"},
+            {"asset_id": "asset-2", "clip_id": "clip-2", "name": "induction-pan.png"},
+        ]
+        plan = {
+            "schema_version": 1,
+            "summary": "Discard the unrelated result and keep the pan shot.",
+            "observations": [],
+            "operations": [{
+                "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                "reason": "The thumbnail shows a beach, unrelated to the induction stove.",
+            }],
+        }
+        result = validate_plan(plan, assets, allow_reorder=False)
+        self.assertEqual(result["operations"][0]["type"], "remove_clip")
+        self.assertIn("beach", result["operations"][0]["reason"])
+
+    def test_visual_director_cannot_remove_every_selected_shot(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "only.png"}]
+        plan = {
+            "schema_version": 1, "summary": "Attempt to remove the sole shot.",
+            "observations": [],
+            "operations": [{
+                "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                "reason": "This shot appears unrelated to the desired subject.",
+            }],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "At least one selected shot must remain"):
+            validate_plan(plan, assets, allow_reorder=False)
+
+    def test_visual_director_cannot_remove_and_edit_the_same_shot(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "only.png"}]
+        plan = {
+            "schema_version": 1, "summary": "Conflicting operations.",
+            "observations": [],
+            "operations": [
+                {
+                    "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                    "reason": "This shot is clearly unrelated to the desired subject.",
+                },
+                {
+                    "type": "set_title", "asset_id": "asset-1", "clip_id": "clip-1",
+                    "text": "Not a useful title",
+                },
+            ],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "both removed and edited"):
+            validate_plan(plan, assets, allow_reorder=False)
+
 if __name__ == "__main__":
     unittest.main()
