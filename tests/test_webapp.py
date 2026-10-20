@@ -93,11 +93,14 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("graphic-layer-animation", self.creative_html)
         self.assertIn("scale-in", self.creative_js)
         self.assertIn("layers: Array.isArray(clip.layers)", self.creative_js)
-        self.assertIn("not connected yet", self.creative_html.lower())
-        self.assertIn("does not pretend to make model calls", self.creative_html.lower())
+        self.assertIn("explicit consent", self.creative_html.lower())
+        self.assertIn("post-render visual criticism is not yet available", self.creative_html.lower())
         self.assertIn("configured-not-connected", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
         self.assertIn('"status": "integrated"', (ROOT / "config/creative-studio-tools.json").read_text(encoding="utf-8"))
-        self.assertNotIn("fetch(", self.creative_js)
+        self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
+        self.assertIn('if (!$("ai-consent").checked)', self.creative_js)
+        self.assertIn("consent_clip_ids", self.creative_js)
+        self.assertNotIn("fetch("https://", self.creative_js)
 
     def test_dashboard_reads_real_public_repository_api(self):
         self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
