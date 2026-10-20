@@ -1497,12 +1497,12 @@ def make_handler(
                     return
                 try:
                     if route == "/api/mobile/creative/search":
-                        raw_limit = self._first_query("limit", "8")
+                        raw_limit = self._first_query("limit", "12")
                         try:
                             requested_limit = int(raw_limit)
                         except (TypeError, ValueError) as exc:
-                            raise ValueError("Asset search limit must be an integer between 1 and 8.") from exc
-                        limit = min(8, max(1, requested_limit))
+                            raise ValueError("Asset search limit must be an integer between 1 and 12.") from exc
+                        limit = min(12, max(1, requested_limit))
                         self._send_json(search_creative_assets(
                             self._first_query("q", ""),
                             provider="commons",
