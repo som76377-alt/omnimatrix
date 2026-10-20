@@ -231,7 +231,7 @@ class WebConsoleTests(unittest.TestCase):
         server = (ROOT / "interfaces/web/server.py").read_text(encoding="utf-8")
         director = (ROOT / "core/creative_director.py").read_text(encoding="utf-8")
         self.assertIn('route == "/api/creative/status"', server)
-        self.assertIn('route == "/api/creative/analyze"', server)
+        self.assertIn('"/api/creative/analyze", "/api/mobile/creative/analyze"', server)
         self.assertIn("MAX_CREATIVE_BODY_BYTES", server)
         self.assertIn("runtime.start_creative_analysis(payload)", server)
         self.assertIn("self.creative_analysis_lock", server)
