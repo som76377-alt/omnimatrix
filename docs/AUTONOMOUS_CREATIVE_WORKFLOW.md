@@ -17,7 +17,7 @@ The default prompt-to-video path is code-only:
 
 The current local Canvas renderer produces stylised procedural graphics; it is not a photorealistic or high-fidelity human/animal renderer. Therefore a request whose main subject is a person or animal must be blocked before rendering rather than represented by crude lines, circles, or a barely recognisable waving figure. Do not call that a completed result.
 
-This gate is intentional: the code-based high-fidelity character/3D renderer must be implemented and visually verified before human/animal action requests are accepted by the default code-only route. Never bypass this gate by searching for an image, generating a still image, or quietly invoking a different paid provider.
+The code-only route now uses a procedural Three.js 3D human renderer for human subjects, with generated mesh geometry, facial landmarks, clothing, articulated limbs, simple action animation, lighting, shadows, and WebM recording. It is a code-authored 3D character, not photorealistic footage; visual quality must be reviewed before it can be approved. Animal subjects remain blocked until an animal renderer exists. Never bypass these gates by searching for an image, generating a still image, or quietly invoking a different paid provider.
 
 ## Truthful status and limitations
 
@@ -31,4 +31,4 @@ This gate is intentional: the code-based high-fidelity character/3D renderer mus
 
 ## Implementation status
 
-The prompt-to-video action now always enters the original code-rendering path, ignores the asset-source selector, does not generate an optional reference image, and blocks human/animal briefs until a high-fidelity code renderer exists. Technical export QA is separate from artistic approval. On-device testing and a visual-quality benchmark are still required before claiming production-grade output.
+The prompt-to-video action now always enters a code-rendering path, ignores the asset-source selector, does not generate an optional reference image, routes human subjects to the procedural Three.js renderer, and blocks unsupported animal subjects. Technical export QA is separate from artistic approval. The new renderer still requires real browser/device playback tests and a visual-quality benchmark; do not call it photorealistic or production-grade until those pass.
