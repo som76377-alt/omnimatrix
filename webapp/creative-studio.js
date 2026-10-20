@@ -469,7 +469,8 @@
   }
 
   async function searchOnlineAssets(options) {
-    const provider = $("online-asset-provider").value || "commons";
+    const nativeMode = isNativeMobileStudio();
+    const provider = nativeMode ? "commons" : ($("online-asset-provider").value || "commons");
     const queryInput = $("online-asset-query");
     let query = String(queryInput.value || "").trim();
     if (!query) query = deriveAssetQuery($("creative-brief").value);
@@ -486,7 +487,7 @@
       return { provider, query, items: [], search_url: link, manual_reference_only: true };
     }
     const token = aiRuntimeToken();
-    if (!token) {
+    if (!nativeMode && !token) {
       onlineStatus("The authenticated Python-backed Studio runtime is not connected in this tab. Open the core Studio, connect its runtime, then return here.", "error");
       return null;
     }
@@ -495,9 +496,10 @@
     onlineStatus("Searching " + (provider === "commons" ? "Wikimedia Commons" : "Pexels") + " for “" + query + "”…", "");
     try {
       const params = new URLSearchParams({ q: query, provider, kind: $("online-asset-kind").value || "any", limit: "12" });
-      const response = await fetch("./api/creative/search?" + params.toString(), {
+      const endpoint = nativeMode ? "./api/mobile/creative/search?" : "./api/creative/search?";
+      const response = await fetch(endpoint + params.toString(), {
         method: "GET", cache: "no-store",
-        headers: { Accept: "application/json", Authorization: "Bearer " + token }
+        headers: nativeMode ? { Accept: "application/json" } : { Accept: "application/json", Authorization: "Bearer " + token }
       });
       let data;
       try { data = await response.json(); }
@@ -525,13 +527,15 @@
     if (state.onlineImportBusy) throw new Error("Another online asset is still importing. Retry after it finishes.");
     state.onlineImportBusy = true;
     try {
+      const nativeMode = isNativeMobileStudio();
       const token = aiRuntimeToken();
-      if (!token) throw new Error("The authenticated Studio runtime is not connected.");
+      if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
       onlineStatus("Downloading a bounded copy of “" + (item.title || "asset") + "”…", "");
-      const params = new URLSearchParams({ provider: item.provider, url: item.asset_url });
-      const response = await fetch("./api/creative/assets/download?" + params.toString(), {
+      const params = new URLSearchParams({ provider: nativeMode ? "commons" : item.provider, url: item.asset_url });
+      const endpoint = nativeMode ? "./api/mobile/creative/assets/download?" : "./api/creative/assets/download?";
+      const response = await fetch(endpoint + params.toString(), {
         method: "GET", cache: "no-store",
-        headers: { Authorization: "Bearer " + token }
+        headers: nativeMode ? {} : { Authorization: "Bearer " + token }
       });
       if (!response.ok) {
         let failure = {};
@@ -1853,6 +1857,33 @@
     };
   }
 
+  async function deliverRenderedVideo(blob, fileName) {
+    if (isNativeMobileStudio()) {
+      if (!(blob instanceof Blob) || !blob.size) throw new Error("The renderer returned an empty WebM.");
+      if (blob.size > 24 * 1024 * 1024) {
+        throw new Error("This render is over the 24 MB mobile-save limit. Choose a shorter duration or lower resolution, then render again.");
+      }
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 32768)));
+      }
+      const response = window.OmnitrixNativeBridge.saveVideoBase64(fileName, blob.type || "video/webm", btoa(binary));
+      if (response !== "saved") throw new Error("Android did not confirm saving the generated video.");
+      return "saved to Movies/Omnitrix on this phone";
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return "downloaded to this device";
+  }
+
   async function renderVideo(options) {
     if (state.exporting) return;
     const autoCritiqueRetry = Boolean(options && options.autoCritiqueRetry === true);
@@ -1933,15 +1964,14 @@
             return;
           }
 
-          // Keep the actual encoded artifact available even if browser decoding QA cannot complete.
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = slug(state.project.name) + "-draft.webm";
-          document.body.append(link);
-          link.click();
-          link.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          // Deliver the actual encoded artifact. Native Android saves it to Movies/Omnitrix;
+          // standard browsers receive a regular WebM download.
+          let deliveryLabel = "";
+          try {
+            deliveryLabel = await deliverRenderedVideo(blob, slug(state.project.name) + "-draft.webm");
+          } catch (error) {
+            deliveryLabel = "not saved: " + String(error.message || error);
+          }
           let criticSuffix = "";
           if (critique.attempted) criticSuffix = " · " + critique.message;
           else if (runPostRenderCritic && $("auto-creative-consent").checked) {
@@ -1953,7 +1983,7 @@
               showMessage(
                 "WebM exported and decoded · " + formatBytes(blob.size) + " · " + dimensionsLabel + " · " +
                 inspection.duration.toFixed(2) + "s. QA warning: " + inspection.warnings.join("; ") +
-                ". The file was downloaded, but inspect these points before publishing." + criticSuffix,
+                ". The file was " + deliveryLabel + "; inspect these points before publishing." + criticSuffix,
                 true
               );
             } else {
@@ -1961,7 +1991,7 @@
                 ? " One validated correction pass was applied after inspecting the first render; the final render received technical QA, not a second AI critique."
                 : "";
               showMessage(
-                "WebM exported, reopened and decoded locally · " + formatBytes(blob.size) + " · " +
+                "WebM exported, reopened and decoded locally · " + deliveryLabel + " · " + formatBytes(blob.size) + " · " +
                 dimensionsLabel + " · " + inspection.duration.toFixed(2) + "s · " +
                 inspection.sampledFrames + " sampled frames checked. This is technical QA, not a guarantee of artistic quality." +
                 correctionNote + criticSuffix,
@@ -1970,7 +2000,7 @@
             }
           } else {
             showMessage(
-              "A " + formatBytes(blob.size) + " WebM was generated and downloaded, but its playback could not be verified: " +
+              "A " + formatBytes(blob.size) + " WebM was generated and " + (deliveryLabel || "delivered") + ", but its playback could not be verified: " +
               (inspectionFailure || "unknown decode error") + ". Open the file and inspect it before publishing." + criticSuffix,
               true
             );
@@ -2088,6 +2118,14 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "ai-status" + (kind ? " " + kind : "");
+  }
+
+  function isNativeMobileStudio() {
+    try {
+      return Boolean(window.OmnitrixNativeBridge &&
+        typeof window.OmnitrixNativeBridge.initialPrompt === "function" &&
+        typeof window.OmnitrixNativeBridge.saveVideoBase64 === "function");
+    } catch (_) { return false; }
   }
 
   function aiRuntimeToken() {
@@ -2722,11 +2760,24 @@
       bindUi();
       await loadProject();
       const launchParams = new URLSearchParams(window.location.search);
+      const nativeMode = isNativeMobileStudio();
+      if (nativeMode) {
+        const provider = $("online-asset-provider");
+        if (provider) { provider.value = "commons"; provider.disabled = true; }
+        const referenceButton = $("pinterest-reference");
+        if (referenceButton) referenceButton.hidden = true;
+      }
       let inboundBrief = "";
-      try {
-        inboundBrief = String(sessionStorage.getItem("omnitrix-creative-brief-pending") || "").slice(0, 4000).trim();
-        sessionStorage.removeItem("omnitrix-creative-brief-pending");
-      } catch (_) {}
+      if (nativeMode) {
+        try { inboundBrief = String(window.OmnitrixNativeBridge.initialPrompt() || "").slice(0, 4000).trim(); }
+        catch (_) {}
+      }
+      if (!inboundBrief) {
+        try {
+          inboundBrief = String(sessionStorage.getItem("omnitrix-creative-brief-pending") || "").slice(0, 4000).trim();
+          sessionStorage.removeItem("omnitrix-creative-brief-pending");
+        } catch (_) {}
+      }
       if (inboundBrief) {
         $("creative-brief").value = inboundBrief;
         state.project.brief = inboundBrief;
