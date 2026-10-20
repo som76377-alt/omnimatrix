@@ -47,9 +47,44 @@
       <div class="brief-copy">
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
-        <p id="agent-state">AI director and visual critic are not connected yet. This build does not pretend to make model calls; local editing tools work now.</p>
+        <p id="agent-state">Local editing works now. Optional AI direction uses selected resized previews only after explicit consent; post-render visual criticism is not yet available.</p>
       </div>
-      <button class="button quiet brief-save" id="save-brief">SAVE BRIEF</button>
+      <div class="brief-actions">
+        <button class="button quiet" id="save-brief">SAVE BRIEF</button>
+        <button class="button primary" id="open-ai-director">PREPARE AI DIRECTION</button>
+      </div>
+    </section>
+
+    <section class="panel ai-director-panel" id="ai-director-panel" hidden aria-labelledby="ai-director-heading">
+      <div class="panel-heading">
+        <div><span class="eyebrow">CONSENT-GATED MODEL CALL</span><h2 id="ai-director-heading">AI direction</h2></div>
+        <button class="button quiet small" id="close-ai-director" type="button">CLOSE</button>
+      </div>
+      <p class="ai-director-explainer">Choose 1–6 shots already on your timeline. Only their resized JPEG thumbnails and limited clip metadata will be sent after you check consent and press Analyze. Original files and unselected library items stay local. A video clip is represented by one thumbnail in this lightweight stage.</p>
+      <p id="ai-provider-label" class="ai-provider-label" aria-live="polite">Checking configured visual-analysis route…</p>
+      <div id="ai-selection-list" class="ai-selection-list">
+        <p class="ai-muted">Open AI direction to load the current timeline.</p>
+      </div>
+      <p id="ai-selection-count" class="ai-muted">0 of up to 6 shots selected</p>
+      <label class="ai-consent-row" for="ai-consent">
+        <input id="ai-consent" type="checkbox">
+        <span>I approve sending the selected resized previews to the configured provider for this analysis. Provider quotas or charges may apply. Nothing will be edited automatically.</span>
+      </label>
+      <div class="ai-action-row">
+        <button class="button primary" id="ai-analyze" type="button" disabled>ANALYZE SELECTED PREVIEWS</button>
+        <button class="button quiet" id="ai-cancel-plan" type="button">CLEAR PROPOSAL</button>
+      </div>
+      <p id="ai-status" class="ai-status" role="status" aria-live="polite"></p>
+      <section id="ai-plan-preview" class="ai-plan-preview" hidden aria-labelledby="ai-plan-heading">
+        <div class="ai-plan-heading"><h3 id="ai-plan-heading">Proposed edit plan</h3><span id="ai-plan-identity"></span></div>
+        <p id="ai-plan-summary" class="ai-plan-summary"></p>
+        <h4>Visual observations</h4>
+        <ul id="ai-plan-observations" class="ai-plan-list"></ul>
+        <h4>Proposed operations</h4>
+        <ol id="ai-plan-operations" class="ai-plan-list"></ol>
+        <p class="ai-plan-boundary">Review before applying. This build supports sequential cuts, shot duration, fit/crop, simple motion presets and title styling. It does not implement transitions between shots, audio tracks, masks or generated-object replacement.</p>
+        <button class="button primary" id="ai-apply-plan" type="button" disabled>APPLY REVIEWED PLAN</button>
+      </section>
     </section>
 
     <section class="studio-grid">
@@ -209,10 +244,10 @@
         <div class="agent-status-grid">
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Media librarian</strong><small>Local metadata and thumbnails</small></div><span class="agent-label">ACTIVE</span></div>
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Timeline executor</strong><small>Reversible local edit operations</small></div><span class="agent-label">ACTIVE</span></div>
-          <div class="agent-status"><span class="agent-indicator pending"></span><div><strong>Visual analyst</strong><small>Requires a real vision-model API</small></div><span class="agent-label pending-text">NOT CONNECTED</span></div>
-          <div class="agent-status"><span class="agent-indicator pending"></span><div><strong>Director / critic</strong><small>Requires a real model and verification loop</small></div><span class="agent-label pending-text">NOT CONNECTED</span></div>
+          <div class="agent-status"><span id="visual-analyst-indicator" class="agent-indicator pending"></span><div><strong>Visual analyst</strong><small id="visual-analyst-detail">Selected preview analysis; requires a configured provider</small></div><span id="visual-analyst-status" class="agent-label pending-text">CHECKING</span></div>
+          <div class="agent-status"><span id="director-indicator" class="agent-indicator pending"></span><div><strong>Director / critic</strong><small id="director-detail">Creates a schema-checked proposal; not a post-render critic</small></div><span id="director-status" class="agent-label pending-text">NOT CONNECTED</span></div>
         </div>
-        <p class="export-note">The browser render is a useful first export path, not a replacement for a full workstation engine. Dedicated music/narration tracks, advanced masking, generative object changes and cloud rendering are later phases. No paid API or hidden third-party upload is used by this page.</p>
+        <p class="export-note">The browser render is a useful first export path, not a replacement for a full workstation engine. Dedicated music/narration tracks, advanced masking, generative object changes and cloud rendering are later phases. No media is uploaded for AI analysis unless you explicitly approve selected resized previews in AI direction; provider quota or charges may apply.</p>
         <div class="export-actions">
           <button class="button primary" id="render-video-bottom">RENDER CURRENT SEQUENCE ↗</button>
           <button class="button quiet" id="download-manifest">DOWNLOAD EDIT MANIFEST</button>

@@ -38,12 +38,15 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
+from core.creative_director import analyze_creative_request, creative_model_status
 from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
 MAX_BODY_BYTES = 16 * 1024
+MAX_CREATIVE_BODY_BYTES = 3 * 1024 * 1024
+MAX_CREATIVE_JOBS = 8
 APK_DOWNLOAD_URL = "https://github.com/som76377-alt/omnimatrix/releases/latest/download/Omnitrix.apk"
 MAX_PUBLIC_DOWNLOAD_BYTES = 25 * 1024 * 1024
 MAX_CHAT_CHARS = 8_000
@@ -326,6 +329,9 @@ class StudioRuntime:
         self.stop_event = threading.Event()
         self.sync_lock = threading.Lock()
         self.execution_lock = threading.Lock()
+        self.creative_analysis_lock = threading.Lock()
+        self.creative_jobs_lock = threading.RLock()
+        self.creative_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.active_chats = 0
         self.active_chats_lock = threading.Lock()
         # The public mobile activity endpoint is scoped to this opaque session ID.
@@ -353,6 +359,104 @@ class StudioRuntime:
         self.test_lock = threading.Lock()
         self.test_result_lock = threading.Lock()
         self.last_test: dict[str, Any] | None = None
+
+    def start_creative_analysis(self, payload: Any) -> dict[str, Any]:
+        """Start a bounded background analysis so long provider calls do not hold the HTTP request."""
+        if not isinstance(payload, dict) or payload.get("consent") is not True:
+            raise ValueError("Explicit preview-sharing consent is required.")
+        rows = payload.get("assets")
+        if not isinstance(rows, list) or not 1 <= len(rows) <= 6:
+            raise ValueError("Select between 1 and 6 timeline shots.")
+        if not self.creative_analysis_lock.acquire(blocking=False):
+            raise RuntimeError("Creative analysis is already running; retry this request.")
+
+        job_id = secrets.token_urlsafe(24)
+        submitted_at = utc_now()
+        try:
+            with self.creative_jobs_lock:
+                while len(self.creative_jobs) >= MAX_CREATIVE_JOBS:
+                    removable = next(
+                        (key for key, value in self.creative_jobs.items()
+                         if value.get("status") != "processing"),
+                        None,
+                    )
+                    if removable is None:
+                        raise RuntimeError("Creative analysis job capacity is full; retry later.")
+                    self.creative_jobs.pop(removable, None)
+                self.creative_jobs[job_id] = {
+                    "job_id": job_id, "status": "processing",
+                    "submitted_at": submitted_at, "finished_at": None, "result": None,
+                }
+            worker = threading.Thread(
+                target=self._run_creative_analysis,
+                args=(job_id, payload),
+                name="omnitrix-creative-analysis",
+                daemon=True,
+            )
+            worker.start()
+        except Exception:
+            with self.creative_jobs_lock:
+                self.creative_jobs.pop(job_id, None)
+            self.creative_analysis_lock.release()
+            raise
+        route = creative_model_status()
+        return {
+            "ok": True, "job_id": job_id, "status": "processing",
+            "submitted_at": submitted_at, "provider": route.get("provider"),
+            "configured_model": route.get("model"),
+            "note": "Job accepted. The actual worker/model identity is reported only when analysis completes.",
+        }
+
+    def _run_creative_analysis(self, job_id: str, payload: dict[str, Any]) -> None:
+        """Run a single consented provider request and persist only its bounded result."""
+        try:
+            result = analyze_creative_request(payload)
+            if not isinstance(result, dict):
+                result = {
+                    "ok": False, "status": "failed",
+                    "error": "Visual analysis returned an invalid response. No edits were applied.",
+                }
+        except ValueError as exc:
+            result = {"ok": False, "status": "failed", "error": str(exc)}
+        except Exception as exc:
+            LOGGER.warning("Creative analysis failed safely; exception_type=%s", type(exc).__name__)
+            result = {
+                "ok": False, "status": "failed",
+                "error": "Visual analysis failed safely. Check provider configuration and runtime logs.",
+            }
+        try:
+            with self.creative_jobs_lock:
+                record = self.creative_jobs.get(job_id)
+                if record is not None:
+                    record["status"] = (
+                        "complete" if result.get("ok") is True and result.get("status") == "complete"
+                        else "failed"
+                    )
+                    record["result"] = result
+                    record["finished_at"] = utc_now()
+                    self.creative_jobs.move_to_end(job_id)
+        finally:
+            self.creative_analysis_lock.release()
+
+    def creative_job_status(self, job_id: str) -> dict[str, Any]:
+        """Return only a job's state/result; never expose prompts, preview bytes, or secrets."""
+        if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{24,64}", job_id):
+            raise ValueError("Invalid creative job ID.")
+        with self.creative_jobs_lock:
+            record = self.creative_jobs.get(job_id)
+            if record is None:
+                return {"ok": False, "status": "not_found", "error": "Creative analysis job not found."}
+            if record.get("status") == "processing":
+                return {
+                    "ok": True, "job_id": job_id, "status": "processing",
+                    "submitted_at": record.get("submitted_at"),
+                }
+            return {
+                "ok": True, "job_id": job_id, "status": record.get("status"),
+                "submitted_at": record.get("submitted_at"),
+                "finished_at": record.get("finished_at"),
+                "result": record.get("result"),
+            }
 
     def status(self) -> dict[str, Any]:
         """Expose safe runtime metadata, never credentials or absolute workspace paths."""
@@ -1252,13 +1356,13 @@ def make_handler(
             values = self._query().get(name, [])
             return values[0] if values else default
 
-        def _json_body(self) -> Any:
+        def _json_body(self, max_bytes: int = MAX_BODY_BYTES) -> Any:
             raw_length = self.headers.get("Content-Length", "0")
             try:
                 length = int(raw_length)
             except ValueError as exc:
                 raise ValueError("Invalid Content-Length.") from exc
-            if length < 0 or length > MAX_BODY_BYTES:
+            if length < 0 or length > max_bytes:
                 raise OverflowError("Request body is too large.")
             raw = self.rfile.read(length)
             try:
@@ -1356,7 +1460,13 @@ def make_handler(
                     )
                     return
                 try:
-                    if route == "/api/health":
+                    if route == "/api/creative/status":
+                        self._send_json(creative_model_status())
+                    elif route.startswith("/api/creative/jobs/"):
+                        job_id = route.rsplit("/", 1)[-1]
+                        result = runtime.creative_job_status(job_id)
+                        self._send_json(result, 200 if result.get("ok") else 404)
+                    elif route == "/api/health":
                         self._send_json(runtime.status())
                     elif route == "/api/attachments/list":
                         self._send_json(runtime.list_attachments(self._first_query("session_id", "")))
@@ -1456,7 +1566,9 @@ def make_handler(
                     self._send_json({"ok": False, "error": "Attachment upload failed safely."}, 500)
                 return
             try:
-                payload = self._json_body()
+                payload = self._json_body(
+                    MAX_CREATIVE_BODY_BYTES if route == "/api/creative/analyze" else MAX_BODY_BYTES
+                )
             except OverflowError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 413)
                 return
@@ -1464,7 +1576,9 @@ def make_handler(
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
             try:
-                if route == "/api/chat":
+                if route == "/api/creative/analyze":
+                    self._send_json(runtime.start_creative_analysis(payload), 202)
+                elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
                 elif route == "/api/attachments/delete":
                     self._send_json(runtime.delete_attachment(payload))

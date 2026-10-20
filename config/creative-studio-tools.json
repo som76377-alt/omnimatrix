@@ -15,7 +15,12 @@
       "status": "integrated",
       "runtime": "browser",
       "cost_class": "zero_incremental_cost",
-      "capabilities": ["multi-file-import", "image-thumbnailing", "video-metadata", "local-indexeddb"],
+      "capabilities": [
+        "multi-file-import",
+        "image-thumbnailing",
+        "video-metadata",
+        "local-indexeddb"
+      ],
       "notes": "Original media and generated thumbnails are stored in browser IndexedDB. Browser storage can be cleared or quota-limited."
     },
     {
@@ -24,7 +29,14 @@
       "status": "integrated",
       "runtime": "browser",
       "cost_class": "zero_incremental_cost",
-      "capabilities": ["image-and-video-preview", "crop-fit", "title-overlays", "slow-zoom", "pan-presets", "webm-render"],
+      "capabilities": [
+        "image-and-video-preview",
+        "crop-fit",
+        "title-overlays",
+        "slow-zoom",
+        "pan-presets",
+        "webm-render"
+      ],
       "notes": "Current implementation uses sequential cuts and a single title/subtitle treatment per shot. Separate audio tracks, masks, colour grading and transitions are not yet implemented."
     },
     {
@@ -33,7 +45,9 @@
       "status": "integrated",
       "runtime": "browser",
       "cost_class": "zero_incremental_cost",
-      "capabilities": ["capture-source-video-audio"],
+      "capabilities": [
+        "capture-source-video-audio"
+      ],
       "notes": "Captures audio that belongs to source video clips. It is not yet a multitrack music or narration mixer."
     },
     {
@@ -44,7 +58,11 @@
       "cost_class": "zero_price_but_high_device_compute",
       "source": "https://github.com/ffmpegwasm/ffmpeg.wasm",
       "license": "MIT",
-      "capabilities": ["format-conversion", "filter-graphs", "transcoding"],
+      "capabilities": [
+        "format-conversion",
+        "filter-graphs",
+        "transcoding"
+      ],
       "decision": "Do not load a large WASM core on the phone by default. Native browser recording is the initial render path; benchmark FFmpeg.wasm on real target devices before adding it."
     },
     {
@@ -55,7 +73,12 @@
       "cost_class": "open_source_but_requires_hosting",
       "source": "https://github.com/make-ware/video-ware",
       "license": "AGPL-3.0-only",
-      "capabilities": ["agent-editable-multitrack-timeline", "proxy-generation", "searchable-footage", "rendering"],
+      "capabilities": [
+        "agent-editable-multitrack-timeline",
+        "proxy-generation",
+        "searchable-footage",
+        "rendering"
+      ],
       "decision": "Do not install yet. It needs Node.js 22+, Yarn 4, FFmpeg, Redis and PocketBase; its optional visual analysis calls Google Cloud Video Intelligence. Evaluate its licensing, resource cost, and deployment fit before adoption."
     },
     {
@@ -64,7 +87,12 @@
       "status": "planned-not-deployed",
       "runtime": "remote-cpu-worker",
       "cost_class": "compute-quota-dependent",
-      "capabilities": ["higher-quality-encoding", "filter-graphs", "proxy-generation", "audio-mix"],
+      "capabilities": [
+        "higher-quality-encoding",
+        "filter-graphs",
+        "proxy-generation",
+        "audio-mix"
+      ],
       "decision": "Use only after a persistent worker and authenticated job/file storage are provisioned. GitHub Actions is CI, not a guaranteed interactive rendering service."
     },
     {
@@ -75,7 +103,11 @@
       "cost_class": "compute-quota-dependent",
       "source": "https://www.blender.org/",
       "license": "GPL-3.0-or-later",
-      "capabilities": ["3d-motion-graphics", "compositing", "scientific-animation"],
+      "capabilities": [
+        "3d-motion-graphics",
+        "compositing",
+        "scientific-animation"
+      ],
       "decision": "Reserve for a later motion-graphics milestone. Do not assume Blender is installed on the hosted runtime until a deployment check confirms it."
     },
     {
@@ -85,8 +117,29 @@
       "runtime": "typescript-animation-project",
       "source": "https://motioncanvas.io/",
       "license": "MIT",
-      "capabilities": ["vector-explainer-animation", "narration-synchronisation", "keyframed-graphics"],
+      "capabilities": [
+        "vector-explainer-animation",
+        "narration-synchronisation",
+        "keyframed-graphics"
+      ],
       "decision": "Use as an optional specialised renderer for explanatory graphics after the core timeline contract stabilises."
+    },
+    {
+      "id": "consented-creative-director",
+      "label": "Consent-gated visual analyst and creative director",
+      "status": "integrated-opt-in",
+      "runtime": "authenticated-python-background-job-and-browser-review",
+      "cost_class": "provider-quota-or-charges-on-explicit-opt-in",
+      "capabilities": [
+        "selected-thumbnail-vision-analysis",
+        "background-job-status-polling",
+        "asset-id-grounded-plans",
+        "schema-validated-shot-duration",
+        "supported-motion-and-framing-proposals",
+        "title-and-subtitle-proposals",
+        "review-before-local-apply"
+      ],
+      "notes": "Uses the existing multimodal coordinator and configured model. Only up to six selected resized JPEG thumbnails are sent after explicit consent; provider/model identity is reported from the completed worker where available. This is not a post-render critic and does not implement between-shot transitions or audio tracks."
     }
   ]
 }

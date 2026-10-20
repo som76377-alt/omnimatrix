@@ -93,11 +93,14 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("graphic-layer-animation", self.creative_html)
         self.assertIn("scale-in", self.creative_js)
         self.assertIn("layers: Array.isArray(clip.layers)", self.creative_js)
-        self.assertIn("not connected yet", self.creative_html.lower())
-        self.assertIn("does not pretend to make model calls", self.creative_html.lower())
+        self.assertIn("explicit consent", self.creative_html.lower())
+        self.assertIn("post-render visual criticism is not yet available", self.creative_html.lower())
         self.assertIn("configured-not-connected", (ROOT / "config/creative-studio-agents.json").read_text(encoding="utf-8"))
         self.assertIn('"status": "integrated"', (ROOT / "config/creative-studio-tools.json").read_text(encoding="utf-8"))
-        self.assertNotIn("fetch(", self.creative_js)
+        self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
+        self.assertIn('if (!$("ai-consent").checked)', self.creative_js)
+        self.assertIn("consent_clip_ids", self.creative_js)
+        self.assertNotIn('fetch("https://', self.creative_js)
 
     def test_dashboard_reads_real_public_repository_api(self):
         self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
@@ -210,6 +213,35 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("MAX_TEST_OUTPUT_BYTES", server)
         self.assertIn("TEST_TIMEOUT_SECONDS", server)
         self.assertNotIn("shell=True", server)
+
+    def test_creative_direction_requires_explicit_consent_and_review(self):
+        self.assertIn('id="open-ai-director"', self.creative_html)
+        self.assertIn('id="ai-consent"', self.creative_html)
+        self.assertIn('id="ai-analyze"', self.creative_html)
+        self.assertIn('id="ai-plan-preview"', self.creative_html)
+        self.assertIn('id="ai-apply-plan"', self.creative_html)
+        self.assertIn('if (!$("ai-consent").checked)', self.creative_js)
+        self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
+        self.assertIn("aiTimelineSignature() !== state.creativeSnapshot", self.creative_js)
+        self.assertIn("Nothing has been edited yet.", self.creative_js)
+        self.assertIn("resized JPEG thumbnails and limited clip metadata", self.creative_html)
+
+    def test_creative_api_is_authenticated_bounded_and_uses_shared_worker(self):
+        server = (ROOT / "interfaces/web/server.py").read_text(encoding="utf-8")
+        director = (ROOT / "core/creative_director.py").read_text(encoding="utf-8")
+        self.assertIn('route == "/api/creative/status"', server)
+        self.assertIn('route == "/api/creative/analyze"', server)
+        self.assertIn("MAX_CREATIVE_BODY_BYTES", server)
+        self.assertIn("runtime.start_creative_analysis(payload)", server)
+        self.assertIn("self.creative_analysis_lock", server)
+        self.assertIn("def start_creative_analysis", server)
+        self.assertIn("def creative_job_status", server)
+        self.assertIn('route.startswith("/api/creative/jobs/")', server)
+        self.assertIn("pollAiCreativeJob", self.creative_js)
+        self.assertIn("from core.multimodal.workflow import analyze_multiple_attachments", director)
+        self.assertIn("used_resized_previews_only", director)
+        self.assertIn("edits_applied", director)
+        self.assertIn("Consent", director)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js not installed in this test environment")
     def test_browser_javascript_parses(self):

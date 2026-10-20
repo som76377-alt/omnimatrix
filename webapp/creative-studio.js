@@ -12,7 +12,9 @@
     isPlaying: false, exporting: false, recorder: null, chunks: [], raf: 0,
     playhead: 0, playStartedAt: 0, saveTimer: 0, audioContext: null,
     audioSource: null, audioOutput: null, audioMonitor: null, lastFrameUi: 0,
-    currentClipId: null, error: null
+    currentClipId: null, error: null,
+    creativeStatus: null, creativePlan: null, creativeSnapshot: null,
+    creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -1257,6 +1259,503 @@
     renderProjectJson();
   }
 
+
+  function aiSetStatus(message, kind) {
+    const target = $("ai-status");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = "ai-status" + (kind ? " " + kind : "");
+  }
+
+  function aiRuntimeToken() {
+    try { return sessionStorage.getItem("omnitrix-studio-runtime-token") || ""; }
+    catch { return ""; }
+  }
+
+  function aiSetBadge(indicatorId, statusId, detailId, status, detail, successful) {
+    const indicator = $(indicatorId);
+    const label = $(statusId);
+    const explanation = $(detailId);
+    if (indicator) {
+      indicator.classList.toggle("live", Boolean(successful));
+      indicator.classList.toggle("pending", !successful);
+    }
+    if (label) {
+      label.textContent = status;
+      label.classList.toggle("pending-text", !successful);
+    }
+    if (explanation) explanation.textContent = detail;
+  }
+
+  async function loadAiModelStatus() {
+    const label = $("ai-provider-label");
+    const token = aiRuntimeToken();
+    if (!token) {
+      state.creativeStatus = null;
+      if (label) label.textContent = "Connect to the Python-backed Studio runtime first. Open the core Studio in this browser tab and connect its runtime token.";
+      aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+        "NOT CONNECTED", "Requires a connected Python runtime and configured multimodal provider", false);
+      aiSetBadge("director-indicator", "director-status", "director-detail",
+        "NOT CONNECTED", "Local editing remains available without model access", false);
+      updateAiControls();
+      return;
+    }
+    if (label) label.textContent = "Checking the configured visual-analysis route…";
+    try {
+      const response = await fetch("./api/creative/status", {
+        method: "GET", cache: "no-store",
+        headers: { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      const data = await response.json();
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || "The creative status route is unavailable.");
+      }
+      state.creativeStatus = data;
+      if (data.configured) {
+        if (label) label.textContent = "Configured route: " + data.provider + " · " + data.model +
+          ". Configuration is not a live health check. A real model call happens only after explicit consent; provider quota or charges may apply.";
+        aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+          "CONFIGURED", "Selected resized previews only; no live provider check was performed", false);
+        aiSetBadge("director-indicator", "director-status", "director-detail",
+          "READY TO PROPOSE", "A schema-checked proposal is available after an explicit model call; not a post-render critic", false);
+      } else {
+        if (label) label.textContent = "No Gemini API key is configured on this server. Local editing still works; AI direction is unavailable until the provider is configured.";
+        aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+          "UNAVAILABLE", "GEMINI_API_KEY is not configured server-side", false);
+        aiSetBadge("director-indicator", "director-status", "director-detail",
+          "UNAVAILABLE", "No model proposal can be made without the configured provider", false);
+      }
+    } catch (error) {
+      state.creativeStatus = null;
+      if (label) label.textContent = "Cannot verify the provider route: " + String(error.message || error) +
+        ". Open Creative Studio through the Python-backed runtime, not a static GitHub Pages preview.";
+      aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+        "NOT CONNECTED", "The creative API could not be reached", false);
+      aiSetBadge("director-indicator", "director-status", "director-detail",
+        "NOT CONNECTED", "Local editing remains available", false);
+    }
+    updateAiControls();
+  }
+
+  function aiSelectedClipIds() {
+    return Array.from($("ai-selection-list").querySelectorAll("input.ai-asset-check:checked"))
+      .map((item) => item.value);
+  }
+
+  function updateAiControls() {
+    const count = $("ai-selection-list")
+      ? $("ai-selection-list").querySelectorAll("input.ai-asset-check:checked").length : 0;
+    const consent = $("ai-consent") && $("ai-consent").checked;
+    const configured = Boolean(state.creativeStatus && state.creativeStatus.configured);
+    const button = $("ai-analyze");
+    if (button) {
+      button.disabled = state.creativeBusy || !configured || !consent || count < 1 || count > 6;
+      button.textContent = state.creativeBusy ? "ANALYZING SELECTED PREVIEWS…" :
+        "ANALYZE " + Math.max(0, count) + " SELECTED PREVIEW" + (count === 1 ? "" : "S");
+    }
+    const counter = $("ai-selection-count");
+    if (counter) counter.textContent = count + " of up to 6 shots selected";
+  }
+
+  function renderAiSelectionList() {
+    const target = $("ai-selection-list");
+    if (!target) return;
+    target.replaceChildren();
+    if (!state.project || !state.project.timeline.length) {
+      const note = document.createElement("p");
+      note.className = "ai-muted";
+      note.textContent = "Add shots to your timeline first. Only timeline shots can be selected for this model call.";
+      target.append(note);
+      updateAiControls();
+      return;
+    }
+    for (const clip of state.project.timeline) {
+      const asset = assetById(clip.assetId);
+      const label = document.createElement("label");
+      label.className = "ai-selection-row";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "ai-asset-check";
+      checkbox.value = clip.id;
+      checkbox.setAttribute("aria-label", "Include " + (asset ? asset.name : clip.name) + " in preview analysis");
+      checkbox.addEventListener("change", () => {
+        const selected = aiSelectedClipIds();
+        if (selected.length > 6) {
+          checkbox.checked = false;
+          aiSetStatus("Choose no more than 6 shots per analysis. You can make another pass for additional shots.", "error");
+        } else {
+          aiSetStatus("", "");
+        }
+        state.creativePlan = null;
+        state.creativeSnapshot = null;
+        $("ai-plan-preview").hidden = true;
+        $("ai-apply-plan").disabled = true;
+        updateAiControls();
+      });
+      const image = document.createElement("img");
+      image.className = "ai-selection-thumb";
+      image.alt = "";
+      image.loading = "lazy";
+      if (asset && asset.thumb) image.src = thumbUrl(asset);
+      else image.hidden = true;
+      const details = document.createElement("span");
+      details.className = "ai-selection-text";
+      const name = document.createElement("span");
+      name.className = "ai-selection-name";
+      name.textContent = asset ? asset.name : (clip.name || "Missing media asset");
+      const meta = document.createElement("span");
+      meta.className = "ai-selection-meta";
+      meta.textContent = (asset && asset.type.startsWith("video/") ? "Video · one thumbnail frame" : "Image · resized thumbnail") +
+        " · current shot " + formatTime(Number(clip.duration) || 0) +
+        (clip.motion && clip.motion !== "none" ? " · motion: " + clip.motion : "");
+      details.append(name, meta);
+      label.append(checkbox, image, details);
+      target.append(label);
+    }
+    updateAiControls();
+  }
+
+  function aiTimelineSignature() {
+    return JSON.stringify(state.project.timeline);
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      if (!(blob instanceof Blob)) {
+        reject(new Error("A resized preview thumbnail is missing. Re-import the affected asset and try again."));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read a local preview thumbnail."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function describeAiOperation(op) {
+    const clip = state.project.timeline.find((item) => item.id === op.clip_id);
+    const name = clip ? (assetById(clip.assetId)?.name || clip.name || "Shot") : "Shot";
+    switch (op.type) {
+      case "set_duration": return name + " — set duration to " + op.duration_seconds + " seconds.";
+      case "set_motion": return name + " — use " + op.preset + " motion.";
+      case "set_fit": return name + " — frame fit: " + op.fit + ".";
+      case "set_title": return name + " — title: " + (op.text || "(clear title)");
+      case "set_subtitle": return name + " — subtitle: " + (op.text || "(clear subtitle)");
+      case "set_title_style": return name + " — title style: " + op.position + ", " + op.font + ", " + op.size + " px, " + op.color + ".";
+      case "reorder_timeline": return "Reorder the complete timeline: " + op.clip_ids.map((id) => {
+        const row = state.project.timeline.find((item) => item.id === id);
+        return row ? (assetById(row.assetId)?.name || row.name || id) : id;
+      }).join(" → ") + ".";
+      default: return "Unsupported operation will not be applied.";
+    }
+  }
+
+  function renderAiPlan(data) {
+    const plan = data.plan;
+    $("ai-plan-summary").textContent = plan.summary;
+    $("ai-plan-identity").textContent =
+      (data.worker || "worker unknown") + " · " + (data.model || "model unknown") +
+      " · " + (Number(data.elapsed_ms || 0) / 1000).toFixed(1) + " s";
+    const observationList = $("ai-plan-observations");
+    observationList.replaceChildren();
+    for (const item of plan.observations || []) {
+      const li = document.createElement("li");
+      const asset = state.assets.find((row) => row.id === item.asset_id);
+      const clip = state.project.timeline.find((row) => row.id === item.clip_id);
+      li.textContent = (asset ? asset.name : (clip ? clip.name : "Selected shot")) + ": " + item.observation;
+      observationList.append(li);
+    }
+    if (!observationList.children.length) {
+      const li = document.createElement("li");
+      li.textContent = "No specific visual observations were returned.";
+      observationList.append(li);
+    }
+    const operationList = $("ai-plan-operations");
+    operationList.replaceChildren();
+    for (const op of plan.operations || []) {
+      const li = document.createElement("li");
+      li.textContent = describeAiOperation(op);
+      operationList.append(li);
+    }
+    if (!operationList.children.length) {
+      const li = document.createElement("li");
+      li.textContent = "No supported edits were proposed. There is nothing to apply.";
+      operationList.append(li);
+    }
+    $("ai-plan-preview").hidden = false;
+    $("ai-apply-plan").disabled = !(plan.operations && plan.operations.length) || state.creativePlanApplied;
+  }
+
+  function openAiDirector() {
+    $("ai-director-panel").hidden = false;
+    state.creativePlan = null;
+    state.creativeSnapshot = null;
+    state.creativePlanApplied = false;
+    $("ai-consent").checked = false;
+    $("ai-plan-preview").hidden = true;
+    $("ai-apply-plan").disabled = true;
+    aiSetStatus("", "");
+    renderAiSelectionList();
+    loadAiModelStatus();
+    $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function pollAiCreativeJob(jobId, token) {
+    const maxAttempts = 240;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      const response = await fetch("./api/creative/jobs/" + encodeURIComponent(jobId), {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error("The creative-job status route returned unreadable JSON."); }
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || "Could not read the creative analysis job status.");
+      }
+      if (data.status === "processing") {
+        if (attempt % 5 === 0) {
+          aiSetStatus("Visual analysis is still running. The job is kept server-side so a long provider call does not block the initial request; no edits are being applied.", "");
+        }
+        continue;
+      }
+      if (data.result && typeof data.result === "object") return data.result;
+      throw new Error("The creative analysis job ended without a structured result. No edits were applied.");
+    }
+    throw new Error("Visual analysis exceeded the 6-minute polling window. Re-check provider status; no edits were applied automatically.");
+  }
+
+  async function runAiDirection() {
+    if (state.creativeBusy) return;
+    const token = aiRuntimeToken();
+    if (!token) {
+      aiSetStatus("Connect the Python-backed Studio runtime before requesting model analysis.", "error");
+      return;
+    }
+    if (!$("ai-consent").checked) {
+      aiSetStatus("Check the consent box before any preview is sent.", "error");
+      return;
+    }
+    const ids = aiSelectedClipIds();
+    if (!ids.length || ids.length > 6) {
+      aiSetStatus("Select between 1 and 6 timeline shots.", "error");
+      return;
+    }
+    if (!state.creativeStatus || !state.creativeStatus.configured) {
+      aiSetStatus("The provider is not configured. Local editing still works; no preview was sent.", "error");
+      return;
+    }
+    state.creativeBusy = true;
+    state.creativePlan = null;
+    state.creativeSnapshot = null;
+    state.creativePlanApplied = false;
+    $("ai-plan-preview").hidden = true;
+    $("ai-apply-plan").disabled = true;
+    updateAiControls();
+    aiSetStatus("Preparing selected resized thumbnails locally. No original media will be sent…", "");
+    const signature = aiTimelineSignature();
+    try {
+      const selectedClips = ids.map((id) => state.project.timeline.find((clip) => clip.id === id));
+      if (selectedClips.some((clip) => !clip || !assetById(clip.assetId))) {
+        throw new Error("The timeline changed or a selected asset is missing. Reopen the selection and try again.");
+      }
+      const records = [];
+      for (const clip of selectedClips) {
+        const stored = await dbGet("assets", clip.assetId);
+        if (!stored || !stored.thumb) {
+          throw new Error("A selected asset has no resized thumbnail. Re-import that asset and try again.");
+        }
+        const preview = await blobToDataUrl(stored.thumb);
+        if (preview.length > 350000) {
+          throw new Error("A resized preview is unusually large. Re-import that asset to create a smaller thumbnail.");
+        }
+        records.push({
+          asset_id: clip.assetId,
+          clip_id: clip.id,
+          name: String(stored.name || clip.name || "Selected shot").slice(0, 160),
+          preview_data_url: preview,
+          duration: Number(clip.duration) || 0,
+          source_duration: Number(stored.duration) || 0,
+          source_in: Number(clip.sourceIn) || 0,
+          media_type: String(stored.type || ""),
+          motion: String(clip.motion || "none"),
+          fit: String(clip.fit || "cover")
+        });
+      }
+      const allTimelineIds = state.project.timeline.map((clip) => clip.id);
+      const allowReorder = ids.length === allTimelineIds.length &&
+        ids.every((id) => allTimelineIds.includes(id));
+      aiSetStatus("Sending only " + records.length + " resized preview(s) to the configured provider…", "");
+      const response = await fetch("./api/creative/analyze", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({
+          consent: true,
+          consent_clip_ids: ids,
+          allow_reorder: allowReorder,
+          brief: String($("creative-brief").value || "").slice(0, 4000),
+          assets: records
+        })
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error("The visual-analysis endpoint did not return readable JSON."); }
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || "Visual analysis did not start. No edits were applied.");
+      }
+      if (data.status === "processing" && typeof data.job_id === "string") {
+        aiSetStatus("The server accepted the job. Waiting for the completed worker/model result…", "");
+        data = await pollAiCreativeJob(data.job_id, token);
+      }
+      if (!data || data.ok !== true || data.status !== "complete" || !data.plan) {
+        const message = data && data.error ? data.error : "Visual analysis did not complete. No edits were applied.";
+        const identity = data && (data.model || data.worker) ? " [" + [data.worker, data.model].filter(Boolean).join(" · ") + "]" : "";
+        throw new Error(message + identity);
+      }
+      if (aiTimelineSignature() !== signature) {
+        throw new Error("The timeline changed during analysis. The proposal was discarded; run the analysis again.");
+      }
+      state.creativePlan = data.plan;
+      state.creativeSnapshot = signature;
+      state.creativeSelectedIds = ids.slice();
+      state.creativeAllowReorder = allowReorder;
+      state.creativePlanApplied = false;
+      renderAiPlan(data);
+      aiSetStatus("Analysis completed using " + (data.worker || "unknown worker") + " · " +
+        (data.model || "unknown model") + ". This is a proposal from selected thumbnails, not a review of a rendered video. Nothing has been edited yet.", "success");
+      aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+        "ANALYSIS COMPLETED", "Selected resized thumbnails were processed; full clips and rendered output were not inspected", true);
+      aiSetBadge("director-indicator", "director-status", "director-detail",
+        "PLAN READY", "Structured operations passed server-side allowlist validation; waiting for your approval", true);
+      $("agent-state").textContent = "Visual analysis completed with " + (data.worker || "unknown worker") + " · " +
+        (data.model || "unknown model") + ". A structured plan is ready for review. It has not changed your timeline.";
+    } catch (error) {
+      state.creativePlan = null;
+      state.creativeSnapshot = null;
+      $("ai-plan-preview").hidden = true;
+      $("ai-apply-plan").disabled = true;
+      aiSetStatus(String(error.message || error), "error");
+      aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
+        "CALL FAILED", "No verified complete analysis was returned", false);
+    } finally {
+      state.creativeBusy = false;
+      updateAiControls();
+    }
+  }
+
+  function applyAiPlan() {
+    const plan = state.creativePlan;
+    if (!plan || !Array.isArray(plan.operations) || !plan.operations.length) return;
+    if (aiTimelineSignature() !== state.creativeSnapshot) {
+      aiSetStatus("The timeline changed after the proposal. No edits were applied; analyze again to refresh the plan.", "error");
+      $("ai-apply-plan").disabled = true;
+      return;
+    }
+    const working = state.project.timeline.map((clip) => Object.assign({}, clip, {
+      layers: Array.isArray(clip.layers) ? clip.layers.map((layer) => Object.assign({}, layer)) : []
+    }));
+    const byId = new Map(working.map((clip) => [clip.id, clip]));
+    const allowedMotion = new Set(["none", "slow-zoom", "zoom-out", "pan-left", "pan-right"]);
+    const allowedFit = new Set(["cover", "contain"]);
+    const allowedPosition = new Set(["bottom", "center", "top"]);
+    const allowedFont = new Set(["sans", "serif", "mono"]);
+    const allowedColor = /^#[0-9a-fA-F]{6}$/;
+    try {
+      for (const op of plan.operations) {
+        if (!op || typeof op !== "object") throw new Error("The proposed plan contains an invalid operation.");
+        if (op.type === "reorder_timeline") {
+          const order = op.clip_ids;
+          const expected = working.map((clip) => clip.id);
+          if (!state.creativeAllowReorder || !Array.isArray(order) ||
+              order.length !== expected.length || new Set(order).size !== order.length ||
+              order.some((id) => !expected.includes(id))) {
+            throw new Error("Timeline reorder did not match every current shot; nothing was applied.");
+          }
+          const reordered = order.map((id) => byId.get(id));
+          working.splice(0, working.length, ...reordered);
+          continue;
+        }
+        const clip = byId.get(op.clip_id);
+        if (!clip || clip.assetId !== op.asset_id || !state.creativeSelectedIds.includes(op.clip_id)) {
+          throw new Error("An operation no longer matches the reviewed asset selection; nothing was applied.");
+        }
+        switch (op.type) {
+          case "set_duration":
+            if (typeof op.duration_seconds !== "number" || !Number.isFinite(op.duration_seconds) ||
+                op.duration_seconds < 0.5 || op.duration_seconds > 600) throw new Error("Invalid shot duration; nothing was applied.");
+            const sourceAsset = assetById(clip.assetId);
+            if (sourceAsset && sourceAsset.type.startsWith("video/") && Number(sourceAsset.duration) > 0 &&
+                op.duration_seconds > Math.max(0, Number(sourceAsset.duration) - (Number(clip.sourceIn) || 0))) {
+              throw new Error("The proposed shot duration exceeds the remaining video source; nothing was applied.");
+            }
+            clip.duration = op.duration_seconds;
+            break;
+          case "set_motion":
+            if (!allowedMotion.has(op.preset)) throw new Error("Unsupported motion preset; nothing was applied.");
+            clip.motion = op.preset;
+            break;
+          case "set_fit":
+            if (!allowedFit.has(op.fit)) throw new Error("Unsupported image fit; nothing was applied.");
+            clip.fit = op.fit;
+            break;
+          case "set_title":
+            if (typeof op.text !== "string" || op.text.length > 240) throw new Error("Invalid title text; nothing was applied.");
+            clip.title = op.text;
+            break;
+          case "set_subtitle":
+            if (typeof op.text !== "string" || op.text.length > 300) throw new Error("Invalid subtitle text; nothing was applied.");
+            clip.subtitle = op.text;
+            break;
+          case "set_title_style":
+            if (!allowedPosition.has(op.position) || !allowedFont.has(op.font) ||
+                !Number.isInteger(op.size) || op.size < 22 || op.size > 88 ||
+                typeof op.color !== "string" || !allowedColor.test(op.color)) {
+              throw new Error("Unsupported title style; nothing was applied.");
+            }
+            clip.titlePosition = op.position;
+            clip.titleFont = op.font;
+            clip.titleSize = op.size;
+            clip.titleColor = op.color;
+            break;
+          default:
+            throw new Error("This build cannot apply the proposed operation '" + String(op.type) + "'. Nothing was changed.");
+        }
+      }
+    } catch (error) {
+      aiSetStatus(String(error.message || error), "error");
+      return;
+    }
+    pausePreview();
+    state.project.timeline = working;
+    if (!state.project.timeline.some((clip) => clip.id === state.selectedClipId)) {
+      state.selectedClipId = state.project.timeline[0] ? state.project.timeline[0].id : null;
+    }
+    state.currentClipId = state.selectedClipId;
+    state.creativePlanApplied = true;
+    renderTimeline();
+    renderInspector();
+    updateStats();
+    scheduleSave();
+    drawFrame();
+    $("ai-apply-plan").disabled = true;
+    aiSetStatus("Reviewed plan applied to the local editable timeline and queued for autosave. No transition, audio track, mask, or generated asset was added.", "success");
+    $("agent-state").textContent = "AI-directed changes were applied only after your approval. The rendered result still needs a visual review.";
+  }
+
+  function clearAiProposal() {
+    state.creativePlan = null;
+    state.creativeSnapshot = null;
+    state.creativeSelectedIds = [];
+    state.creativeAllowReorder = false;
+    state.creativePlanApplied = false;
+    $("ai-plan-preview").hidden = true;
+    $("ai-apply-plan").disabled = true;
+    aiSetStatus("Proposal cleared. Your timeline was not changed.", "");
+  }
+
   function bindUi() {
     $("media-input").addEventListener("change", async (event) => {
       await importFiles(event.target.files);
@@ -1274,6 +1773,12 @@
     $("add-all-assets").addEventListener("click", addAllAssets);
     $("save-project").addEventListener("click", () => saveProject(true));
     $("save-brief").addEventListener("click", () => { state.project.brief = $("creative-brief").value; scheduleSave(); toast("Director's brief saved with project."); });
+    $("open-ai-director").addEventListener("click", openAiDirector);
+    $("close-ai-director").addEventListener("click", () => { $("ai-director-panel").hidden = true; });
+    $("ai-consent").addEventListener("change", updateAiControls);
+    $("ai-analyze").addEventListener("click", runAiDirection);
+    $("ai-apply-plan").addEventListener("click", applyAiPlan);
+    $("ai-cancel-plan").addEventListener("click", clearAiProposal);
     $("project-name").addEventListener("input", scheduleSave);
     $("creative-brief").addEventListener("input", scheduleSave);
     $("toggle-play").addEventListener("click", togglePreview);
@@ -1326,8 +1831,9 @@
       bindUi();
       await loadProject();
       const storedCount = state.assets.length;
-      $("agent-state").textContent = "Local editing is active. Visual analysis and AI-directed changes are not connected; no model has been called and no media has been sent to a provider.";
+      $("agent-state").textContent = "Local editing is active. AI direction uses a configured provider only after explicit consent for selected resized previews. No media is sent until you request analysis.";
       updateStorageLabel();
+      loadAiModelStatus();
       drawFrame();
       if (storedCount) toast("Restored " + storedCount + " local media asset(s).");
     } catch (error) {
