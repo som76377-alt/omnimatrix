@@ -23,6 +23,9 @@ class CreativeAssetSearchTests(unittest.TestCase):
         self.assertEqual(result["items"], [])
         self.assertIn("induction+stove+science", result["search_url"])
         self.assertIn("pinterest.com/search/pins/", result["search_url"])
+        self.assertGreaterEqual(len(result["search_queries"]), 2)
+        self.assertEqual(len(result["search_links"]), len(result["search_queries"]))
+        self.assertTrue(all(link["url"].startswith("https://www.pinterest.com/search/pins/") for link in result["search_links"]))
 
     def test_image_generation_requires_a_server_side_gemini_key(self):
         with self.assertRaisesRegex(CreativeAssetError, "GEMINI_API_KEY"):
