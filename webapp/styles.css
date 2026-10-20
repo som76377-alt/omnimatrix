@@ -537,3 +537,56 @@ html,body{font-size:14px}
   .chat-attachment-name{max-width:min(58vw,260px)}
   .chat-attachment-status{font-size:11px}
 }
+
+
+/* Final readability correction: readable proportional UI typography, including mobile.
+   Keep monospaced type for code/terminal content only—not filenames or status labels. */
+body,button,input,textarea,select,.nav-item,.sidebar-note,.sidebar-project,
+.sidebar-section-title,.connection-card,.source-link,.breadcrumb,.runtime-state,
+.nav-count,.branch-chip,.read-only-chip,.provider-chip,.state-pill,.tab-strip,
+.toolbar-actions,.explorer-heading,.explorer-location,.tree-entry,.explorer-footer,
+.editor-tabs,.editor-readonly,.terminal-tab,#terminal-state,.terminal-actions button,
+.workspace-footer,.panel-code,.text-link,.panel-link,.thread-mode,.message-meta,
+.message-source,.composer-tools,.composer-bottom,#chat-char-count,
+#composer-permissions,.chat-thread-header small {
+  font-family:var(--sans);
+  font-stretch:normal;
+  letter-spacing:0;
+}
+.nav-label,.eyebrow{font-size:12px;line-height:1.45;letter-spacing:.02em}
+.sidebar-project small,.connection-card small,.sidebar-note,.source-link,
+.sidebar-foot,.breadcrumb,.runtime-state,.nav-count,.tab-strip,.toolbar-actions,
+.explorer-heading,.explorer-location,.explorer-footer,.editor-path,.editor-readonly,
+.terminal-tab,#terminal-state,.terminal-actions button,.workspace-footer,.panel-code,
+.text-link,.panel-link,.thread-mode,.message-meta,.message-source,
+.composer-tools,.composer-bottom,#chat-char-count,#composer-permissions {
+  font-size:11.5px;
+  line-height:1.45;
+}
+.branch-chip,.read-only-chip,.provider-chip,.state-pill{font-size:12px}
+.tree-entry{font-size:13px;line-height:1.5}
+.tree-entry .tree-size{font-size:11px}
+#source-mode{font-size:11px}
+.chat-thread-header small{font-size:12px;line-height:1.5}
+.message-meta{font-size:11.5px;font-weight:600}
+.message-source{font-size:11px}
+.composer-tools{font-size:11.5px}
+.chat-attachment-toolbar{gap:10px;margin:5px 0 11px}
+.attach-button{min-height:40px;padding:9px 13px;font:650 13px/1.35 var(--sans);letter-spacing:0}
+#chat-attachment-caption{font:12px/1.55 var(--sans);color:var(--muted)}
+.chat-attachment-list{gap:9px;margin-bottom:11px}
+.chat-attachment-item{gap:11px;max-width:min(100%,420px);padding:10px 11px;border-radius:5px}
+.chat-attachment-preview,.chat-attachment-kind{width:40px;height:40px;flex-basis:40px}
+.chat-attachment-kind{font:700 11px/1.25 var(--sans);letter-spacing:0}
+.chat-attachment-meta{gap:5px}
+.chat-attachment-name{max-width:280px;font:600 13px/1.45 var(--sans);letter-spacing:0}
+.chat-attachment-status{font:12px/1.5 var(--sans);letter-spacing:0;color:var(--muted);overflow-wrap:anywhere}
+.attachment-remove{width:30px;height:32px;font:400 22px/1 var(--sans)}
+@media(max-width:540px){
+  .chat-attachment-toolbar{gap:9px}
+  .chat-attachment-item{padding:10px;gap:9px}
+  .chat-attachment-name{max-width:min(58vw,280px)}
+  .chat-attachment-status{font-size:12px}
+  .composer-tools{font-size:11px;gap:8px;flex-wrap:wrap}
+  .tree-entry{font-size:12.5px}
+}
