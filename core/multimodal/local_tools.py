@@ -34,7 +34,7 @@ def _run_bounded_process(
         truncated = len(stderr) > stderr_limit
         stderr_text = stderr[:stderr_limit].decode("utf-8", errors="replace")
         if truncated:
-            stderr_text += "\\n[tool stderr truncated]"
+            stderr_text += "\n[tool stderr truncated]"
         return subprocess.CompletedProcess(
             result.args, result.returncode,
             stdout.decode("utf-8", errors="replace"), stderr_text,
