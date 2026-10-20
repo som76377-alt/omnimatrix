@@ -196,7 +196,7 @@ def analyze_multiple_attachments(records: list[dict[str, Any]], question: str) -
         "status": status,
         "count": len(records),
         "analyzed": processed,
-        "context": "\\n\\n".join(part for part in context_parts if part),
+        "context": "\n\n".join(part for part in context_parts if part),
         "error": None if all_processed and fallback_processed == 0 else (
             None if all_processed and fallback_processed > 0 else
             str(primary.get("error") or "One or more files still need a compatible worker.")
