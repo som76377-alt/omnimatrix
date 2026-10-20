@@ -401,7 +401,9 @@
     return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
       (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
       /^https:\/\//i.test(String(item.asset_url || "")) &&
-      (item.rights_verified === true));
+      // Commons-hosted media may be imported into a private draft even when
+      // metadata is incomplete. That does not imply permission to publish it.
+      (item.rights_verified === true || item.provider === "commons"));
   }
 
   function renderOnlineResults(response) {
@@ -430,7 +432,7 @@
       const heading = document.createElement("strong");
       heading.textContent = "No importable matches";
       const copy = document.createElement("span");
-      copy.textContent = "Try a broader search or switch source. Only results with supported media formats and licence metadata can be imported automatically.";
+      copy.textContent = "Omnitrix can broaden the search automatically. If no usable media exists, create an original motion-graphics scene instead.";
       empty.append(heading, copy);
       target.append(empty);
       return;
@@ -717,7 +719,7 @@
         return;
       }
       if (!eligible.length && provider === "commons") {
-        onlineStatus("No results with supported formats and identifiable licences were found. Try a broader phrase; nothing was imported.", "error");
+        onlineStatus("No usable source media was found after broadening the search. Original motion-graphics fallback is not yet available in this build; nothing was imported.", "error");
         return;
       }
       const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
