@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 from core.application import ChatApplication
 from core.orchestrator.omnitrix import Omnitrix
@@ -118,6 +119,19 @@ class StudioServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 401)
         self.assertEqual(body["code"], "unauthorized")
+
+    @patch("interfaces.web.server.search_creative_assets")
+    def test_public_mobile_creative_search_works_without_runtime_token(self, search_assets):
+        search_assets.return_value = {"ok": True, "provider": "commons", "items": []}
+        status, body = self.request(
+            "/api/mobile/creative/search?q=induction%20coil&provider=pexels&limit=12",
+            authorized=False,
+        )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        search_assets.assert_called_once_with(
+            "induction coil", provider="commons", kind="any", limit=8
+        )
 
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
