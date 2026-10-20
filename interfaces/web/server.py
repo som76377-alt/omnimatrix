@@ -43,6 +43,7 @@ from core.creative_director import analyze_creative_request, creative_model_stat
 from core.creative_production import CreativeProductionManifest, ProductionContractError
 from core.creative_assets import CreativeAssetError, download_creative_asset, generate_creative_image, search_creative_assets
 from core.creative_video import CreativeVideoError, creative_video_job_status, start_creative_video_job
+from core.creative_tool_registry import load_creative_tool_registry
 
 
 from core.multimodal.journal import journal_status
@@ -1853,7 +1854,9 @@ def make_handler(
                     )
                     return
                 try:
-                    if route.startswith("/api/creative/manim-jobs/"):
+                    if route == "/api/creative/tools":
+                        self._send_json(load_creative_tool_registry())
+                    elif route.startswith("/api/creative/manim-jobs/"):
                         remainder = route[len("/api/creative/manim-jobs/"):]
                         if remainder.endswith("/artifact"):
                             job_id = remainder[:-len("/artifact")].rstrip("/")
