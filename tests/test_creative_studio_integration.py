@@ -24,6 +24,7 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
         self.assertIn('"/artifact"', js)
         self.assertIn("async function renderLocalScienceDiagram", js)
         self.assertIn("async function buildScienceDiagramDraft", js)
+        self.assertIn('$("build-science-diagram").addEventListener("click", buildScienceDiagramDraft)', js)
         self.assertIn("await importFiles([output.file])", js)
         self.assertIn("state.project.timeline.push(clip)", js)
         self.assertIn("await inspectRenderedVideo(output.file", js)
