@@ -59,6 +59,14 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("Do not search the web", policy)
         self.assertIn("No line-and-circle substitute", policy)
         self.assertIn("unapproved technical draft", policy)
+        coordinated = json.loads((ROOT / "config" / "coordinated-agent-workflows.json").read_text(encoding="utf-8"))
+        contract = coordinated["prompt_to_video_contract"]
+        self.assertEqual(contract["mode"], "code_only")
+        self.assertFalse(contract["asset_search_allowed"])
+        self.assertFalse(contract["generated_still_substitute_allowed"])
+        self.assertIn("inspect actual rendered frames with visual critic when consented", contract["required_steps"])
+        renderer_role = next(role for role in coordinated["roles"] if role["id"] == "code_rendering_engineer")
+        self.assertIn("use_stick_figures_for_believable_human_requests", renderer_role["must_not"])
         html = (ROOT / "webapp" / "creative-studio.html").read_text(encoding="utf-8")
         self.assertLess(html.index('src="./code-3d-character-renderer.js"'), html.index('src="./creative-studio.js"'))
 
