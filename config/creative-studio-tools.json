@@ -212,7 +212,7 @@
         "aspect-ratio-aware-image-generation",
         "current-interactions-api"
       ],
-      "notes": "One original 1K image is generated only after the image/visual-review consent is explicitly enabled. Uses GEMINI_API_KEY server-side and current Gemini Interactions API model gemini-nano-banana-2.1. Budget estimate is about US$0.04/image; actual provider billing can vary. The former gemini-2.5-flash-image default is migrated because it was shut down. Image consent is separate from paid direct-video consent.",
+      "notes": "One original 1K image is generated only after the image/visual-review consent is explicitly enabled and the server owner has set OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true. Uses GEMINI_API_KEY server-side and current Gemini Interactions API model gemini-nano-banana-2.1. Budget estimate is about US$0.04/image; actual provider billing can vary. The former gemini-2.5-flash-image default is migrated because it was shut down. Image consent is separate from paid direct-video consent.",
       "model_default": "gemini-nano-banana-2.1"
     },
     {
@@ -239,7 +239,7 @@
         "up to two active server jobs and three public generation requests per rolling day",
         "the provider result needs manual review for action continuity, audio synchronization and factual content"
       ],
-      "notes": "Uses the current Gemini Interactions API. The direct AI-video path is distinct from the local Canvas/WebM renderer and is not used as a silent fallback. Server-side GEMINI_API_KEY and paid video-model access are required. A returned job or response is not proof of a good clip; inspect the actual saved video."
+      "notes": "Uses the current Gemini Interactions API. The direct AI-video path is distinct from the local Canvas/WebM renderer and is not used as a silent fallback. Server-side GEMINI_API_KEY, paid video-model access, and the owner-managed OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true flag are required. The flag is off by default. A returned job or response is not proof of a good clip; inspect the actual saved video."
     }
   ]
 }
