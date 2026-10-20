@@ -343,7 +343,7 @@ def update_shared_production_task(
         if state != current and state not in _TRANSITIONS[current]:
             raise ProductionContractError("Invalid task transition: " + current + " -> " + state + ".")
         if state == "ready" and any(task_map[dep]["status"] != "succeeded" for dep in task["depends_on"]):
-            raise ProductionContractError("A task cannot become ready until every dependency has succeeded.")
+            raise ProductionContractError("A task dependencies must all succeed before it can become ready.")
         if state == "running":
             if any(task_map[dep]["status"] != "succeeded" for dep in task["depends_on"]):
                 raise ProductionContractError("A task cannot run until every dependency has succeeded.")
