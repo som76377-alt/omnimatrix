@@ -57,10 +57,10 @@
 
     <section class="panel ai-director-panel" id="ai-director-panel" hidden aria-labelledby="ai-director-heading">
       <div class="panel-heading">
-        <div><span class="eyebrow">CONSENT-GATED MODEL CALL</span><h2 id="ai-director-heading">AI direction</h2></div>
+        <div><span class="eyebrow">CONSENT-GATED MODEL CALL</span><h2 id="ai-director-heading">Director + graphics engineer</h2></div>
         <button class="button quiet small" id="close-ai-director" type="button">CLOSE</button>
       </div>
-      <p class="ai-director-explainer">Choose 1–6 shots already on your timeline. Only their resized JPEG thumbnails and limited clip metadata will be sent after you check consent and press Analyze. Original files and unselected library items stay local. A video clip is represented by one thumbnail in this lightweight stage.</p>
+      <p class="ai-director-explainer">Choose 1–6 shots already on your timeline. Only their resized JPEG thumbnails and limited clip metadata will be sent after you check consent and press Analyze. Original files and unselected library items stay local. The graphics engineer can propose editable text, rectangles, circles and restrained entry motion; the validator rejects unsupported operations. A video clip is represented by one thumbnail in this lightweight stage.</p>
       <p id="ai-provider-label" class="ai-provider-label" aria-live="polite">Checking configured visual-analysis route…</p>
       <div id="ai-selection-list" class="ai-selection-list">
         <p class="ai-muted">Open AI direction to load the current timeline.</p>
@@ -82,7 +82,7 @@
         <ul id="ai-plan-observations" class="ai-plan-list"></ul>
         <h4>Proposed operations</h4>
         <ol id="ai-plan-operations" class="ai-plan-list"></ol>
-        <p class="ai-plan-boundary">Review before applying. This build supports sequential cuts, shot duration, fit/crop, simple motion presets and title styling. It does not implement transitions between shots, audio tracks, masks or generated-object replacement.</p>
+        <p class="ai-plan-boundary">Review before applying. This build supports sequential cuts, shot duration, fit/crop, simple motion presets, title styling and validated native graphic layers. It still does not implement true transitions, independent audio tracks, masks or generated-image creation.</p>
         <button class="button primary" id="ai-apply-plan" type="button" disabled>APPLY REVIEWED PLAN</button>
       </section>
     </section>
@@ -104,6 +104,31 @@
           <div class="progress-track"><span id="upload-progress-bar"></span></div>
           <small id="upload-progress-text">Importing assets…</small>
         </div>
+        <section class="online-assets" aria-labelledby="online-assets-heading">
+          <div class="online-assets-heading">
+            <div><span class="eyebrow">WEB / REFERENCES</span><h3 id="online-assets-heading">Find visual assets</h3></div>
+            <span class="tiny-count">LIVE SEARCH</span>
+          </div>
+          <div class="online-search-controls">
+            <input id="online-asset-query" type="search" maxlength="180" placeholder="Search scenes, objects, science…" aria-label="Search online visual assets">
+            <select id="online-asset-provider" aria-label="Online asset source">
+              <option value="commons">Wikimedia Commons · open licence metadata</option>
+              <option value="pexels">Pexels · needs server API key</option>
+              <option value="pinterest">Pinterest · reference search</option>
+            </select>
+            <select id="online-asset-kind" aria-label="Asset type">
+              <option value="any">Images + clips</option><option value="image">Images</option><option value="video">Video clips</option>
+            </select>
+            <button class="button primary small" id="search-online-assets" type="button">SEARCH WEB</button>
+          </div>
+          <div class="online-asset-actions">
+            <button class="button quiet small" id="pinterest-reference" type="button">OPEN PINTEREST ↗</button>
+            <button class="button quiet small" id="build-from-brief" type="button">AUTO-ASSEMBLE DRAFT</button>
+          </div>
+          <p class="online-asset-note">Auto-assembly only uses results with identifiable licence metadata. Search results are not visual proof; inspect the preview and source. Pinterest is for reference discovery only here: Omnitrix will not scrape Pins or assume their images are reusable.</p>
+          <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Search public assets online, then add selected sources to the local timeline.</p>
+          <div class="online-asset-results" id="online-asset-results"></div>
+        </section>
         <div class="library-controls">
           <input id="asset-search" type="search" placeholder="Search filenames…" aria-label="Search media assets">
           <button class="button quiet small" id="add-all-assets">ADD ALL →</button>
