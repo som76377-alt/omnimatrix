@@ -276,6 +276,7 @@ def search_creative_assets(
                 "or automatically download Pins; use assets only when you have permission to reuse them."
             ),
         }
+    searched_queries = [q]
     if provider == "pexels":
         api_key = str(env.get("PEXELS_API_KEY", "")).strip()
         if not api_key:
@@ -305,9 +306,9 @@ def search_creative_assets(
                     items.append(item)
                     if len(items) >= limit:
                         break
-        q = " · ".join(attempted)
+        searched_queries = attempted
     return {
-        "ok": True, "provider": provider, "query": q, "items": items[:limit],
+        "ok": True, "provider": provider, "query": q, "search_queries": searched_queries, "items": items[:limit],
         "count": min(len(items), limit),
         "note": (
             "Search metadata is not visual verification. Confirm each result actually matches the scene. "
