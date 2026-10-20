@@ -235,8 +235,13 @@ def start_creative_video_job(
         active = sum(1 for item in _JOBS.values() if item.status in {"queued", "processing"})
         if active >= _JOB_MAX_ACTIVE:
             raise CreativeVideoError("Omnitrix is already generating two videos. Wait for one to finish before starting another.")
+        # Bound accepted generations over a rolling day, not for the life of
+        # this process. A never-pruned deque would eventually disable generation
+        # permanently after enough successful or failed requests.
+        while _GLOBAL_REQUEST_TIMES and now - _GLOBAL_REQUEST_TIMES[0] >= 86_400.0:
+            _GLOBAL_REQUEST_TIMES.popleft()
         if len(_GLOBAL_REQUEST_TIMES) >= 100:
-            raise CreativeVideoError("The local video request guard is temporarily full. Try again later.")
+            raise CreativeVideoError("The local video request guard reached its rolling 24-hour limit. Try again tomorrow.")
         _GLOBAL_REQUEST_TIMES.append(now)
         job_id = uuid.uuid4().hex
         job = _VideoJob(job_id, "queued", now, text, aspect_ratio, resolution, model, updated_at=now)
