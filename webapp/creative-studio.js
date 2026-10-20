@@ -460,16 +460,10 @@
     const child=(o,a,l)=>({x:o.x+Math.sin(a)*l*unit,y:o.y+Math.cos(a)*l*unit});
     const skeleton = window.OmnitrixRig.buildSkeleton({ ox, oy, unit, pose });
     const { leftHip, rightHip, leftShoulder, rightShoulder, neck, head } = skeleton;
-    const ink="#171a16", skin="#b98564", skinLight="#d7a17c", skinShade="#875b43";
-    const shirt="#d6fa62", shirtShade="#91aa4c", pants="#343b33", pantsLight="#515a4c";
-    const p=(x,y)=>({x:ox+x*unit,y:oy+y*unit});
-    const child=(o,a,l)=>({x:o.x+Math.sin(a)*l*unit,y:o.y+Math.cos(a)*l*unit});
     const line=(a,b,c,w)=>{g.strokeStyle=c;g.lineWidth=w*unit;g.lineCap="round";g.lineJoin="round";g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();};
     const limb=(a,b,c,w,h)=>{line(a,b,ink,w+4);line(a,b,c,w);if(h)line({x:a.x-1.5*unit,y:a.y},{x:b.x-1.5*unit,y:b.y},h,Math.max(1,w*.12));};
     const ellipse=(x,y,rx,ry,c,r)=>{g.fillStyle=c;g.beginPath();g.ellipse(x,y,rx*unit,ry*unit,r||0,0,Math.PI*2);g.fill();};
     const joint=(o,r,c)=>{ellipse(o.x,o.y,r+2,r+2,ink,0);ellipse(o.x,o.y,r,r,c,0);};
-    const leftHip=p(-15,1),rightHip=p(15,1),leftShoulder=p(-29,-111),rightShoulder=p(29,-111);
-    const neck=p(0,-132),head=p(-lean*14,-170-(nod?Math.sin(t*4)*3:0));
     g.save();g.globalAlpha=jump?0.3-Math.max(0,swing)*0.14:0.36;ellipse(ox,floorY+4*unit,jump?43:52,6,"#050705",0);g.restore();
 
     // Back-to-front layer order: legs, rear arm, torso, raised arm, head and hands.
