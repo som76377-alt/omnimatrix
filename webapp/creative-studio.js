@@ -17,7 +17,8 @@
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
     onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
     autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false, aiVideoBusy: false,
-    autoCriticRevisionPerformed: false, scienceDiagramBusy: false
+    autoCriticRevisionPerformed: false, scienceDiagramBusy: false,
+    captureFrameRequest: null, lastCaptureRequestAt: 0
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -240,6 +241,47 @@
     const dh = height * cover;
     tctx.drawImage(source, (w - dw) / 2, (h - dh) / 2, dw, dh);
     return new Promise((resolve) => thumbCanvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.76));
+  }
+
+  // Prefer manually clocked canvas frames where supported. This prevents the
+  // recorder from sampling the canvas before its first completed paint. Browsers
+  // without requestFrame() retain the regular timed captureStream path.
+  function createCanvasVideoCapture(source, fps) {
+    if (!source || typeof source.captureStream !== "function") {
+      throw new Error("This browser cannot capture canvas video.");
+    }
+    let stream = null;
+    let requestFrame = null;
+    try {
+      const manualStream = source.captureStream(0);
+      const track = manualStream.getVideoTracks()[0];
+      if (track && typeof track.requestFrame === "function") {
+        try {
+          track.requestFrame();
+          stream = manualStream;
+          requestFrame = () => track.requestFrame();
+        } catch {
+          manualStream.getTracks().forEach((item) => item.stop());
+        }
+      } else {
+        manualStream.getTracks().forEach((item) => item.stop());
+      }
+    } catch {
+      // The timed capture fallback below supports engines without manual capture.
+    }
+    if (!stream) stream = source.captureStream(fps);
+    return { stream, requestFrame };
+  }
+
+  function forceCaptureFrame(requestFrame) {
+    if (typeof requestFrame !== "function") return;
+    try { requestFrame(); } catch {}
+  }
+
+  function recorderWebmMimeType() {
+    // VP8 is the more broadly interoperable WebM baseline for Android/WebView.
+    const candidates = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm"];
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
   }
 
   async function inspectFile(file) {
@@ -658,9 +700,10 @@
     scene.width = width; scene.height = height;
     const sceneContext = scene.getContext("2d", { alpha: false });
     if (!sceneContext) throw new Error("The local animation canvas could not be created.");
-    const stream = scene.captureStream(24);
-    const preferred = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-    const mimeType = preferred.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    drawOriginalMotionFrame(sceneContext, brief, 0, duration, width, height);
+    const capture = createCanvasVideoCapture(scene, 24);
+    const stream = capture.stream;
+    const mimeType = recorderWebmMimeType();
     let recorder;
     const chunks = [];
     try {
@@ -696,9 +739,15 @@
         try {
           recorder.start(250);
           const startedAt = performance.now();
+          forceCaptureFrame(capture.requestFrame);
+          let lastCaptureAt = startedAt;
           const draw = (now) => {
             const elapsed = Math.min(duration, Math.max(0, (now - startedAt) / 1000));
             drawOriginalMotionFrame(sceneContext, brief, elapsed, duration, width, height);
+            if (capture.requestFrame && (now - lastCaptureAt >= 1000 / 24 || elapsed >= duration)) {
+              forceCaptureFrame(capture.requestFrame);
+              lastCaptureAt = now;
+            }
             if (elapsed < duration && recorder.state !== "inactive") raf = requestAnimationFrame(draw);
             else if (recorder.state !== "inactive") recorder.stop();
           };
@@ -710,6 +759,14 @@
       });
       if (blob.size > 24 * 1024 * 1024) {
         throw new Error("The original animation exceeds the 24 MB transfer limit. Choose a shorter duration or lower resolution.");
+      }
+      // Do not trust the canvas preview or its thumbnail: reopen the encoded file,
+      // decode real frames, reject predominantly blank output, and require motion.
+      const inspection = await inspectRenderedVideo(blob, duration, [], []);
+      const blankOutput = inspection.warnings.find((warning) => warning.startsWith("majority of sampled frames are near-black/blank"));
+      if (blankOutput) throw new Error("The original animation failed black-frame QA (" + blankOutput + "). No clip was imported.");
+      if (!inspection.motionDetected) {
+        throw new Error("The recorded file decoded, but QA could not detect meaningful movement between sampled frames. No static image was accepted as an animation.");
       }
       // The recorder has stopped, so reuse the scene canvas to create a thumbnail
       // from an actual animation frame. Keep this metadata attached until IndexedDB import.
@@ -2350,6 +2407,18 @@
     updateTransport();
   }
 
+  function requestCurrentCaptureFrame() {
+    if (!state.exporting || typeof state.captureFrameRequest !== "function") return;
+    const now = performance.now();
+    if (state.lastCaptureRequestAt && now - state.lastCaptureRequestAt < 1000 / 30) return;
+    state.lastCaptureRequestAt = now;
+    try {
+      state.captureFrameRequest();
+    } catch {
+      state.captureFrameRequest = null;
+    }
+  }
+
   function playbackTick(now) {
     if (!state.isPlaying) return;
     state.playhead = Math.max(0, (now - state.playStartedAt) / 1000);
@@ -2364,6 +2433,7 @@
       return;
     }
     drawFrame();
+    requestCurrentCaptureFrame();
     if (now - state.lastFrameUi > 100) {
       updateTransport();
       state.lastFrameUi = now;
@@ -2440,14 +2510,26 @@
       probe.height = 36;
       const probeContext = probe.getContext("2d", { willReadFrequently: true });
       if (!probeContext) throw new Error("The browser could not create the local frame-inspection canvas.");
-      const times = Array.from(new Set([
+      const plannedTimes = [
         Math.min(duration * 0.02, 0.08),
         duration * 0.25,
         duration * 0.5,
         duration * 0.75,
         Math.max(0, duration - Math.min(duration * 0.02, 0.08))
-      ].map((time) => Math.max(0, Math.min(duration - 0.01, time)).toFixed(3)))).map(Number);
+      ];
+      let clipOffset = 0;
+      for (const clip of (Array.isArray(renderTimelineSnapshot) ? renderTimelineSnapshot : [])) {
+        const clipDuration = Math.max(0.5, Number(clip.duration) || 0);
+        plannedTimes.push(Math.min(duration - 0.01, Math.max(0, clipOffset + clipDuration / 2)));
+        clipOffset += clipDuration;
+      }
+      const allTimes = Array.from(new Set(plannedTimes
+        .map((time) => Math.max(0, Math.min(duration - 0.01, time)).toFixed(3))))
+        .map(Number).sort((a, b) => a - b);
+      const times = allTimes.length <= 31 ? allTimes : Array.from({ length: 31 }, (_, i) =>
+        allTimes[Math.round(i * (allTimes.length - 1) / 30)]);
       const frameStats = [];
+      let previousPixels = null;
       const reviewFrames = [];
       const seekTo = async (time) => {
         if (Math.abs(video.currentTime - time) <= 0.02) return;
@@ -2484,7 +2566,18 @@
         const count = pixels.length / 4;
         const mean = sum / count;
         const variance = Math.max(0, squared / count - mean * mean);
-        frameStats.push({ time, mean, variance });
+        let frameDelta = 0;
+        if (previousPixels) {
+          let difference = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            difference += Math.abs(pixels[i] - previousPixels[i]);
+            difference += Math.abs(pixels[i + 1] - previousPixels[i + 1]);
+            difference += Math.abs(pixels[i + 2] - previousPixels[i + 2]);
+          }
+          frameDelta = difference / (count * 3);
+        }
+        frameStats.push({ time, mean, variance, frameDelta });
+        previousPixels = new Uint8ClampedArray(pixels);
       }
 
       const reviewSet = new Set(Array.isArray(reviewClipIds) ? reviewClipIds : []);
@@ -2521,12 +2614,16 @@
         }
       }
       const suspiciousDark = frameStats.filter((frame) => frame.mean < 5 && frame.variance < 3);
-      if (suspiciousDark.length) {
+      if (suspiciousDark.length >= Math.max(2, Math.ceil(frameStats.length * 0.6))) {
+        warnings.push("majority of sampled frames are near-black/blank (" + suspiciousDark.length + "/" + frameStats.length + ")");
+      } else if (suspiciousDark.length) {
         warnings.push("possible black/blank output near " + suspiciousDark.map((frame) => frame.time.toFixed(1) + "s").join(", "));
       }
+      const motionDetected = frameStats.slice(1).some((frame) => frame.frameDelta >= 0.35);
       return {
         ok: true, decodable: true, duration, width, height,
         sampledFrames: frameStats.length,
+        motionDetected,
         reviewFrames,
         warnings
       };
@@ -2696,14 +2793,20 @@
     state.chunks = [];
     $("render-video").disabled = true;
     $("render-video-bottom").disabled = true;
-    showMessage("Rendering locally in this browser. Keep this tab open until the download starts.", false);
+    showMessage("Rendering locally in this browser. The source will be decoded before recording; keep this tab open until export completes.", false);
+    let activeOutputStream = null;
     try {
       await ensureAudioGraph();
-      const videoStream = canvas.captureStream(30);
+      await ensureCurrentPreviewSource();
+      drawFrame();
+      const capture = createCanvasVideoCapture(canvas, 30);
+      state.captureFrameRequest = capture.requestFrame;
+      state.lastCaptureRequestAt = 0;
+      const videoStream = capture.stream;
       const outputStream = new MediaStream(videoStream.getVideoTracks());
+      activeOutputStream = outputStream;
       if (state.audioOutput) state.audioOutput.stream.getAudioTracks().forEach((track) => outputStream.addTrack(track));
-      const candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-      const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+      const mimeType = recorderWebmMimeType();
       const recorder = new MediaRecorder(outputStream, {
         ...(mimeType ? { mimeType: mimeType } : {}),
         videoBitsPerSecond: dimensions[0] >= 1280 ? 5500000 : 2800000
@@ -2714,6 +2817,9 @@
       recorder.onstop = async () => {
         const blob = new Blob(state.chunks, { type: recorder.mimeType || "video/webm" });
         outputStream.getTracks().forEach((track) => track.stop());
+        activeOutputStream = null;
+        state.captureFrameRequest = null;
+        state.lastCaptureRequestAt = 0;
         canvas.width = original.width;
         canvas.height = original.height;
         state.recorder = null;
@@ -2728,6 +2834,23 @@
             inspection = await inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot);
           } catch (error) {
             inspectionFailure = String(error.message || error);
+          }
+          const blankOutput = inspection && inspection.warnings.find((warning) =>
+            warning.startsWith("majority of sampled frames are near-black/blank"));
+          if (!inspection || blankOutput) {
+            state.exporting = false;
+            state.captureFrameRequest = null;
+            state.lastCaptureRequestAt = 0;
+            $("render-video").disabled = false;
+            $("render-video-bottom").disabled = false;
+            updateTransport();
+            showMessage(
+              "Export blocked — no video was saved because " +
+              (blankOutput || inspectionFailure || "the encoded file could not be decoded and validated") +
+              ". Fix or replace the source clip, then render again.",
+              true
+            );
+            return;
           }
           let critique = { attempted: false, changed: false, message: "" };
           if (runPostRenderCritic && $("auto-creative-consent").checked &&
@@ -2800,11 +2923,16 @@
       };
       recorder.start(500);
       state.isPlaying = true;
-      await ensureCurrentPreviewSource();
+      forceCaptureFrame(state.captureFrameRequest);
+      state.lastCaptureRequestAt = performance.now();
       state.playStartedAt = performance.now();
       state.raf = requestAnimationFrame(playbackTick);
       updateTransport();
     } catch (error) {
+      if (activeOutputStream) activeOutputStream.getTracks().forEach((track) => track.stop());
+      activeOutputStream = null;
+      state.captureFrameRequest = null;
+      state.lastCaptureRequestAt = 0;
       state.exporting = false;
       state.isPlaying = false;
       canvas.width = original.width;
@@ -2820,7 +2948,20 @@
     const entry = clipAtTime(0);
     if (entry) {
       state.currentClipId = entry.clip.id;
+      const asset = assetById(entry.clip.assetId);
       await loadMediaForPreview(entry.clip.assetId, entry.clip);
+      if (asset && String(asset.type || "").startsWith("video/")) {
+        if (sourceVideo.error) {
+          throw new Error("The first timeline clip cannot be decoded by this browser. Re-import it in a browser-supported format.");
+        }
+        await waitForVideoEvent(
+          sourceVideo, "loadeddata", 10000,
+          "The first timeline clip never decoded a video frame. Export was stopped rather than recording a black canvas."
+        );
+        if (sourceVideo.error || !sourceVideo.videoWidth || !sourceVideo.videoHeight) {
+          throw new Error("The first timeline clip exposed no decoded video dimensions. Export was stopped.");
+        }
+      }
       try {
         if (entry.clip.sourceIn > 0 && sourceVideo.readyState >= 1) sourceVideo.currentTime = entry.clip.sourceIn;
         if (sourceVideo.readyState >= 2) await sourceVideo.play();
@@ -3686,18 +3827,20 @@
     target.width = width; target.height = height;
     const context = target.getContext("2d", { alpha: false });
     if (!context) throw new Error("The browser could not create the diagram canvas.");
-    const stream = target.captureStream(30);
-    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
-      .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    const duration = Math.max(4.2, Math.min(10, steps.length * 1.35));
+    drawLocalScienceDiagram(context, width, height, steps, title, 0);
+    const capture = createCanvasVideoCapture(target, 30);
+    const stream = capture.stream;
+    const mimeType = recorderWebmMimeType();
     const recorder = new MediaRecorder(stream, {
       ...(mimeType ? { mimeType: mimeType } : {}),
       videoBitsPerSecond: width >= 1280 ? 3500000 : 1800000
     });
-    const duration = Math.max(4.2, Math.min(10, steps.length * 1.35));
     return await new Promise((resolve, reject) => {
       const chunks = [];
       let raf = 0;
       let settled = false;
+      let lastCaptureAt = 0;
       const cleanup = () => {
         if (raf) window.cancelAnimationFrame(raf);
         stream.getTracks().forEach((track) => track.stop());
@@ -3721,15 +3864,21 @@
       recorder.onstop = () => finish(null);
       try {
         recorder.start(250);
+        forceCaptureFrame(capture.requestFrame);
         const startAt = performance.now();
-        const tick = () => {
+        lastCaptureAt = startAt;
+        const tick = (now) => {
           if (settled || recorder.state !== "recording") return;
-          const elapsed = (performance.now() - startAt) / 1000;
+          const elapsed = (now - startAt) / 1000;
           drawLocalScienceDiagram(context, width, height, steps, title, Math.min(1, elapsed / duration));
+          if (capture.requestFrame && (now - lastCaptureAt >= 1000 / 30 || elapsed >= duration)) {
+            forceCaptureFrame(capture.requestFrame);
+            lastCaptureAt = now;
+          }
           if (elapsed >= duration) recorder.stop();
           else raf = window.requestAnimationFrame(tick);
         };
-        tick();
+        raf = window.requestAnimationFrame(tick);
       } catch (error) {
         finish(error instanceof Error ? error : new Error("The browser could not start diagram recording."));
       }

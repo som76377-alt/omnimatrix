@@ -35,7 +35,7 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
         js = STUDIO_JS.read_text(encoding="utf-8")
         self.assertIn("async function renderOriginalMotionClip", js)
         self.assertIn("drawOriginalMotionFrame", js)
-        self.assertIn("captureStream(24)", js)
+        self.assertIn("createCanvasVideoCapture(scene, 24)", js)
         self.assertIn("await importFiles([file])", js)
         self.assertNotIn('heading: "FOLLOW THE PROCESS"', js)
         self.assertNotIn('heading: "CAUSE BECOMES EFFECT"', js)
@@ -58,7 +58,7 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
 
     def test_service_worker_cache_version_was_bumped_for_ui_update(self):
         worker = SERVICE_WORKER.read_text(encoding="utf-8")
-        self.assertIn('const CACHE_NAME = "omnitrix-shell-v3";', worker)
+        self.assertIn('const CACHE_NAME = "omnitrix-shell-v4";', worker)
 
 
 if __name__ == "__main__":
