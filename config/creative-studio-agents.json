@@ -131,7 +131,7 @@
     {
       "id": "motion-designer",
       "label": "Motion designer",
-      "status": "planned",
+      "status": "configured-not-connected",
       "model_required": true,
       "responsibilities": [
         "propose typography and graphic hierarchy",
@@ -142,7 +142,8 @@
         "design-system constraints",
         "rendered-frame inspection",
         "safe rollback"
-      ]
+      ],
+      "execution_mode": "Future specialist role; native graphic entry motion currently uses the integrated graphics engineer and browser Canvas renderer."
     },
     {
       "id": "visual-critic",

@@ -50,7 +50,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("frames from the actual rendered WebM", self.studio_html)
 
     def test_export_reopens_webm_and_checks_actual_decoded_frames(self):
-        self.assertIn("async function inspectRenderedVideo(blob, expectedDuration)", self.studio_js)
+        self.assertIn("async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot)", self.studio_js)
         self.assertIn('waitForVideoEvent(video, "loadedmetadata"', self.studio_js)
         self.assertIn("possible black/blank output", self.studio_js)
         self.assertIn("This is technical QA, not an AI artistic review.", self.studio_js)
