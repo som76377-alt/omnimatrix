@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from html import unescape
 import base64
+import hashlib
 from html.parser import HTMLParser
 import ipaddress
 import json
