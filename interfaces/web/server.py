@@ -124,6 +124,33 @@ def _allow_public_creative_video_request(client_ip: str) -> bool:
         return True
 
 
+
+def _paid_creative_media_enabled() -> bool:
+    """The owner must enable paid image/video providers on the server explicitly."""
+    return os.getenv("OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA", "").strip().lower() == "true"
+
+
+def _paid_creative_media_status() -> dict[str, Any]:
+    """Expose readiness only; never return any credential or initiate inference."""
+    enabled = _paid_creative_media_enabled()
+    key_configured = bool(os.getenv("GEMINI_API_KEY", "").strip())
+    model = os.getenv("OMNITRIX_VIDEO_MODEL", "gemini-omni-1.1-flash").strip()
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "key_configured": key_configured,
+        "model": model,
+        "estimated_cost_usd_per_second_720p": 0.10,
+        "message": (
+            "Paid media generation is enabled; each request still requires explicit user cost acknowledgement."
+            if enabled and key_configured
+            else "Paid image/video generation is disabled by default. The service owner must enable OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true after reviewing the charges."
+            if not enabled
+            else "GEMINI_API_KEY is not configured on this server."
+        ),
+    }
+
+
 LOGGER = logging.getLogger("omnitrix.studio")
 MAX_BODY_BYTES = 16 * 1024
 MAX_CREATIVE_BODY_BYTES = 3 * 1024 * 1024
@@ -1545,6 +1572,9 @@ def make_handler(
             if route == "/api/mobile/creative/status":
                 self._send_json(creative_model_status())
                 return
+            if route == "/api/mobile/creative/video-status":
+                self._send_json(_paid_creative_media_status())
+                return
             if route.startswith("/api/mobile/creative/jobs/"):
                 job_id = route.rsplit("/", 1)[-1]
                 result = runtime.creative_job_status(job_id)
@@ -1619,6 +1649,8 @@ def make_handler(
                         self._send_bytes(content, content_type, filename)
                     elif route == "/api/creative/status":
                         self._send_json(creative_model_status())
+                    elif route == "/api/creative/video-status":
+                        self._send_json(_paid_creative_media_status())
                     elif route.startswith("/api/creative/jobs/"):
                         job_id = route.rsplit("/", 1)[-1]
                         result = runtime.creative_job_status(job_id)
@@ -1756,6 +1788,16 @@ def make_handler(
                     "ok": False,
                     "error": "Explicit paid-video cost acknowledgement is required. Estimated cost is about US$0.80 for an 8-second 720p video; actual duration may vary.",
                 }, 400)
+                return
+            if route in {
+                "/api/creative/generate-image", "/api/mobile/creative/generate-image",
+                "/api/creative/generate-video", "/api/mobile/creative/generate-video",
+            } and not _paid_creative_media_enabled():
+                self._send_json({
+                    "ok": False,
+                    "error": "Paid image/video generation is disabled on this server to prevent unsolicited charges. The service owner must set OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA=true after reviewing pricing.",
+                    "code": "paid_media_disabled",
+                }, 503)
                 return
             if route in {
                 "/api/mobile/creative/analyze",
