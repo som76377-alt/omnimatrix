@@ -53,7 +53,7 @@ class CreativeStudioIntegrationTests(unittest.TestCase):
         self.assertIn('id="shot-transition"', html)
         self.assertIn('value="circle-reveal"', html)
         self.assertIn('value="drift-up-left"', html)
-        self.assertIn("overflow:visible;overscroll-behavior:auto;touch-action:pan-y", css)
+        self.assertIn("overflow:visible;overscroll-behavior:auto;touch-action:auto", css)
         self.assertIn('clip.transition || "cut"', js)
 
     def test_service_worker_cache_version_was_bumped_for_ui_update(self):
