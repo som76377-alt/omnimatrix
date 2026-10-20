@@ -100,19 +100,28 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
 
-    def test_multi_file_flow_keeps_batching_then_falls_back_in_order(self):
+    def test_multi_file_flow_uses_coordinator_then_falls_back_in_order(self):
         records = [
             dict(self.record, id="1" * 32, name="one.png"),
             dict(self.record, id="2" * 32, name="two.png"),
             dict(self.record, id="3" * 32, name="three.png"),
         ]
-        batch_result = {"status": "partial", "count": 3, "analyzed": 1,
-                        "context": "Gemini completed first file.", "error": "quota"}
+        remote_evidence = EvidenceItem(
+            "3 attachments", "multiple", "Gemini completed first file.",
+            "gemini.multimodal", "gemini-test",
+            metadata={"attachment_status": "partial", "analyzed_count": 1, "attachment_count": 3},
+        )
+        remote_failure = TaskResult(
+            False, "gemini.multimodal", "gemini-test", evidence=(remote_evidence,),
+            failure_kind=FailureKind.QUOTA, safe_message="Remote quota reached.",
+        )
         local_result = {"status": "partial", "count": 1, "analyzed": 1,
                         "context": "OCR text for second file.", "error": "limited",
                         "worker": "paddleocr.local", "model": "local:paddleocr"}
-        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result):
-            with patch("core.multimodal.workflow._try_local_extraction", side_effect=[local_result, None]) as fallback:
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   return_value=(remote_failure, None)) as execute:
+            with patch("core.multimodal.workflow._try_local_extraction",
+                       side_effect=[local_result, None]) as fallback:
                 result = analyze_multiple_attachments(records, "Describe all")
         self.assertEqual(result["status"], "partial")
         self.assertEqual(result["analyzed"], 2)
@@ -123,19 +132,49 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertEqual(fallback.call_count, 2)
         self.assertEqual(fallback.call_args_list[0].args[0]["name"], "two.png")
         self.assertEqual(fallback.call_args_list[1].args[0]["name"], "three.png")
+        task = execute.call_args.args[0]
+        self.assertEqual(task.payload["records"], records)
+        self.assertIn("image_understanding", [cap.value for cap in task.required_capabilities])
         self.assertEqual(result["worker"], "mixed")
         self.assertEqual(result["model"], "multiple")
 
-    def test_complete_multi_file_batch_does_not_reprocess_files(self):
+    def test_complete_multi_file_coordinator_does_not_reprocess_files(self):
         records = [self.record, dict(self.record, id="b" * 32, name="two.png")]
-        batch_result = {"status": "complete", "count": 2, "analyzed": 2,
-                        "context": "Both files completed.", "error": None}
-        with patch("core.multimodal.workflow.analyze_attachments", return_value=batch_result):
+        evidence = EvidenceItem(
+            "2 attachments", "multiple", "Both files completed.",
+            "gemini.multimodal", "gemini-test",
+            metadata={"attachment_count": 2, "analyzed_count": 2, "status": "complete"},
+        )
+        complete = TaskResult(True, "gemini.multimodal", "gemini-test", evidence=(evidence,))
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   return_value=(complete, None)) as execute:
             with patch("core.multimodal.workflow._try_local_extraction") as fallback:
                 result = analyze_multiple_attachments(records, "Describe all")
+        self.assertEqual(result["status"], "complete")
         self.assertEqual(result["worker"], "gemini.multimodal")
+        self.assertEqual(result["model"], "gemini-test")
         self.assertEqual(result["analyzed"], 2)
+        self.assertEqual(len(execute.call_args.args[0].required_capabilities), 1)
         fallback.assert_not_called()
+
+    def test_pdf_uses_labelled_local_document_fallback_after_remote_failure(self):
+        record = dict(self.record, name="notes.pdf", mime_type="application/pdf")
+        failure = TaskResult(False, "coordinator", "none",
+            failure_kind=FailureKind.DEPENDENCY_MISSING,
+            safe_message="No remote document worker.")
+        evidence = EvidenceItem("notes.pdf", "pdf_text", '{"text":"Some notes"}',
+                                "docling.local", "local:docling")
+        local_success = TaskResult(True, "docling.local", "local:docling",
+                                   evidence=(evidence,))
+        with patch("core.multimodal.workflow.execute_provider_task",
+                   side_effect=[(failure, None), (local_success, None)]) as execute:
+            result = analyze_single_attachment(record, "Summarize")
+        self.assertEqual(result["status"], "partial")
+        self.assertIn("Document text/layout extraction only", result["context"])
+        self.assertEqual(
+            [cap.value for cap in execute.call_args_list[1].args[0].required_capabilities],
+            ["pdf_extraction"],
+        )
 
     def test_unknown_image_subtype_is_still_routed_as_image(self):
         record = dict(self.record, mime_type="image/tiff")
