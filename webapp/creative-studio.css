@@ -462,3 +462,11 @@ input::placeholder,textarea::placeholder{color:#697160}
 .paid-video-consent strong{color:var(--green)}
 #generate-ai-video{margin-top:8px;width:100%;white-space:normal;line-height:1.35}
 #generate-ai-video:disabled{opacity:.45;cursor:not-allowed}
+
+.science-diagram-controls{grid-column:1/-1;min-width:0;border-top:1px solid var(--line-soft);padding-top:8px;margin-top:2px}
+.science-diagram-controls summary{cursor:pointer;color:var(--green);font:10px var(--mono);letter-spacing:.08em;padding:7px 0}
+.science-diagram-controls label{display:block;margin:8px 0 5px;color:var(--muted);font:10px var(--mono);letter-spacing:.08em}
+.science-diagram-controls textarea{display:block;width:100%;min-height:72px;resize:vertical;border:1px solid var(--line);border-radius:4px;padding:9px 10px;background:#0f120e;color:var(--text);font:11px/1.5 var(--sans)}
+.science-diagram-controls p{margin:7px 0;color:var(--muted);font-size:11px;line-height:1.45}
+.science-diagram-controls #build-science-diagram{width:100%;white-space:normal;line-height:1.4;margin-top:6px}
+@media(max-width:720px){.science-diagram-controls{flex:1 1 100%;width:100%}}
