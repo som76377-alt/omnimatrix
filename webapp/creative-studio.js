@@ -1616,7 +1616,7 @@
     });
   }
 
-  async function inspectRenderedVideo(blob, expectedDuration) {
+  async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot) {
     if (!(blob instanceof Blob) || !blob.size) throw new Error("The browser returned an empty video file.");
     if (blob.size < 2048) throw new Error("The exported video is unexpectedly tiny and may be incomplete.");
     const url = URL.createObjectURL(blob);
@@ -1661,27 +1661,30 @@
         Math.max(0, duration - Math.min(duration * 0.02, 0.08))
       ].map((time) => Math.max(0, Math.min(duration - 0.01, time)).toFixed(3)))).map(Number);
       const frameStats = [];
+      const reviewFrames = [];
+      const seekTo = async (time) => {
+        if (Math.abs(video.currentTime - time) <= 0.02) return;
+        await new Promise((resolve, reject) => {
+          let timer = 0;
+          const cleanup = () => {
+            window.clearTimeout(timer);
+            video.removeEventListener("seeked", onSeeked);
+            video.removeEventListener("error", onError);
+          };
+          const onSeeked = () => { cleanup(); resolve(); };
+          const onError = () => { cleanup(); reject(new Error("A sampled frame could not be decoded.")); };
+          timer = window.setTimeout(() => {
+            cleanup();
+            reject(new Error("Timed out seeking within the exported video."));
+          }, 5000);
+          video.addEventListener("seeked", onSeeked, { once: true });
+          video.addEventListener("error", onError, { once: true });
+          video.currentTime = time;
+        });
+      };
       await waitForVideoEvent(video, "loadeddata", 8000, "The exported video did not decode its first frame.");
       for (const time of times) {
-        if (Math.abs(video.currentTime - time) > 0.02) {
-          const seek = new Promise((resolve, reject) => {
-            const cleanup = () => {
-              window.clearTimeout(timer);
-              video.removeEventListener("seeked", onSeeked);
-              video.removeEventListener("error", onError);
-            };
-            const onSeeked = () => { cleanup(); resolve(); };
-            const onError = () => { cleanup(); reject(new Error("A sampled frame could not be decoded.")); };
-            const timer = window.setTimeout(() => {
-              cleanup();
-              reject(new Error("Timed out seeking within the exported video."));
-            }, 5000);
-            video.addEventListener("seeked", onSeeked, { once: true });
-            video.addEventListener("error", onError, { once: true });
-            video.currentTime = time;
-          });
-          await seek;
-        }
+        await seekTo(time);
         probeContext.drawImage(video, 0, 0, probe.width, probe.height);
         const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
         let sum = 0;
@@ -1696,6 +1699,40 @@
         const variance = Math.max(0, squared / count - mean * mean);
         frameStats.push({ time, mean, variance });
       }
+
+      const reviewSet = new Set(Array.isArray(reviewClipIds) ? reviewClipIds : []);
+      const timeline = Array.isArray(renderTimelineSnapshot) ? renderTimelineSnapshot : [];
+      let timelineStart = 0;
+      const reviewCanvas = document.createElement("canvas");
+      const reviewScale = Math.min(1, 360 / Math.max(1, width), 640 / Math.max(1, height));
+      reviewCanvas.width = Math.max(1, Math.round(width * reviewScale));
+      reviewCanvas.height = Math.max(1, Math.round(height * reviewScale));
+      const reviewContext = reviewCanvas.getContext("2d", { alpha: false });
+      if (reviewContext && reviewSet.size) {
+        for (const clip of timeline) {
+          const clipDuration = Math.max(0.5, Number(clip.duration) || 0);
+          const targetTime = Math.min(duration - 0.01, Math.max(0, timelineStart + clipDuration / 2));
+          timelineStart += clipDuration;
+          if (!reviewSet.has(clip.id) || reviewFrames.length >= 4) continue;
+          await seekTo(targetTime);
+          reviewContext.fillStyle = "#10130f";
+          reviewContext.fillRect(0, 0, reviewCanvas.width, reviewCanvas.height);
+          reviewContext.drawImage(video, 0, 0, reviewCanvas.width, reviewCanvas.height);
+          let dataUrl = reviewCanvas.toDataURL("image/jpeg", 0.7);
+          // Keep every consented rendered sample under the existing 350 KB preview cap.
+          if (dataUrl.length > 340000) dataUrl = reviewCanvas.toDataURL("image/jpeg", 0.5);
+          if (dataUrl.length <= 350000) {
+            reviewFrames.push({
+              time: targetTime,
+              clip_id: clip.id,
+              asset_id: clip.assetId,
+              preview_data_url: dataUrl
+            });
+          } else {
+            warnings.push("could not create a small rendered review frame for clip " + String(clip.id).slice(0, 12));
+          }
+        }
+      }
       const suspiciousDark = frameStats.filter((frame) => frame.mean < 5 && frame.variance < 3);
       if (suspiciousDark.length) {
         warnings.push("possible black/blank output near " + suspiciousDark.map((frame) => frame.time.toFixed(1) + "s").join(", "));
@@ -1703,6 +1740,7 @@
       return {
         ok: true, decodable: true, duration, width, height,
         sampledFrames: frameStats.length,
+        reviewFrames,
         warnings
       };
     } finally {
@@ -1725,6 +1763,13 @@
     const dimensions = $("preview-scale").value.split("x").map(Number);
     const original = { width: canvas.width, height: canvas.height };
     const expectedDuration = totalDuration();
+    const renderTimelineSnapshot = state.project.timeline.map((clip) => ({
+      id: clip.id, assetId: clip.assetId, duration: Number(clip.duration) || 0
+    }));
+    const reviewClipIds = state.autoFinishBusy && $("auto-creative-consent").checked
+      ? state.lastAutoDraftClipIds.slice(0, 4)
+      : [];
+    const renderSignature = aiTimelineSignature();
     canvas.width = dimensions[0] || 1280;
     canvas.height = dimensions[1] || 720;
     state.playhead = 0;
@@ -1764,7 +1809,7 @@
           let inspectionFailure = "";
           showMessage("Checking the actual WebM file locally (decode, duration, size and sampled frames)…", false);
           try {
-            inspection = await inspectRenderedVideo(blob, expectedDuration);
+            inspection = await inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot);
           } catch (error) {
             inspectionFailure = String(error.message || error);
           }
