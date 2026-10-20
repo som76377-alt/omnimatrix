@@ -1502,8 +1502,13 @@
       addActivity("CREATIVE", "Opening Creative Studio to build a draft from permitted online assets.");
       byId("chat-thread-subtitle").textContent = "CREATIVE WORKFLOW · Opening the local draft editor";
       byId("chat-mode").textContent = "CREATIVE STUDIO";
+      try {
+        sessionStorage.setItem("omnitrix-creative-brief-pending", message);
+      } catch (_) {
+        toast("Could not safely pass the brief to Creative Studio. Nothing was submitted.");
+        return;
+      }
       const target = new URL("./creative-studio.html", window.location.href);
-      target.searchParams.set("creativeBrief", message);
       target.searchParams.set("autoDraft", "1");
       window.location.href = target.toString();
       return;
