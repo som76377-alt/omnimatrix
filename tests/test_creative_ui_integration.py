@@ -91,5 +91,6 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn('generateDirectAiVideo(requestedBrief)', self.studio_js)
         self.assertIn('await renderVideo()', self.studio_js)
         self.assertIn('No web search or download will run.', self.studio_js)
-\nif __name__ == "__main__":
+
+if __name__ == "__main__":
     unittest.main()
