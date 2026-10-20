@@ -35,7 +35,9 @@
         "optional-pexels-photo-video-search",
         "pinterest-reference-links-only",
         "allowlisted-https-downloads",
-        "24mb-per-asset-cap"
+        "24mb-per-asset-cap",
+        "same-tab-chat-to-creative-studio-handoff",
+        "commons-license-metadata-gated-import"
       ],
       "notes": "The draft picker ranks by title, description and licence metadata, not visual model judgement. Pinterest Pins are not scraped or automatically downloaded. This is bounded asset-source access, not an unrestricted web crawler."
     },
@@ -171,9 +173,12 @@
         "title-and-subtitle-proposals",
         "validated-native-graphics-layer-proposals",
         "per-run-consented-auto-apply",
-        "local-auto-webm-export"
+        "local-auto-webm-export",
+        "post-render-frame-sampling",
+        "one-bounded-correction-pass",
+        "local-webm-technical-qa"
       ],
-      "notes": "Uses the shared multimodal coordinator and configured model. Up to four new draft shots may be sent as resized JPEG thumbnails only after explicit per-run consent; a manual-review path also remains available. Provider/model identity is reported from the completed worker where available. It is not a post-render critic and does not implement true cross-dissolves, independent audio tracks or full-video temporal inspection."
+      "notes": "Uses the shared multimodal coordinator and configured model. Up to four new source previews and, after the first export, up to four rendered midpoint frames may be sent only after explicit per-run consent. The same model proposes supported edits and may trigger one bounded correction/re-render. The final WebM is reopened locally to verify decoding, duration/dimensions and sample frames for obvious blank/black output. This is not an independent critic or a second AI review of the corrected final render. True cross-dissolves, independent audio tracks, generated raster images and full-video temporal inspection remain unsupported."
     }
   ]
 }
