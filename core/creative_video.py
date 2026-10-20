@@ -44,12 +44,12 @@ def _prompt_text(value: Any) -> str:
         raise CreativeVideoError("The video prompt cannot be empty.")
     if len(prompt) > MAX_PROMPT_CHARS:
         raise CreativeVideoError(f"The video prompt exceeds {MAX_PROMPT_CHARS} characters.")
-    if any(ord(ch) < 32 and ch not in "\\t\\n\\r" for ch in prompt):
+    if any(ord(ch) < 32 and ch not in "\t\n\r" for ch in prompt):
         raise CreativeVideoError("The video prompt contains unsupported control characters.")
-    # Ask for an actual moving video and spoken audio when the prompt requests dialogue;
-    # do not rewrite or remove the dialogue supplied by the user.
-    action_words = re.compile(r"\\b(wav(?:e|es|ing)|walk(?:s|ing)?|run(?:s|ning)?|dance(?:s|ing)?|talk(?:s|ing)?|say(?:s|ing)?|speaks?|sing(?:s|ing)?|moves?|drives?)\\b", re.I)
-    dialogue_words = re.compile(r"\\b(say|says|saying|speaks?|talks?|talking|dialogue|voice|sings?|singing|audio)\\b", re.I)
+    # Ask for genuine movement and spoken audio when the request calls for dialogue.
+    # Keep the original prompt intact; do not replace an action with text overlays.
+    action_words = re.compile(r"\b(wav(?:e|es|ing)|walk(?:s|ing)?|run(?:s|ning)?|dance(?:s|ing)?|talk(?:s|ing)?|say(?:s|ing)?|speaks?|sing(?:s|ing)?|moves?|drives?)\b", re.I)
+    dialogue_words = re.compile(r"\b(say|says|saying|speaks?|talks?|talking|dialogue|voice|sings?|singing|audio)\b", re.I)
     if action_words.search(prompt):
         prompt = (
             "Create a genuine moving video, not a still image, slideshow, storyboard, "
@@ -59,7 +59,6 @@ def _prompt_text(value: Any) -> str:
             + "User's scene brief: " + prompt
         )
     return prompt
-
 
 def _model_id(env: Any) -> str:
     model = str(env.get("OMNITRIX_VIDEO_MODEL", MODEL_DEFAULT)).strip()
