@@ -10,11 +10,11 @@ from typing import Any
 from core.multimodal.router import WorkerCapability, WorkerSpec
 
 OPTIONAL_TOOLCHAIN: dict[str, dict[str, Any]] = {
-    "gemini": {"kind":"provider","env":"GEMINI_API_KEY","capabilities":["image_understanding","audio_understanding","video_understanding","pdf_extraction"]},
+    "gemini": {"kind":"provider","env":"GEMINI_API_KEY","capabilities":["image_understanding","audio_understanding","video_understanding","pdf_extraction","audio_transcription"]},
     "openrouter": {"kind":"provider","env":"OPENROUTER_API_KEY","capabilities":["text_reasoning","critique"]},
     "qwen3_omni": {"kind":"local_model","module":"transformers","capabilities":["image_understanding","audio_understanding","video_understanding"]},
     "qwen3_vl": {"kind":"local_model","module":"transformers","capabilities":["image_understanding"]},
-    "paddleocr": {"kind":"python_tool","module":"paddleocr","enable_env":"OMNITRIX_ENABLE_PADDLEOCR","capabilities":["ocr","document_layout"]},
+    "paddleocr": {"kind":"python_tool","module":"paddleocr","enable_env":"OMNITRIX_ENABLE_PADDLEOCR","capabilities":["ocr"]},
     "docling": {"kind":"python_tool","module":"docling","enable_env":"OMNITRIX_ENABLE_DOCLING","capabilities":["document_layout","pdf_extraction"]},
     "qwen3_asr": {"kind":"local_model","module":"transformers","capabilities":["audio_transcription"]},
     "faster_whisper": {"kind":"python_tool","module":"faster_whisper","enable_env":"OMNITRIX_ENABLE_FASTER_WHISPER","model_env":"OMNITRIX_WHISPER_MODEL_PATH","download_env":"OMNITRIX_ALLOW_MODEL_DOWNLOAD","capabilities":["audio_transcription"]},
