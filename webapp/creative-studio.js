@@ -344,6 +344,41 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
+  function updatePreviewResolution() {
+    const selector = $("preview-scale");
+    if (!selector) return;
+    const dimensions = String(selector.value || "1280x720").split("x").map(Number);
+    const width = dimensions[0] || 1280;
+    const height = dimensions[1] || 720;
+    canvas.width = width;
+    canvas.height = height;
+    const ratio = width === height ? "1:1" : width > height ? "16:9" : "9:16";
+    const ratioLabel = document.querySelector(".resolution-tag");
+    if (ratioLabel) ratioLabel.textContent = ratio;
+    const wrapper = document.querySelector(".canvas-wrap");
+    if (wrapper) wrapper.style.aspectRatio = width + " / " + height;
+    updateStats();
+    drawFrame();
+  }
+
+  function setPreviewResolutionFromBrief(brief) {
+    const selector = $("preview-scale");
+    if (!selector) return;
+    const text = String(brief || "");
+    let target = "";
+    if (/\\b(?:vertical|portrait|9\\s*[:x/]\\s*16|9\\s+by\\s+16|tiktok|reels?|shorts?)\\b/i.test(text)) {
+      target = "720x1280";
+    } else if (/\\b(?:square|1\\s*[:x/]\\s*1|1\\s+by\\s+1)\\b/i.test(text)) {
+      target = "720x720";
+    } else if (/\\b(?:horizontal|landscape|wide|16\\s*[:x/]\\s*9|16\\s+by\\s+9)\\b/i.test(text)) {
+      target = "1280x720";
+    }
+    if (target && Array.from(selector.options).some((option) => option.value === target)) {
+      selector.value = target;
+      updatePreviewResolution();
+    }
+  }
+
   function safeExternalHttps(value) {
     try {
       const parsed = new URL(String(value || ""));
@@ -2748,11 +2783,7 @@
       const index = entry ? Math.min(state.project.timeline.length - 1, entry.index + 1) : 0;
       if (state.project.timeline[index]) selectClip(state.project.timeline[index].id);
     });
-    $("preview-scale").addEventListener("change", () => {
-      const dims = $("preview-scale").value.split("x").map(Number);
-      canvas.width = dims[0] || 1280; canvas.height = dims[1] || 720;
-      updateStats(); drawFrame();
-    });
+    $("preview-scale").addEventListener("change", updatePreviewResolution);
     bindInspector();
     bindGraphicLayers();
   }
@@ -2785,6 +2816,7 @@
         $("creative-brief").value = inboundBrief;
         state.project.brief = inboundBrief;
         $("online-asset-query").value = deriveAssetQuery(inboundBrief);
+        setPreviewResolutionFromBrief(inboundBrief);
         await saveProject(false);
         if (launchParams.get("autoDraft") === "1") {
           // The full prompt is passed in same-tab session storage, not in a query string.
