@@ -364,8 +364,8 @@
     if (subject && words.some((word) => ["hi","hello","greeting","greetings"].includes(word.toLowerCase()))) {
       candidates.push(subject + " greeting", "person saying hello", "person greeting");
     }
-    if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
     for (let i = 0; i < words.length - 1; i += 1) candidates.push(words[i] + " " + words[i + 1]);
+    if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
     const seen = new Set();
     return candidates.map((candidate) => candidate.trim())
       .filter((candidate) => candidate.length >= 3 && candidate.split(/\\s+/).length >= 2 && candidate.length <= 100)
