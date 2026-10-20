@@ -167,6 +167,22 @@ class CreativeDirectorTests(unittest.TestCase):
         self.assertNotEqual(result["status"], "complete")
         self.assertNotIn("plan", result)
 
+
+    def test_video_duration_cannot_exceed_remaining_source_length(self):
+        assets = [{
+            "asset_id": "asset-1", "clip_id": "clip-1", "name": "clip.mp4",
+            "media_type": "video/mp4", "source_duration": 12.0, "source_in": 4.0,
+        }]
+        plan = {
+            "schema_version": 1, "summary": "Use a clip within source bounds.", "observations": [],
+            "operations": [{
+                "type": "set_duration", "asset_id": "asset-1", "clip_id": "clip-1",
+                "duration_seconds": 9.0,
+            }],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "remaining source clip length"):
+            validate_plan(plan, assets, allow_reorder=False)
+
     def test_reorder_requires_every_selected_clip_exactly_once_and_permission(self):
         rows = [
             {"asset_id": "asset-1", "clip_id": "clip-1", "name": "One"},
