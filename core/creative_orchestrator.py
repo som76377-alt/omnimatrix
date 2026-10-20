@@ -390,9 +390,39 @@ def update_shared_production_task(
             task["failure"] = None
         plan["revision"] += 1
         plan["coordination_contract"]["manifest_revision"] = plan["revision"]
-        for candidate in plan["tasks"]:
-            if candidate["status"] == "pending" and all(task_map[dep]["status"] == "succeeded" for dep in candidate["depends_on"]):
-                candidate["status"] = "ready"
+        # Keep dependency failures visible instead of leaving downstream work looking pending.
+        # Automatically blocked descendants become ready again only after all dependencies recover.
+        changed = True
+        while changed:
+            changed = False
+            for candidate in plan["tasks"]:
+                dependency_states = [task_map[dep]["status"] for dep in candidate["depends_on"]]
+                blockers = [
+                    dep for dep in candidate["depends_on"]
+                    if task_map[dep]["status"] in {"failed", "blocked"}
+                ]
+                auto_blocked = (
+                    candidate["status"] == "blocked"
+                    and str(candidate.get("failure") or "").startswith("Blocked by unsuccessful dependency:")
+                )
+                if candidate["status"] == "pending":
+                    if blockers:
+                        candidate["status"] = "blocked"
+                        candidate["failure"] = "Blocked by unsuccessful dependency: " + ", ".join(blockers)
+                        changed = True
+                    elif all(state == "succeeded" for state in dependency_states):
+                        candidate["status"] = "ready"
+                        changed = True
+                elif auto_blocked:
+                    if all(state == "succeeded" for state in dependency_states):
+                        candidate["status"] = "ready"
+                        candidate["failure"] = None
+                        changed = True
+                    elif blockers:
+                        reason = "Blocked by unsuccessful dependency: " + ", ".join(blockers)
+                        if candidate.get("failure") != reason:
+                            candidate["failure"] = reason
+                            changed = True
         statuses = [candidate["status"] for candidate in plan["tasks"]]
         if any(value == "failed" for value in statuses):
             plan["status"] = "needs_repair"
