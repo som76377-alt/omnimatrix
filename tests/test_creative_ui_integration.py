@@ -57,7 +57,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("actual rendered frames", " ".join(engineer["responsibilities"]))
         policy = (ROOT / "docs" / "AUTONOMOUS_CREATIVE_WORKFLOW.md").read_text(encoding="utf-8")
         self.assertIn("Do not search the web", policy)
-        self.assertIn("No line-and-circle substitute", policy)
+        self.assertIn("crude lines, circles", policy)
         self.assertIn("unapproved technical draft", policy)
         coordinated = json.loads((ROOT / "config" / "coordinated-agent-workflows.json").read_text(encoding="utf-8"))
         contract = coordinated["prompt_to_video_contract"]
