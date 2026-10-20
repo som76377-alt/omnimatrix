@@ -47,11 +47,17 @@
       <div class="brief-copy">
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
-        <p id="agent-state">Local editing works now. Optional AI direction uses selected resized previews only after explicit consent; post-render visual criticism is not yet available.</p>
+        <p id="agent-state">Describe the result. Omnitrix will research available media, assemble a draft and render it. Advanced controls stay out of the way. Post-render visual criticism is not yet available on the native path.</p>
+        <p class="ai-use-note">When configured, Create Video may generate an original image and send small preview frames for AI review. Provider quota or charges may apply; original media stays on this device.</p>
+        <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Ready when you are.</p>
       </div>
       <div class="brief-actions">
-        <button class="button quiet" id="save-brief">SAVE BRIEF</button>
-        <button class="button primary" id="open-ai-director">PREPARE AI DIRECTION</button>
+        <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE VIDEO</button>
+        <details class="advanced-brief-controls">
+          <summary>Advanced</summary>
+          <button class="button quiet" id="save-brief" type="button">SAVE BRIEF</button>
+          <button class="button quiet" id="open-ai-director" type="button">AI DIRECTION</button>
+        </details>
       </div>
     </section>
 
@@ -105,11 +111,13 @@
           <small id="upload-progress-text">Importing assets…</small>
         </div>
         <section class="online-assets" aria-labelledby="online-assets-heading">
-          <div class="online-assets-heading">
-            <div><span class="eyebrow">WEB / REFERENCES</span><h3 id="online-assets-heading">Find visual assets</h3></div>
-            <span class="tiny-count">LIVE SEARCH</span>
-          </div>
-          <div class="online-search-controls">
+          <details class="advanced-source-controls">
+            <summary>Sources, import options and AI review</summary>
+            <div class="online-assets-heading">
+              <div><span class="eyebrow">RESEARCH</span><h3 id="online-assets-heading">Source controls</h3></div>
+              <span class="tiny-count">ADVANCED</span>
+            </div>
+            <div class="online-search-controls">
             <input id="online-asset-query" type="search" maxlength="180" placeholder="Search scenes, objects, science…" aria-label="Search online visual assets">
             <select id="online-asset-provider" aria-label="Online asset source">
               <option value="commons">Wikimedia Commons · open licence metadata</option>
@@ -122,16 +130,16 @@
             <button class="button primary small" id="search-online-assets" type="button">SEARCH WEB</button>
           </div>
           <div class="online-asset-actions">
-            <button class="button quiet small" id="pinterest-reference" type="button">OPEN PINTEREST ↗</button>
-            <button class="button quiet small" id="build-from-brief" type="button">AUTO-ASSEMBLE DRAFT</button>
+            <button class="button quiet small" id="pinterest-reference" type="button">PINTEREST REFERENCES ↗</button>
+            <a class="button quiet small" id="google-images-reference" href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer">GOOGLE IMAGES ↗</a>
           </div>
           <label class="auto-creative-consent" for="auto-creative-consent">
             <input id="auto-creative-consent" type="checkbox">
             <span><strong>Optional: let the Director + graphics engineer finish and check this draft.</strong> For this run only, I authorise sending up to four resized source-preview thumbnails and, after export, up to four small frames from the actual rendered WebM to the configured visual model. Original media files are not uploaded. The model may propose validated edits, and Omnitrix may apply one bounded correction pass and re-render once. This is the same model role, not an independent second opinion. Provider quotas or charges may apply; I will inspect the final file before publishing.</span>
           </label>
-          <p class="online-asset-note">Auto-assembly only uses results with identifiable licence metadata. Search results are not visual proof; inspect the preview and source. Pinterest is for reference discovery only here: Omnitrix will not scrape Pins or assume their images are reusable.</p>
-          <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Search public assets online, then add selected sources to the local timeline.</p>
+          <p class="online-asset-note">Google Images is a reference fallback, not an automatic import source. Commons assets with incomplete rights metadata may be used in a private draft, but that does not grant permission to publish them.</p>
           <div class="online-asset-results" id="online-asset-results"></div>
+          </details>
         </section>
         <div class="library-controls">
           <input id="asset-search" type="search" placeholder="Search filenames…" aria-label="Search media assets">
@@ -272,13 +280,15 @@
           <div><span>VIDEO LENGTH</span><strong id="export-length">00:00</strong></div>
           <div><span>EXECUTION</span><strong>ON THIS DEVICE</strong></div>
         </div>
+        <details class="agent-diagnostics"><summary>Agent status and technical details</summary>
         <div class="agent-status-grid">
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Media librarian</strong><small>Local metadata and thumbnails</small></div><span class="agent-label">ACTIVE</span></div>
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Timeline executor</strong><small>Reversible local edit operations</small></div><span class="agent-label">ACTIVE</span></div>
           <div class="agent-status"><span id="visual-analyst-indicator" class="agent-indicator pending"></span><div><strong>Visual analyst</strong><small id="visual-analyst-detail">Selected preview analysis; requires a configured provider</small></div><span id="visual-analyst-status" class="agent-label pending-text">CHECKING</span></div>
           <div class="agent-status"><span id="director-indicator" class="agent-indicator pending"></span><div><strong>Director / critic</strong><small id="director-detail">Creates a schema-checked proposal; not a post-render critic</small></div><span id="director-status" class="agent-label pending-text">NOT CONNECTED</span></div>
         </div>
-        <p class="export-note">The browser render is a useful first export path, not a replacement for a full workstation engine. Dedicated music/narration tracks, advanced masking, generative object changes and cloud rendering are later phases. No media is uploaded for AI analysis unless you explicitly approve selected resized previews in AI direction; provider quota or charges may apply.</p>
+        <p class="export-note">This browser renderer is the local first-export path. Dedicated audio tracks, advanced masking, generative object changes and cloud rendering are later phases. AI review needs a configured provider and explicit consent for each run; provider quota or charges may apply.</p>
+        </details>
         <div class="export-actions">
           <button class="button primary" id="render-video-bottom">RENDER CURRENT SEQUENCE ↗</button>
           <button class="button quiet" id="download-manifest">DOWNLOAD EDIT MANIFEST</button>

@@ -428,3 +428,29 @@ input::placeholder,textarea::placeholder{color:#697160}
 .auto-creative-consent strong{display:block;color:var(--text);font-size:13px;line-height:1.4;margin-bottom:3px}
 .online-asset-card-actions a{display:flex;align-items:center;justify-content:center;text-decoration:none}
 .online-asset-status{white-space:pre-wrap}
+
+
+/* Prompt-first workflow: keep the operator controls clear and diagnostics optional. */
+.create-video-button{min-height:48px;min-width:150px;font-weight:800;letter-spacing:.04em}
+.advanced-brief-controls,.advanced-source-controls,.agent-diagnostics{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.advanced-brief-controls summary,.advanced-source-controls>summary,.agent-diagnostics>summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:650;list-style-position:inside}
+.advanced-brief-controls[open],.advanced-source-controls[open],.agent-diagnostics[open]{display:block}
+.advanced-brief-controls[open]>*:not(summary){margin-top:10px}
+.advanced-source-controls[open] .online-assets-heading{margin-top:14px}
+.agent-diagnostics[open] .agent-status-grid{margin-top:12px}
+.online-asset-status{min-height:1.25em;margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.online-asset-status.success{color:var(--green)}
+.online-asset-status.error{color:var(--red)}
+@media(max-width:720px){
+  .studio-header{gap:10px;min-height:58px;padding:10px 12px}
+  .wordmark{min-width:0;font-size:13px}
+  .wordmark small{font-size:8px}
+  .header-actions #save-project,.header-actions #export-project{display:none}
+  .header-actions #render-video{padding-inline:10px;font-size:11px}
+  .brief-actions{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+  .create-video-button{flex:1 1 100%;width:100%}
+  .advanced-brief-controls{flex:1 1 auto}
+  .project-meta{flex-wrap:wrap}
+}
+
+.ai-use-note{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.45;max-width:70ch}

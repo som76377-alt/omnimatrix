@@ -8,6 +8,7 @@ unauthorised scraping and restrict storage/reuse of API data.
 from __future__ import annotations
 
 from html import unescape
+import base64
 from html.parser import HTMLParser
 import json
 import os
@@ -96,6 +97,83 @@ def _read_json(url: str, *, headers: dict[str, str] | None = None, timeout: floa
     if not isinstance(data, dict):
         raise CreativeAssetError("The asset provider returned an invalid response.")
     return data
+
+
+def generate_creative_image(prompt: Any, *, environ: Any = None) -> dict[str, Any]:
+    """Generate one original image with Gemini when the server owner configured a key."""
+    text = _safe_text(prompt, "Image prompt", 1800, required=True)
+    env = os.environ if environ is None else environ
+    api_key = str(env.get("GEMINI_API_KEY", "")).strip()
+    if not api_key:
+        raise CreativeAssetError("AI image generation is unavailable because GEMINI_API_KEY is not configured.")
+    model = str(env.get("OMNITRIX_IMAGE_MODEL", "gemini-2.5-flash-image")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", model):
+        raise CreativeAssetError("The configured image model name is invalid.")
+    instruction = (
+        "Create one original visual asset for a professionally art-directed explainer video. "
+        "Use a clear subject silhouette, deliberate composition, crisp matte colours, strong visual hierarchy, "
+        "and believable object relationships. Prefer clean 2D technical illustration or editorial illustration. "
+        "No fake interface, random decorative particles, glossy plastic, stock-photo watermark, brand logos, "
+        "or illegible typography. Do not render captions or text; labels will be added separately by the editor. "
+        "Make the visual specific to this brief: " + text
+    )
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + urllib.parse.quote(model, safe="._-")
+        + ":generateContent?"
+        + urllib.parse.urlencode({"key": api_key})
+    )
+    body = json.dumps({
+        "contents": [{"parts": [{"text": instruction}]}],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint, data=body,
+        headers={"User-Agent": _USER_AGENT, "Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read(8 * 1024 * 1024 + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise CreativeAssetError("The image provider rejected its credentials or access scope.") from exc
+        if exc.code == 429:
+            raise CreativeAssetError("The image provider quota or rate limit was reached.") from exc
+        raise CreativeAssetError(f"The image provider returned HTTP {exc.code}.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise CreativeAssetError("AI image generation is temporarily unavailable from this server.") from exc
+    if len(raw) > 8 * 1024 * 1024:
+        raise CreativeAssetError("The generated image response exceeded the size limit.")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CreativeAssetError("The image provider returned invalid JSON.") from exc
+    candidates = payload.get("candidates", []) if isinstance(payload, dict) else []
+    for candidate in candidates if isinstance(candidates, list) else []:
+        content = candidate.get("content", {}) if isinstance(candidate, dict) else {}
+        parts = content.get("parts", []) if isinstance(content, dict) else []
+        for part in parts if isinstance(parts, list) else []:
+            inline = part.get("inlineData", part.get("inline_data", {})) if isinstance(part, dict) else {}
+            if not isinstance(inline, dict):
+                continue
+            mime = str(inline.get("mimeType", inline.get("mime_type", ""))).lower()
+            encoded = inline.get("data")
+            if mime not in {"image/png", "image/jpeg", "image/webp"} or not isinstance(encoded, str):
+                continue
+            try:
+                image_bytes = base64.b64decode(encoded, validate=True)
+            except (ValueError, base64.binascii.Error):
+                continue
+            if not image_bytes or len(image_bytes) > 6 * 1024 * 1024:
+                raise CreativeAssetError("The generated image is empty or exceeds the 6 MB limit.")
+            return {
+                "ok": True, "provider": "google", "model": model,
+                "mime_type": mime, "image_base64": base64.b64encode(image_bytes).decode("ascii"),
+                "size_bytes": len(image_bytes),
+                "note": "One original image was generated. Inspect factual details and composition before publishing.",
+            }
+    raise CreativeAssetError("The configured model returned no supported image. No image was imported.")
 
 
 def _commons_search(query: str, kind: str, limit: int) -> list[dict[str, Any]]:
@@ -276,15 +354,39 @@ def search_creative_assets(
                 "or automatically download Pins; use assets only when you have permission to reuse them."
             ),
         }
+    searched_queries = [q]
     if provider == "pexels":
         api_key = str(env.get("PEXELS_API_KEY", "")).strip()
         if not api_key:
             raise CreativeAssetError("Pexels is not configured yet. Add PEXELS_API_KEY as a server-side secret, or use Wikimedia Commons.")
         items = _pexels_search(q, kind, limit, api_key)
     else:
-        items = _commons_search(q, kind, limit)
+        # Search progressively broader versions of the prompt instead of making
+        # the user guess the exact wording used in an asset's metadata.
+        # Keep the original query first, then widen only as needed.
+        variants = [q]
+        words = re.findall(r"[\w'-]+", q, flags=re.UNICODE)
+        for width in (4, 3, 2):
+            candidate = " ".join(words[:width]).strip()
+            if len(candidate) >= 2 and candidate.casefold() not in {v.casefold() for v in variants}:
+                variants.append(candidate)
+        items = []
+        seen = set()
+        attempted = []
+        for candidate in variants:
+            if len(items) >= limit:
+                break
+            attempted.append(candidate)
+            for item in _commons_search(candidate, kind, limit):
+                identity = str(item.get("id") or item.get("asset_url") or "")
+                if identity and identity not in seen:
+                    seen.add(identity)
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
+        searched_queries = attempted
     return {
-        "ok": True, "provider": provider, "query": q, "items": items[:limit],
+        "ok": True, "provider": provider, "query": q, "search_queries": searched_queries, "items": items[:limit],
         "count": min(len(items), limit),
         "note": (
             "Search metadata is not visual verification. Confirm each result actually matches the scene. "

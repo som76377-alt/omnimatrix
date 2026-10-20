@@ -130,8 +130,56 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertTrue(body["ok"])
         search_assets.assert_called_once_with(
-            "induction coil", provider="commons", kind="any", limit=8
+            "induction coil", provider="commons", kind="any", limit=12
         )
+
+    @patch("interfaces.web.server.creative_model_status")
+    def test_mobile_creative_status_is_available_without_runtime_token(self, model_status):
+        model_status.return_value = {"ok": True, "configured": False, "provider": "google", "model": "unconfigured"}
+        status, body = self.request("/api/mobile/creative/status", authorized=False)
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["configured"])
+
+    @patch("interfaces.web.server._allow_public_creative_model_request", return_value=True)
+    def test_mobile_creative_analysis_requires_explicit_consent(self, _allow):
+        status, body = self.request(
+            "/api/mobile/creative/analyze",
+            method="POST",
+            body={"consent": False, "assets": []},
+            authorized=False,
+        )
+        self.assertEqual(status, 400, body)
+        self.assertIn("Explicit consent", body["error"])
+
+    @patch("interfaces.web.server._allow_public_creative_model_request", return_value=True)
+    def test_mobile_creative_analysis_uses_bounded_public_route_after_consent(self, _allow):
+        with patch.object(self.runtime, "start_creative_analysis", return_value={"ok": True, "status": "processing", "job_id": "job-test"} ) as start:
+            status, body = self.request(
+                "/api/mobile/creative/analyze",
+                method="POST",
+                body={"consent": True, "assets": [], "brief": "test"},
+                authorized=False,
+            )
+        self.assertEqual(status, 202, body)
+        self.assertTrue(body["ok"])
+        start.assert_called_once()
+
+    def test_mobile_image_generation_requires_consent_and_uses_configured_provider(self):
+        with patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
+             patch("interfaces.web.server.generate_creative_image", return_value={
+                 "ok": True, "provider": "google", "model": "gemini-2.5-flash-image",
+                 "mime_type": "image/png", "image_base64": "cG5n",
+             }) as generate:
+            status, body = self.request(
+                "/api/mobile/creative/generate-image",
+                method="POST",
+                body={"consent": True, "prompt": "Original induction stove illustration"},
+                authorized=False,
+            )
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        generate.assert_called_once_with("Original induction stove illustration")
 
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))

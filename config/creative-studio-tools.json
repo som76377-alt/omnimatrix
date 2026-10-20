@@ -37,9 +37,12 @@
         "allowlisted-https-downloads",
         "24mb-per-asset-cap",
         "same-tab-chat-to-creative-studio-handoff",
-        "commons-license-metadata-gated-import"
+        "commons-license-metadata-gated-import",
+        "automatic-query-broadening",
+        "google-images-reference-link",
+        "private-draft-import-with-unverified-rights-warning"
       ],
-      "notes": "The draft picker ranks by title, description and licence metadata, not visual model judgement. Pinterest Pins are not scraped or automatically downloaded. This is bounded asset-source access, not an unrestricted web crawler."
+      "notes": "The picker broadens narrow Commons queries and ranks by title/description, not visual model judgement. Commons media with incomplete rights metadata can be used in a private draft but is not cleared for publication. Google Images is a reference link only. Pinterest Pins are not scraped or automatically downloaded."
     },
     {
       "id": "native-graphics-motion",
@@ -56,6 +59,22 @@
         "schema-validated-native-layer-operations"
       ],
       "notes": "This role shares the director's model call and is not an independent model. It cannot generate raster imagery or claim full keyframed animation. Visual relevance still requires inspecting the actual export."
+    },
+    {
+      "id": "original-vector-graphics-fallback",
+      "label": "Original vector graphics engineer",
+      "status": "integrated-deterministic-fallback",
+      "runtime": "browser-canvas",
+      "cost_class": "zero_incremental_cost",
+      "capabilities": [
+        "prompt-derived-title-scenes",
+        "flat-vector-process-schematic",
+        "science-induction-stove-diagram",
+        "three-scene-fallback",
+        "local-png-assets",
+        "automatic-webm-render"
+      ],
+      "notes": "Used when online source search returns no importable media. Creates original deterministic vector artwork and basic motion; it is not an AI raster-image model and does not guarantee scientific accuracy for arbitrary topics."
     },
     {
       "id": "canvas-compositor",
@@ -178,7 +197,21 @@
         "one-bounded-correction-pass",
         "local-webm-technical-qa"
       ],
-      "notes": "Uses the shared multimodal coordinator and configured model. Up to four new source previews and, after the first export, up to four rendered midpoint frames may be sent only after explicit per-run consent. The same model proposes supported edits and may trigger one bounded correction/re-render. The final WebM is reopened locally to verify decoding, duration/dimensions and sample frames for obvious blank/black output. This is not an independent critic or a second AI review of the corrected final render. True cross-dissolves, independent audio tracks, generated raster images and full-video temporal inspection remain unsupported."
+      "notes": "Uses resized preview frames after explicit consent; available in authenticated web mode and via the bounded native mobile endpoint. Native model status is reported honestly. One bounded correction pass is possible when the configured provider is reachable."
+    },
+    {
+      "id": "ai-raster-image-generation",
+      "label": "AI image generation provider",
+      "status": "integrated-optional-provider",
+      "runtime": "server-side-gemini-image-endpoint",
+      "cost_class": "provider-quota-or-charges-may-apply",
+      "capabilities": [
+        "prompt-to-image",
+        "bounded-base64-image-response",
+        "automatic-search-failure-fallback",
+        "original-raster-scenes"
+      ],
+      "notes": "One original image is attempted only when the user initiates Create Video / a direct prompt-to-video workflow and the server has GEMINI_API_KEY plus an available image model. If unavailable, the editor falls back to original deterministic vector scenes. The model output must be reviewed; this does not imply fact-checking."
     }
   ]
 }

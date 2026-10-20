@@ -344,6 +344,161 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
+  async function createOriginalGraphicCards(brief) {
+    const selector = $("preview-scale");
+    const dimensions = String(selector && selector.value || "1280x720").split("x").map(Number);
+    const width = dimensions[0] || 1280;
+    const height = dimensions[1] || 720;
+    const title = extractBriefTitle(brief).slice(0, 72) || "A closer look";
+    const topic = deriveAssetQuery(brief).slice(0, 96) || title;
+    const induction = /induction|magnetic field|coil|cooktop|stove|electromagnet/i.test(brief);
+    const stages = [
+      { kicker: "01 / THE QUESTION", heading: title, footer: "Start with the phenomenon." },
+      { kicker: "02 / THE MECHANISM", heading: induction ? "FIELD → CURRENT → HEAT" : "FOLLOW THE PROCESS", footer: topic },
+      { kicker: "03 / THE TAKEAWAY", heading: "CAUSE BECOMES EFFECT", footer: "A visual explainer · original vector graphics" }
+    ];
+    const files = [];
+    const stamp = crypto.randomUUID().slice(0, 8);
+    for (let index = 0; index < stages.length; index += 1) {
+      const canvasNode = document.createElement("canvas");
+      canvasNode.width = width;
+      canvasNode.height = height;
+      const g = canvasNode.getContext("2d", { alpha: false });
+      if (!g) throw new Error("This browser cannot create original graphic scenes.");
+      g.fillStyle = "#10120f"; g.fillRect(0, 0, width, height);
+      g.strokeStyle = "#242a22"; g.lineWidth = 1;
+      const step = Math.max(24, Math.round(width / 32));
+      for (let x = 0; x < width; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
+      for (let y = 0; y < height; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
+      const margin = Math.round(width * 0.075);
+      g.fillStyle = "#d5fb63"; g.fillRect(margin, margin, Math.round(width * 0.065), Math.max(3, Math.round(width * 0.004)));
+      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(12, Math.round(width * 0.016)) + "px system-ui";
+      g.fillText(stages[index].kicker, margin, margin + Math.round(height * 0.055));
+      const headingSize = Math.max(22, Math.round(width * (index === 0 ? 0.055 : 0.043)));
+      g.fillStyle = "#f1f3e8"; g.font = "700 " + headingSize + "px system-ui";
+      const words = stages[index].heading.split(/\s+/);
+      let line = "", lines = [];
+      for (const word of words) {
+        const next = line ? line + " " + word : word;
+        if (g.measureText(next).width > width * 0.82 && line) { lines.push(line); line = word; } else line = next;
+      }
+      if (line) lines.push(line);
+      lines.slice(0, 3).forEach((row, i) => g.fillText(row, margin, Math.round(height * 0.31) + i * Math.round(headingSize * 1.15)));
+      const cx = Math.round(width * 0.69), cy = Math.round(height * 0.61), radius = Math.round(Math.min(width, height) * 0.12);
+      g.strokeStyle = "#d5fb63"; g.lineWidth = Math.max(2, Math.round(width * 0.002));
+      if (induction) {
+        // A clean, original schematic: pan, coil and alternating field lines.
+        g.beginPath(); g.ellipse(cx, cy - radius * 0.55, radius * 1.25, radius * 0.28, 0, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(cx - radius * 1.25, cy - radius * 0.55); g.lineTo(cx - radius * 0.95, cy + radius * 0.12); g.quadraticCurveTo(cx, cy + radius * 0.48, cx + radius * 0.95, cy + radius * 0.12); g.lineTo(cx + radius * 1.25, cy - radius * 0.55); g.stroke();
+        for (let j = 0; j < 4; j += 1) { g.beginPath(); g.ellipse(cx, cy + radius * (0.25 + j * 0.13), radius * (0.65 + j * 0.22), radius * (0.10 + j * 0.015), 0, 0, Math.PI * 2); g.stroke(); }
+        g.fillStyle = "#d5fb63"; for (let j = 0; j < 9; j += 1) { const px = cx - radius * 0.85 + j * radius * 0.21; g.beginPath(); g.arc(px, cy + radius * 0.72, Math.max(2, radius * 0.035), 0, Math.PI * 2); g.fill(); }
+      } else {
+        const nodes = [{x:cx-radius*1.1,y:cy},{x:cx,y:cy-radius*0.72},{x:cx+radius*1.1,y:cy},{x:cx,y:cy+radius*0.72}];
+        g.strokeStyle = "#d5fb63";
+        [[0,1],[1,2],[2,3],[3,0],[0,2]].forEach(([a,b])=>{g.beginPath();g.moveTo(nodes[a].x,nodes[a].y);g.lineTo(nodes[b].x,nodes[b].y);g.stroke();});
+        nodes.forEach((n,i)=>{g.fillStyle=i===1?"#d5fb63":"#10120f";g.beginPath();g.arc(n.x,n.y,Math.max(8,radius*0.18),0,Math.PI*2);g.fill();g.strokeStyle="#d5fb63";g.stroke();});
+        for(let j=0;j<7;j++){g.fillStyle="#f1f3e8";g.beginPath();g.arc(cx-radius*0.75+j*radius*0.25,cy+radius*1.1+(j%2)*radius*0.12,Math.max(2,radius*0.025),0,Math.PI*2);g.fill();}
+      }
+      g.fillStyle = "#a7ad9c"; g.font = "500 " + Math.max(12, Math.round(width * 0.015)) + "px system-ui";
+      g.fillText(stages[index].footer.slice(0, 100), margin, height - margin);
+      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(11, Math.round(width * 0.012)) + "px ui-monospace, monospace";
+      g.fillText("OMNITRIX / MOTION GRAPHICS", margin, height - Math.round(margin * 0.42));
+      const blob = await new Promise((resolve, reject) => canvasNode.toBlob((value) => value ? resolve(value) : reject(new Error("Original graphic export failed.")), "image/png"));
+      files.push(new File([blob], "omnitrix-original-" + stamp + "-" + (index + 1) + ".png", { type: "image/png", lastModified: Date.now() }));
+    }
+    return files;
+  }
+
+  async function requestGeneratedImage(brief) {
+    const nativeMode = isNativeMobileStudio();
+    const token = aiRuntimeToken();
+    if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
+    const width = canvas.width || 1280;
+    const height = canvas.height || 720;
+    const response = await fetch(
+      nativeMode ? "./api/mobile/creative/generate-image" : "./api/creative/generate-image",
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(nativeMode ? {} : { Authorization: "Bearer " + token })
+        },
+        body: JSON.stringify({
+          consent: true,
+          prompt: String(brief || "").slice(0, 1500) +
+            "\\nCompose for a " + width + " by " + height + " video frame. Create a specific, accurate visual for the subject; no captions, no interface, no decorative particles."
+        })
+      }
+    );
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("The image-generation route returned unreadable JSON."); }
+    if (!response.ok || !data || data.ok !== true || !data.image_base64) {
+      throw new Error((data && data.error) || "The image provider did not return a usable image.");
+    }
+    const binary = atob(data.image_base64);
+    if (binary.length < 1024 || binary.length > 6 * 1024 * 1024) {
+      throw new Error("The generated image is empty or exceeds the local import limit.");
+    }
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const mime = ["image/png", "image/jpeg", "image/webp"].includes(data.mime_type) ? data.mime_type : "image/png";
+    const extension = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+    return new File([bytes], "omnitrix-ai-generated-" + crypto.randomUUID().slice(0, 8) + "." + extension, {
+      type: mime, lastModified: Date.now()
+    });
+  }
+
+  async function assembleOriginalGraphicFallback(brief) {
+    onlineStatus("No suitable source clips were found. The graphics engineer is creating an original three-scene vector explainer…", "");
+    const files = await createOriginalGraphicCards(brief);
+    let imageGenerated = false;
+    if ($("auto-creative-consent").checked) {
+      try {
+        onlineStatus("No suitable source media. Asking the configured image model for one original scene…", "");
+        files.unshift(await requestGeneratedImage(brief));
+        imageGenerated = true;
+      } catch (error) {
+        onlineStatus("AI image generation unavailable (" + String(error.message || error) + "). Using original vector graphics instead.", "");
+      }
+    }
+    const before = new Set(state.assets.map((asset) => asset.name));
+    await importFiles(files);
+    const generatedByName = new Map(state.assets
+      .filter((asset) => !before.has(asset.name))
+      .map((asset) => [asset.name, asset]));
+    const generated = files.map((file) => generatedByName.get(file.name)).filter(Boolean);
+    if (generated.length !== files.length) throw new Error("Original graphics were created, but not all scenes could be added to the media library.");
+    const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+    const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
+    const startIndex = state.project.timeline.length;
+    generated.forEach((asset, index) => {
+      const clip = createClip(asset);
+      clip.duration = targetSeconds / generated.length;
+      clip.fit = asset.name.startsWith("omnitrix-ai-generated-") ? "cover" : "contain";
+      clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "pan-left" : "none";
+      clip.title = "";
+      clip.subtitle = "";
+      state.project.timeline.push(clip);
+    });
+    const added = state.project.timeline.slice(startIndex);
+    state.selectedClipId = added[0] ? added[0].id : state.selectedClipId;
+    state.currentClipId = state.selectedClipId;
+    renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
+    await saveProject(false);
+    state.lastAutoDraftClipIds = added.map((clip) => clip.id);
+    onlineStatus(imageGenerated
+      ? "An original AI-generated image plus original vector graphics were assembled. Inspect factual details and composition before publishing."
+      : "Original motion-graphics draft assembled from locally drawn vector scenes. A configured image model was unavailable or not authorised.", "success");
+    if ($("auto-creative-consent").checked) {
+      await finishDraftAutomatically(state.lastAutoDraftClipIds);
+    } else if (state.autoRenderOnAssembly) {
+      await renderVideo();
+    }
+  }
+
   function updatePreviewResolution() {
     const selector = $("preview-scale");
     if (!selector) return;
@@ -401,7 +556,9 @@
     return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
       (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
       /^https:\/\//i.test(String(item.asset_url || "")) &&
-      (item.rights_verified === true));
+      // Commons-hosted media may be imported into a private draft even when
+      // metadata is incomplete. That does not imply permission to publish it.
+      (item.rights_verified === true || item.provider === "commons"));
   }
 
   function renderOnlineResults(response) {
@@ -430,7 +587,7 @@
       const heading = document.createElement("strong");
       heading.textContent = "No importable matches";
       const copy = document.createElement("span");
-      copy.textContent = "Try a broader search or switch source. Only results with supported media formats and licence metadata can be imported automatically.";
+      copy.textContent = "Omnitrix can broaden the search automatically. If no usable media exists, create an original motion-graphics scene instead.";
       empty.append(heading, copy);
       target.append(empty);
       return;
@@ -701,8 +858,8 @@
     setPreviewResolutionFromBrief(brief);
     const provider = $("online-asset-provider").value || "commons";
     if (provider === "pinterest") {
-      onlineStatus("Pinterest is for inspiration links here, not reusable source media. Switch to Wikimedia Commons or configured Pexels for importable assets.", "error");
-      await searchOnlineAssets();
+      onlineStatus("Pinterest is a reference-only source. Creating an original graphics draft instead of scraping Pins.", "");
+      await assembleOriginalGraphicFallback(brief);
       return;
     }
     if (state.project.timeline.length && !window.confirm("Append a new draft to your existing timeline? Existing shots will be kept.")) return;
@@ -710,14 +867,16 @@
     try {
       if (!$("online-asset-query").value.trim()) $("online-asset-query").value = deriveAssetQuery(brief);
       let data = await searchOnlineAssets();
-      if (!data || !Array.isArray(data.items)) return;
-      let eligible = data.items.filter(supportedOnlineAsset);
-      if (!eligible.length && provider === "pexels") {
-        onlineStatus("No importable Pexels results. Check its server-side key or switch to Wikimedia Commons.", "error");
+      if (!data || !Array.isArray(data.items)) {
+        await assembleOriginalGraphicFallback(brief);
         return;
       }
-      if (!eligible.length && provider === "commons") {
-        onlineStatus("No results with supported formats and identifiable licences were found. Try a broader phrase; nothing was imported.", "error");
+      let eligible = data.items.filter(supportedOnlineAsset);
+      if (!eligible.length) {
+        if (provider === "pinterest") {
+          onlineStatus("Pinterest is a reference source, not a direct import provider. Creating an original motion-graphics draft instead.", "");
+        }
+        await assembleOriginalGraphicFallback(brief);
         return;
       }
       const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
@@ -1799,7 +1958,8 @@
       return { attempted: false, changed: false, message: "Post-render model critique consent was switched off before upload." };
     }
     const token = aiRuntimeToken();
-    if (!token) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
     if (aiTimelineSignature() !== renderSignature) {
       return { attempted: false, changed: false, message: "Timeline changed after rendering; the draft was not auto-modified." };
     }
@@ -1841,7 +2001,7 @@
       "Do not claim to inspect sound, motion between frames, full clips, or unshown moments. If the frames are acceptable or uncertain, return an empty operations array.",
       "Original brief: " + String($("creative-brief").value || "").slice(0, 3500)
     ].join("\n\n");
-    const response = await fetch("./api/creative/analyze", {
+    const response = await fetch((isNativeMobileStudio() ? "./api/mobile/creative/analyze" : "./api/creative/analyze"), {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
@@ -2190,7 +2350,8 @@
   async function loadAiModelStatus() {
     const label = $("ai-provider-label");
     const token = aiRuntimeToken();
-    if (!token) {
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) {
       state.creativeStatus = null;
       if (label) label.textContent = "Connect to the Python-backed Studio runtime first. Open the core Studio in this browser tab and connect its runtime token.";
       aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
@@ -2202,7 +2363,7 @@
     }
     if (label) label.textContent = "Checking the configured visual-analysis route…";
     try {
-      const response = await fetch("./api/creative/status", {
+      const response = await fetch(nativeMode ? "./api/mobile/creative/status" : "./api/creative/status", {
         method: "GET", cache: "no-store",
         headers: { Accept: "application/json", Authorization: "Bearer " + token }
       });
@@ -2403,10 +2564,11 @@
   }
 
   async function pollAiCreativeJob(jobId, token) {
+    const nativeMode = isNativeMobileStudio();
     const maxAttempts = 240;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 1500));
-      const response = await fetch("./api/creative/jobs/" + encodeURIComponent(jobId), {
+      const response = await fetch((nativeMode ? "./api/mobile/creative/jobs/" : "./api/creative/jobs/") + encodeURIComponent(jobId), {
         method: "GET",
         cache: "no-store",
         headers: { Accept: "application/json", Authorization: "Bearer " + token }
@@ -2432,7 +2594,8 @@
   async function runAiDirection() {
     if (state.creativeBusy) return;
     const token = aiRuntimeToken();
-    if (!token) {
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) {
       aiSetStatus("Connect the Python-backed Studio runtime before requesting model analysis.", "error");
       return;
     }
@@ -2490,7 +2653,7 @@
       const allowReorder = ids.length === allTimelineIds.length &&
         ids.every((id) => allTimelineIds.includes(id));
       aiSetStatus("Sending only " + records.length + " resized preview(s) to the configured provider…", "");
-      const response = await fetch("./api/creative/analyze", {
+      const response = await fetch((isNativeMobileStudio() ? "./api/mobile/creative/analyze" : "./api/creative/analyze"), {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
@@ -2733,7 +2896,12 @@
       const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
       window.open(url, "_blank", "noopener,noreferrer");
     });
-    $("build-from-brief").addEventListener("click", buildDraftFromBrief);
+    $("build-from-brief").addEventListener("click", async () => {
+      state.autoRenderOnAssembly = true;
+      $("auto-creative-consent").checked = true;
+      try { await buildDraftFromBrief(); }
+      finally { state.autoRenderOnAssembly = false; }
+    });
     $("auto-creative-consent").addEventListener("change", () => {
       if ($("auto-creative-consent").checked && state.lastAutoDraftClipIds.length) {
         finishDraftAutomatically(state.lastAutoDraftClipIds);
@@ -2748,7 +2916,14 @@
     $("ai-apply-plan").addEventListener("click", applyAiPlan);
     $("ai-cancel-plan").addEventListener("click", clearAiProposal);
     $("project-name").addEventListener("input", scheduleSave);
-    $("creative-brief").addEventListener("input", scheduleSave);
+    $("creative-brief").addEventListener("input", () => {
+      const link = $("google-images-reference");
+      if (link) {
+        const query = deriveAssetQuery($("creative-brief").value);
+        link.href = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query || "science motion graphics");
+      }
+      scheduleSave();
+    });
     $("toggle-play").addEventListener("click", togglePreview);
     $("render-video").addEventListener("click", renderVideo);
     $("render-video-bottom").addEventListener("click", renderVideo);
@@ -2816,6 +2991,8 @@
       if (inboundBrief) {
         $("creative-brief").value = inboundBrief;
         state.project.brief = inboundBrief;
+        const googleImagesLink = $("google-images-reference");
+        if (googleImagesLink) googleImagesLink.href = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(deriveAssetQuery(inboundBrief) || "visual references");
         $("online-asset-query").value = deriveAssetQuery(inboundBrief);
         setPreviewResolutionFromBrief(inboundBrief);
         await saveProject(false);
@@ -2823,6 +3000,10 @@
           // The full prompt is passed in same-tab session storage, not in a query string.
           window.history.replaceState(null, "", window.location.pathname);
           state.autoRenderOnAssembly = true;
+          // A direct prompt-to-video request authorizes the bounded creative
+          // workflow. Model preview analysis only runs when a provider is
+          // actually configured and reachable; status remains explicit.
+          $("auto-creative-consent").checked = true;
           await buildDraftFromBrief();
           state.autoRenderOnAssembly = false;
         }
