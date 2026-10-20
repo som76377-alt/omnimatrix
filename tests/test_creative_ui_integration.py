@@ -73,7 +73,11 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("No clip was imported", original)
         self.assertLess(original.index("await inspectRenderedVideo(blob, duration, [], [])"), original.index("const output = new File([blob]"))
         render = self.studio_js.split("async function renderVideo(options)", 1)[1].split("async function ensureCurrentPreviewSource()", 1)[0]
-        self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start(500)"))
+        self.assertLess(render.index("await ensureCurrentPreviewSource()"), render.index("recorder.start()"))
+        self.assertNotIn("recorder.start(250)", self.studio_js)
+        self.assertNotIn("recorder.start(500)", self.studio_js)
+        self.assertIn("Timed out while checking the exported video (" + ' + eventName + ' + ").", self.studio_js)
+        self.assertIn("if (!selected)", self.studio_js)
         self.assertIn("inspectionFailure", render)
         self.assertIn("no video was saved", render.lower())
 
