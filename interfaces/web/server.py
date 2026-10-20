@@ -86,7 +86,7 @@ def _allow_public_creative_model_request(client_ip: str) -> bool:
             bucket.popleft()
         while _PUBLIC_CREATIVE_MODEL_GLOBAL and now - _PUBLIC_CREATIVE_MODEL_GLOBAL[0] >= 86400.0:
             _PUBLIC_CREATIVE_MODEL_GLOBAL.popleft()
-        if len(bucket) >= 2 or len(_PUBLIC_CREATIVE_MODEL_GLOBAL) >= 40:
+        if len(bucket) >= 3 or len(_PUBLIC_CREATIVE_MODEL_GLOBAL) >= 40:
             return False
         bucket.append(now)
         _PUBLIC_CREATIVE_MODEL_GLOBAL.append(now)
