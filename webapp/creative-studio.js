@@ -337,6 +337,45 @@
     target.className = "online-asset-status" + (kind ? " " + kind : "");
   }
 
+  function buildVisualSearchQueries(query) {
+    let value = String(query || "").trim();
+    value = value.replace(/^\\s*(?:please\\s+)?(?:create|make|generate|produce|build|find|search(?:\\s+for)?)\\s+/i, "");
+    value = value.replace(/^\\s*(?:a|an|the)?\\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated)\\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\\s+(?:(?:of|about|showing|explaining|where|in\\s+which)\\s+)?/i, "");
+    value = value.replace(/\\b(?:in\\s+)?\\d{1,3}\\s*(?:seconds?|secs?|s)\\b|\\b(?:9:16|16:9|1:1)\\b/gi, " ");
+    value = value.replace(/[^\\p{L}\\p{N}\\s'-]/gu, " ").replace(/\\s+/g, " ").trim();
+    const stop = new Set(["a","an","the","of","for","in","on","with","by","to","from","and","or","but","as","at","into","onto","over","under","how","why","what","when","where","which","who","please","this","that","these","those","it","its","his","her","their","my","our","your","me","then","while","about","show","showing","explaining","explain","create","make","generate","produce","build","video","film","clip","reel","shorts","animation","image","picture","photo","scene","shot","seconds","second","secs","sec"]);
+    const clean = (text) => text.split(/\\s+/).filter((word) => word && !stop.has(word.toLowerCase())).join(" ").trim();
+    const base = clean(value) || clean(String(query || ""));
+    if (!base) return [String(query || "").trim()].filter(Boolean).slice(0, 1);
+    const candidates = [base];
+    const clauses = value.split(/\\s*(?:,|;|\\bthen\\b|\\bwhile\\b|\\bafter\\b|\\bbefore\\b|\\band\\b|\\bfollowed by\\b)\\s*/i)
+      .map(clean).filter((part) => part.split(/\\s+/).length >= 2);
+    const words = base.split(/\\s+/);
+    const people = new Set(["person","people","man","woman","boy","girl","child","children","worker","chef","student","teacher","doctor","scientist","character"]);
+    const actions = new Set(["wave","waves","waving","greet","greets","greeting","say","says","saying","said","speak","speaks","speaking","walk","walks","walking","run","runs","running","hold","holds","holding","turn","turns","turning","pour","pours","pouring"]);
+    const subject = words.find((word) => people.has(word.toLowerCase())) || "";
+    for (const clause of clauses) {
+      candidates.push(subject && actions.has(clause.split(/\\s+/)[0].toLowerCase()) ? subject + " " + clause : clause);
+    }
+    if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
+    if (subject && words.some((word) => ["wave","waves","waving"].includes(word.toLowerCase()))) {
+      candidates.push("person waving", subject + " waving", "hand waving greeting");
+    }
+    if (subject && words.some((word) => ["hi","hello","greeting","greetings"].includes(word.toLowerCase()))) {
+      candidates.push(subject + " greeting", "person saying hello", "person greeting");
+    }
+    for (let i = 0; i < words.length - 1; i += 1) candidates.push(words[i] + " " + words[i + 1]);
+    const seen = new Set();
+    return candidates.map((candidate) => candidate.trim())
+      .filter((candidate) => candidate.length >= 3 && candidate.split(/\\s+/).length >= 2 && candidate.length <= 100)
+      .filter((candidate) => {
+        const key = candidate.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 6);
+  }
+
   function deriveAssetQuery(brief) {
     let value = String(brief || "").trim();
     value = value.replace(/\b(?:create|make|produce|generate|build|a|an|the|video|film|clip|short|vertical|horizontal|cinematic|premium|realistic|documentary|reel|shorts|explaining|explain|showing|show|about|for|with|please|use|style|duration|seconds?|secs?|\d{1,3}|9:16|16:9)\b/gi, " ");
@@ -743,15 +782,21 @@
       const note = document.createElement("div");
       note.className = "empty-state";
       const heading = document.createElement("strong");
-      heading.textContent = "Pinterest reference search";
+      heading.textContent = "Pinterest visual-reference searches";
       const copy = document.createElement("span");
-      copy.textContent = "Open Pinterest to browse inspiration. Pins are not copied automatically because source rights and platform permissions must be respected.";
-      const link = document.createElement("a");
-      link.href = safeExternalHttps(response.search_url) || "https://www.pinterest.com/";
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "OPEN PINTEREST RESULTS ↗";
-      note.append(heading, copy, link);
+      copy.textContent = "Omnitrix split the brief into focused searches so you can browse separate subjects/actions. This is reference-only today: account-connected Pin search needs an approved Pinterest app and OAuth; Pins are not scraped.";
+      const list = document.createElement("div");
+      list.className = "online-reference-links";
+      const links = Array.isArray(response.search_links) ? response.search_links : [{ query: response.query || "", url: response.search_url }];
+      links.slice(0, 6).forEach((item, index) => {
+        const link = document.createElement("a");
+        link.href = safeExternalHttps(item && item.url) || "https://www.pinterest.com/";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "SEARCH " + String(index + 1).padStart(2, "0") + " · " + String(item && item.query || "visual reference").slice(0, 90) + " ↗";
+        list.append(link);
+      });
+      note.append(heading, copy, list);
       target.append(note);
       return;
     }
@@ -759,15 +804,21 @@
       const note = document.createElement("div");
       note.className = "empty-state";
       const heading = document.createElement("strong");
-      heading.textContent = "Google Images reference search";
+      heading.textContent = "Google Images visual-reference searches";
       const copy = document.createElement("span");
-      copy.textContent = "Google has closed its old search API to new customers. Open the results, choose an image, copy its direct image address, then paste that address into Import Image URL below. A result-page URL is not a direct image.";
-      const link = document.createElement("a");
-      link.href = safeExternalHttps(response.search_url) || "https://www.google.com/imghp";
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "OPEN GOOGLE IMAGES RESULTS ↗";
-      note.append(heading, copy, link);
+      copy.textContent = "Google's old Custom Search JSON API is closed to new customers, so this opens genuine Google Images result pages. Open a result's image in a new tab and copy its image address, or save/upload a screenshot from your device. Direct imports stay marked unverified until source rights are checked.";
+      const list = document.createElement("div");
+      list.className = "online-reference-links";
+      const links = Array.isArray(response.search_links) ? response.search_links : [{ query: response.query || "", url: response.search_url }];
+      links.slice(0, 6).forEach((item, index) => {
+        const link = document.createElement("a");
+        link.href = safeExternalHttps(item && item.url) || "https://www.google.com/imghp";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "SEARCH " + String(index + 1).padStart(2, "0") + " · " + String(item && item.query || "visual reference").slice(0, 90) + " ↗";
+        list.append(link);
+      });
+      note.append(heading, copy, list);
       target.append(note);
       return;
     }
@@ -868,10 +919,15 @@
     }
     if (state.onlineSearchBusy) return null;
     if (provider === "pinterest") {
-      const link = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
-      renderOnlineResults({ provider: "pinterest", search_url: link, items: [] });
-      onlineStatus("Pinterest is available as a reference search. Omnitrix does not scrape or auto-import Pins.", "");
-      return { provider, query, items: [], search_url: link, manual_reference_only: true };
+      const search_queries = buildVisualSearchQueries(query);
+      const search_links = search_queries.map((candidate) => ({
+        query: candidate,
+        url: "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: candidate }).toString()
+      }));
+      const link = search_links[0] && search_links[0].url || ("https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString());
+      renderOnlineResults({ provider: "pinterest", search_url: link, search_queries, search_links, items: [] });
+      onlineStatus("Prepared " + search_queries.length + " focused Pinterest searches instead of one whole-prompt search. Pins are still reference-only until you import an image you have permission to use.", "");
+      return { provider, query, items: [], search_url: link, search_queries, search_links, manual_reference_only: true };
     }
     const token = aiRuntimeToken();
     if (!nativeMode && !token) {
@@ -895,8 +951,9 @@
       state.onlineAssetResults = data.items || [];
       renderOnlineResults(data);
       onlineStatus(
-        (data.count || state.onlineAssetResults.length) + " result(s) from " + provider + ". " +
-        (data.note || "Review each source and licence before publishing."),
+        (data.count || state.onlineAssetResults.length) + " result(s) from " + provider +
+        (Array.isArray(data.search_queries) && data.search_queries.length ? ". Search plan: " + data.search_queries.slice(0, 5).join(" · ") : "") +
+        ". " + (data.note || "Review each source and licence before publishing."),
         "success"
       );
       return data;
