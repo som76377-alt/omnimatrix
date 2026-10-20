@@ -1940,7 +1940,7 @@
       "Do not claim to inspect sound, motion between frames, full clips, or unshown moments. If the frames are acceptable or uncertain, return an empty operations array.",
       "Original brief: " + String($("creative-brief").value || "").slice(0, 3500)
     ].join("\n\n");
-    const response = await fetch("./api/creative/analyze", {
+    const response = await fetch((isNativeMobileStudio() ? "./api/mobile/creative/analyze" : "./api/creative/analyze"), {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
@@ -2289,7 +2289,8 @@
   async function loadAiModelStatus() {
     const label = $("ai-provider-label");
     const token = aiRuntimeToken();
-    if (!token) {
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) {
       state.creativeStatus = null;
       if (label) label.textContent = "Connect to the Python-backed Studio runtime first. Open the core Studio in this browser tab and connect its runtime token.";
       aiSetBadge("visual-analyst-indicator", "visual-analyst-status", "visual-analyst-detail",
@@ -2301,7 +2302,7 @@
     }
     if (label) label.textContent = "Checking the configured visual-analysis route…";
     try {
-      const response = await fetch("./api/creative/status", {
+      const response = await fetch(nativeMode ? "./api/mobile/creative/status" : "./api/creative/status", {
         method: "GET", cache: "no-store",
         headers: { Accept: "application/json", Authorization: "Bearer " + token }
       });
@@ -2502,10 +2503,11 @@
   }
 
   async function pollAiCreativeJob(jobId, token) {
+    const nativeMode = isNativeMobileStudio();
     const maxAttempts = 240;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 1500));
-      const response = await fetch("./api/creative/jobs/" + encodeURIComponent(jobId), {
+      const response = await fetch((nativeMode ? "./api/mobile/creative/jobs/" : "./api/creative/jobs/") + encodeURIComponent(jobId), {
         method: "GET",
         cache: "no-store",
         headers: { Accept: "application/json", Authorization: "Bearer " + token }
@@ -2531,7 +2533,8 @@
   async function runAiDirection() {
     if (state.creativeBusy) return;
     const token = aiRuntimeToken();
-    if (!token) {
+    const nativeMode = isNativeMobileStudio();
+    if (!token && !nativeMode) {
       aiSetStatus("Connect the Python-backed Studio runtime before requesting model analysis.", "error");
       return;
     }
@@ -2589,7 +2592,7 @@
       const allowReorder = ids.length === allTimelineIds.length &&
         ids.every((id) => allTimelineIds.includes(id));
       aiSetStatus("Sending only " + records.length + " resized preview(s) to the configured provider…", "");
-      const response = await fetch("./api/creative/analyze", {
+      const response = await fetch((isNativeMobileStudio() ? "./api/mobile/creative/analyze" : "./api/creative/analyze"), {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
