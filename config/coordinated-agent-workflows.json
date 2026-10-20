@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "partial_runtime_components_added_full_orchestrator_wiring_pending",
+  "status": "science_diagram_ui_integrated_full_team_orchestration_pending",
   "default_spend_mode": "zero_cost",
   "orchestrator_owns": [
     "user_objective",
@@ -263,7 +263,7 @@
       "status": "registered_structured_diagram_tool_manim_executable_required",
       "runtime_probe_required": true,
       "license_review_required": true,
-      "security": "fixed_template_only; structured labels, coordinates and edge indices; 90-second timeout; 100MB output cap",
+      "security": "fixed_template_only; structured labels, coordinates and edge indices; 90-second timeout; 24 MB output cap",
       "output": "MP4 artifact under OMNITRIX_ARTIFACT_DIR (defaults to /tmp/omnitrix-artifacts)"
     },
     {
@@ -286,8 +286,11 @@
     "shared_manifest_module": "core/creative_production.py",
     "manim_tool": "core/tools/implementations/manim_renderer.py",
     "registered_in_default_tool_registry": true,
-    "fully_wired_into_creative_studio_timeline": false,
+    "science_diagram_ui_to_timeline_handoff": true,
+    "browser_canvas_fallback": true,
+    "shared_manifest_enforced_for_all_production_roles": false,
     "persistent_job_queue_and_background_worker": false,
-    "independent_visual_critic": false
+    "independent_visual_critic": false,
+    "deployed_manim_render_verified": false
   }
 }
