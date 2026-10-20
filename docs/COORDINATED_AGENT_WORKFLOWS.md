@@ -1,6 +1,6 @@
 # Coordinated Agent Workflows
 
-**Status:** design contract staged on `feat/coordinated-agent-workflows`; this file is not yet connected to the runtime.  
+**Status:** partial implementation on `feat/coordinated-agent-workflows`. A deterministic manifest module and bounded Manim tool are present and Manim is registered in the default tool registry. The manifest is not yet the source of truth for the existing Creative Studio UI/timeline, and the hosted runtime has not been tested.  
 **Purpose:** prevent role-labelled agents from duplicating work, losing context, inventing tool success, or producing an unchecked final artifact.
 
 ## Non-negotiable architecture
@@ -41,14 +41,17 @@ For each important visual concept, produce multiple narrow queries rather than o
 
 Use Gemini image generation for consented raster generation/editing; use the configured Gemini video route only after separate cost consent; use OpenRouter/Nemotron for eligible text reasoning when the live route is healthy; use deterministic calculators and media probes for exact computation and technical checks. A model should not be used where a deterministic tool is more reliable.
 
-Manim is a good candidate for reproducible mathematical and scientific animations, but it is **not yet runtime-integrated by this configuration**. Before enabling it, add a sandboxed worker, pin dependencies, probe the executable/version, set CPU/memory/time/output limits, validate generated files, and test one representative scene. Do not run model-generated Python with unrestricted host access.
+Manim now has a registered, constrained tool that generates a fixed Python scene from validated labels/coordinates/arrow indices; it never accepts arbitrary model-written source. It checks for the `manim` executable, imposes a 90-second timeout and 100 MB output cap, and writes MP4s under `OMNITRIX_ARTIFACT_DIR` (default `/tmp/omnitrix-artifacts`). This is not a full isolated container: the host still needs normal process/container resource limits. Manim installation and a real render on the deployed host remain unverified.
 
 ## Runtime implementation checklist
 
 - [ ] Load and schema-validate `config/coordinated-agent-workflows.json`.
-- [ ] Add typed task ownership, dependencies, artifact references and state transitions to the runtime.
+- [x] Add a standalone typed manifest module with task ownership, dependencies, artifact references, state transitions, fingerprinting and optional atomic JSON persistence (`core/creative_production.py`).
+- [ ] Wire that manifest into the existing Creative Studio UI/timeline and durable job execution.
 - [ ] Add shared artifact storage/manifest with checksums and provenance.
-- [ ] Add worker adapters for asset search, visual inspection, Manim and FFmpeg; probe capabilities before routing.
+- [x] Add a bounded template-based Manim tool to the default tool registry; it accepts structured nodes/arrows only and refuses to claim availability if the `manim` executable is missing.
+- [ ] Install/probe Manim in the deployed worker and connect rendered MP4 artifacts to the Studio timeline.
+- [ ] Add worker adapters for visual inspection and FFmpeg; probe capabilities before routing.
 - [ ] Add query expansion, result deduplication, relevance ranking and visual verification to asset search.
 - [ ] Add independent critic routing and final-export inspection.
 - [ ] Add per-provider timeout, cancellation, bounded retry and cost controls.
@@ -56,3 +59,8 @@ Manim is a good candidate for reproducible mathematical and scientific animation
 - [ ] Verify the target deployment and mobile app against a real test job.
 
 This design is not complete until the runtime checklist is implemented and tests run. Do not describe this staged contract as an operational multi-agent system.
+
+
+## Current honest status
+
+The shared manifest module and Manim tool have been added and unit tests have been authored, but the tests have **not been executed in the hosted repository environment**. The manifest is not yet called by the existing Studio timeline; there is no durable queue worker, no independently deployed critic, and no verified remote Manim render. Do not treat this branch as a completed end-to-end multi-agent video pipeline.
