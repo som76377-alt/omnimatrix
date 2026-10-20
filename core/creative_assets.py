@@ -200,7 +200,7 @@ def _pexels_search(query: str, kind: str, limit: int, api_key: str) -> list[dict
                     "duration": 0,
                 })
     if kind in {"video", "any"} and len(items) < limit:
-        params = urllib.parse.urlencode({"query": query, "per_page": str(limit - len(items)})
+        params = urllib.parse.urlencode({"query": query, "per_page": str(limit - len(items))})
         videos = _read_json(
             "https://api.pexels.com/v1/videos/search?" + params,
             headers={"Authorization": api_key},
