@@ -11,6 +11,14 @@ The pose/kinematics core lives in `webapp/rigged-character.js`, separate from th
 The rig remains stylised and intentionally local-first; it does not need model calls, generated images, external packages, or paid services. The browser recording/decoding/blank-frame checks remain the authority for whether an encoded clip is importable. The new kinematics tests do not replace an on-device visual review.
 
 
+## Checkpoint 3 — runtime-aware tool registry and cost policy
+
+The catalogue in `config/creative-studio-tools.json` includes Cline, optional Ollama local inference, FFmpeg, Blender, Manim, browser rendering and consent-gated model media. `core/creative_tool_registry.py` enriches declarations with runtime state: browser-only capability, installed executable, configured-but-unverified local service, configured remote worker, or missing provider/gate configuration. A catalogue entry is not proof that a tool is runnable.
+
+The authenticated `GET /api/creative/tools` endpoint returns a registry snapshot without exposing API keys or their values. `select_creative_tools` filters by capability, execution surface, runtime availability, spend mode, explicit consent and paid-cost acknowledgement. The default is `zero_cost`; paid media requires the server-owner gate plus per-request consent and cost acknowledgement. The selector reports eligible tools but never executes them.
+
+Cline is represented as an external coding-agent client, not as a model or an automatically available API-free coder. Ollama is a local inference option with no per-token provider fee after model download, but it requires a separately running service and host resources. Its endpoint/model configuration remains unverified until an actual health check is implemented. Blender, FFmpeg and Manim are not called integrated merely because they appear in the catalogue.
+
 ## Current milestone
 
 This is the first creative-production milestone inside Omnitrix. The editor is a separate page at `webapp/creative-studio.html`, designed for phone-first use as well as desktop.
