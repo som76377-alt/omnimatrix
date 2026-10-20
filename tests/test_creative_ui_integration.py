@@ -33,12 +33,17 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         renderer_start = self.studio_js.index("async function assembleOriginalGraphicFallback(brief)")
         renderer_end = self.studio_js.index("function needsDirectAiVideo(brief)", renderer_start)
         renderer = self.studio_js[renderer_start:renderer_end]
-        self.assertIn("QUALITY GATE", renderer)
-        self.assertIn("No line-and-circle substitute was rendered or exported", renderer)
+        self.assertIn("window.OmnitrixCode3D.renderVideo", renderer)
+        self.assertIn("isUnsupportedAnimalSubject(brief)", renderer)
         self.assertNotIn("requestGeneratedImage(", renderer)
-        self.assertLess(renderer.index("requiresHighFidelitySubject(brief)"), renderer.index("renderOriginalMotionClip(brief)"))
+        module = (ROOT / "webapp" / "code-3d-character-renderer.js").read_text(encoding="utf-8")
+        self.assertIn("new T.WebGLRenderer", module)
+        self.assertIn("canvas.captureStream(24)", module)
+        self.assertIn("new MediaRecorder", module)
+        self.assertIn("new T.LatheGeometry", module)
+        self.assertIn("No asset search", renderer)
 
-    def test_code_first_video_policy_forbids_asset_search_and_low_fidelity_humans(self):
+    def test_code_first_video_policy_forbids_asset_search_and_requires_visual_review(self):
         import json
         agents = json.loads((ROOT / "config" / "creative-studio-agents.json").read_text(encoding="utf-8"))
         contract = agents["execution_contract"]
@@ -46,11 +51,12 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertTrue(contract["prompt_to_video_must_not_search_assets"])
         self.assertTrue(contract["prompt_to_video_must_not_generate_still_images_as_video_substitute"])
         self.assertTrue(contract["rendered_video_visual_review_required_for_final_status"])
-        self.assertTrue(contract["block_low_fidelity_human_animal_output"])
         policy = (ROOT / "docs" / "AUTONOMOUS_CREATIVE_WORKFLOW.md").read_text(encoding="utf-8")
         self.assertIn("Do not search the web", policy)
         self.assertIn("No line-and-circle substitute", policy)
         self.assertIn("unapproved technical draft", policy)
+        html = (ROOT / "webapp" / "creative-studio.html").read_text(encoding="utf-8")
+        self.assertLess(html.index('src="./code-3d-character-renderer.js"'), html.index('src="./creative-studio.js"'))
 
     def test_online_asset_sources_are_explicit_and_license_aware(self):
         for element_id in (
