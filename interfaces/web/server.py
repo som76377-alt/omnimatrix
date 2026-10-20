@@ -38,6 +38,7 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
+from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
@@ -440,6 +441,7 @@ class StudioRuntime:
             "models": models,
             "tools": tool_details,
             "multimodal_toolchain": toolchain_status(),
+            "multimodal_journal": journal_status(),
             "active_execution": getattr(self.omnitrix, "active_execution", None),
             "checked_at": utc_now(),
         }
