@@ -48,6 +48,8 @@ class CreativeUiIntegrationTests(unittest.TestCase):
             self.assertIn('id="' + element_id + '"', self.studio_html)
         self.assertIn('const allowedLayerTypes = new Set(["text", "rect", "circle", "line", "arrow"])', self.studio_js)
         self.assertIn("A shot may have no more than three added graphic layers.", self.studio_js)
+        self.assertIn('case "remove_clip":', self.studio_js)
+        self.assertIn("At least one selected shot must remain in the edit", self.studio_js)
 
 
 if __name__ == "__main__":
