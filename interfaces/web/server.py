@@ -782,7 +782,7 @@ class StudioRuntime:
             if not artifact or not artifact.verified or not artifact.uri:
                 return None
             path = Path(artifact.uri)
-        if not path.is_file() or path.is_symlink() or path.stat().st_size > 100 * 1024 * 1024:
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 24 * 1024 * 1024:
             return None
         content = path.read_bytes()
         if hashlib.sha256(content).hexdigest() != artifact.sha256:
