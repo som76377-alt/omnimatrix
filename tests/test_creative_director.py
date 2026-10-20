@@ -270,5 +270,23 @@ class CreativeDirectorTests(unittest.TestCase):
             validate_plan(plan, assets, allow_reorder=False)
 
 
+    def test_native_arrow_layer_is_supported_with_bounded_motion(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "pan.png"}]
+        plan = {
+            "schema_version": 1,
+            "summary": "Point to the heated pan base.",
+            "observations": [],
+            "operations": [{
+                "type": "add_graphic_layer", "asset_id": "asset-1", "clip_id": "clip-1",
+                "layer_type": "arrow", "name": "Heat direction", "text": "",
+                "x": 51, "y": 63, "width": 24, "height": 5,
+                "font_size": 24, "color": "#d6fa62", "font": "sans",
+                "opacity": 0.9, "animation": "fade-in",
+            }],
+        }
+        result = validate_plan(plan, assets, allow_reorder=False)
+        self.assertEqual(result["operations"][0]["layer_type"], "arrow")
+        self.assertEqual(result["operations"][0]["width"], 24)
+
 if __name__ == "__main__":
     unittest.main()
