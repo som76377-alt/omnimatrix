@@ -48,3 +48,10 @@ True cross-dissolves, independently mixed music/narration tracks, advanced colou
 ## Validation
 
 CI covers Python backend/unit tests, browser JavaScript syntax and Android compilation/JVM tests. A green CI result does not replace a live run that searches a real provider, exports a WebM in Android System WebView, saves it to device storage and opens it in a player. That live target-phone check remains necessary after the changes are deployed.
+
+
+## Google Images source integration (optional configuration)
+
+Creative Studio can search Google Images through the documented Google Custom Search JSON API; it does not scrape the Google Images web page. Configure server-side `GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_CX` and use a Programmable Search Engine with image search enabled. If either secret is absent, the provider returns a setup-specific message. Selected results may be imported into a private draft if the HTTPS source host permits it. The downloader rejects local/private-network targets, validates redirects, caps downloads at 24 MB, and accepts image files only for this provider. Google results are marked rights-unverified; check the original source before sharing or publishing. API quota and provider terms apply.
+
+Pinterest remains a user-directed reference search in this change. Automatic Pin scraping/download is not enabled. Users can save a chosen reference to Gallery and import it through the local multi-file picker. A real Pinterest connection requires an approved official API/OAuth application and credentials; a reference link is not that integration.
