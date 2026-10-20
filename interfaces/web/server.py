@@ -70,6 +70,32 @@ def _allow_public_creative_request(client_ip: str) -> bool:
                     _PUBLIC_CREATIVE_REQUESTS.pop(stale_key, None)
         return True
 
+# Model-backed mobile creative calls are more expensive than asset search.
+# Bound them separately per IP and globally over a rolling day.
+_PUBLIC_CREATIVE_MODEL_REQUESTS: dict[str, deque[float]] = {}
+_PUBLIC_CREATIVE_MODEL_GLOBAL: deque[float] = deque()
+_PUBLIC_CREATIVE_MODEL_RATE_LOCK = threading.Lock()
+
+
+def _allow_public_creative_model_request(client_ip: str) -> bool:
+    now = time.monotonic()
+    key = str(client_ip or "unknown")[:120]
+    with _PUBLIC_CREATIVE_MODEL_RATE_LOCK:
+        bucket = _PUBLIC_CREATIVE_MODEL_REQUESTS.setdefault(key, deque())
+        while bucket and now - bucket[0] >= 60.0:
+            bucket.popleft()
+        while _PUBLIC_CREATIVE_MODEL_GLOBAL and now - _PUBLIC_CREATIVE_MODEL_GLOBAL[0] >= 86400.0:
+            _PUBLIC_CREATIVE_MODEL_GLOBAL.popleft()
+        if len(bucket) >= 2 or len(_PUBLIC_CREATIVE_MODEL_GLOBAL) >= 40:
+            return False
+        bucket.append(now)
+        _PUBLIC_CREATIVE_MODEL_GLOBAL.append(now)
+        if len(_PUBLIC_CREATIVE_MODEL_REQUESTS) > 1024:
+            for stale_key in list(_PUBLIC_CREATIVE_MODEL_REQUESTS)[:128]:
+                if stale_key != key:
+                    _PUBLIC_CREATIVE_MODEL_REQUESTS.pop(stale_key, None)
+        return True
+
 
 LOGGER = logging.getLogger("omnitrix.studio")
 MAX_BODY_BYTES = 16 * 1024
@@ -1489,6 +1515,14 @@ def make_handler(
                     LOGGER.warning("Public attachment listing failed: %s", type(exc).__name__)
                     self._send_json({"ok": False, "error": "Attachment list is temporarily unavailable."}, 500)
                 return
+            if route == "/api/mobile/creative/status":
+                self._send_json(creative_model_status())
+                return
+            if route.startswith("/api/mobile/creative/jobs/"):
+                job_id = route.rsplit("/", 1)[-1]
+                result = runtime.creative_job_status(job_id)
+                self._send_json(result, 200 if result.get("ok") else 404)
+                return
             if route in {"/api/mobile/creative/search", "/api/mobile/creative/assets/download"}:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
@@ -1609,6 +1643,7 @@ def make_handler(
                 "/api/mobile/chat",
                 "/api/mobile/attachments/upload",
                 "/api/mobile/attachments/delete",
+                "/api/mobile/creative/analyze",
             }
             if route not in public_mobile_routes and not self._authorized():
                 self._send_json(
@@ -1656,7 +1691,7 @@ def make_handler(
                 return
             try:
                 payload = self._json_body(
-                    MAX_CREATIVE_BODY_BYTES if route == "/api/creative/analyze" else MAX_BODY_BYTES
+                    MAX_CREATIVE_BODY_BYTES if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"} else MAX_BODY_BYTES
                 )
             except OverflowError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 413)
@@ -1664,8 +1699,17 @@ def make_handler(
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
+            if route == "/api/mobile/creative/analyze":
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                if payload.get("consent") is not True:
+                    self._send_json({"ok": False, "error": "Explicit consent is required before preview images are sent to a model."}, 400)
+                    return
+                if not _allow_public_creative_model_request(client_ip):
+                    self._send_json({"ok": False, "error": "AI creative review is rate-limited for this connection. Try again later.", "code": "rate_limited"}, 429)
+                    return
             try:
-                if route == "/api/creative/analyze":
+                if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
                 elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
