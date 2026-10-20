@@ -37,7 +37,7 @@ test("wave motion moves the forearm and wrist over time", () => {
 
 test("walking alternates legs and keeps fixed parent-child limb lengths", () => {
   const firstPose = rig.samplePose("A person walking", 0.2, 6);
-  const secondPose = rig.samplePose("A person walking", 0.8, 6);
+  const secondPose = rig.samplePose("A person walking", 1.8, 6);
   const first = rig.buildSkeleton({ ox: 400, oy: 300, unit: 1.3, pose: firstPose });
   const second = rig.buildSkeleton({ ox: 400, oy: 300, unit: 1.3, pose: secondPose });
   assert.ok(distance(first.leftAnkle, second.leftAnkle) > 8);
