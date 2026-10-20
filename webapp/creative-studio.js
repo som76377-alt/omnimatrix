@@ -16,7 +16,7 @@
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
     onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
-    autoFinishBusy: false, lastAutoDraftClipIds: []
+    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -752,10 +752,14 @@
         await finishDraftAutomatically(state.lastAutoDraftClipIds);
       } else {
         onlineStatus(
-          "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results. Preview the sequence; tick the optional automatic-direction consent to have the configured vision model inspect resized thumbnails, apply supported graphic/edit suggestions and export a draft.",
+          "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results.",
           "success"
         );
         await loadAiModelStatus();
+        if (state.autoRenderOnAssembly) {
+          onlineStatus("The main chat requested a video, so the local basic draft is being exported now. No thumbnails were shared with a model. For richer AI-directed edits on a future run, explicitly enable the visual-direction consent.", "success");
+          renderVideo();
+        }
         $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } catch (error) {
@@ -2363,16 +2367,22 @@
       bindUi();
       await loadProject();
       const launchParams = new URLSearchParams(window.location.search);
-      const inboundBrief = String(launchParams.get("creativeBrief") || "").slice(0, 4000).trim();
+      let inboundBrief = "";
+      try {
+        inboundBrief = String(sessionStorage.getItem("omnitrix-creative-brief-pending") || "").slice(0, 4000).trim();
+        sessionStorage.removeItem("omnitrix-creative-brief-pending");
+      } catch (_) {}
       if (inboundBrief) {
         $("creative-brief").value = inboundBrief;
         state.project.brief = inboundBrief;
         $("online-asset-query").value = deriveAssetQuery(inboundBrief);
         await saveProject(false);
         if (launchParams.get("autoDraft") === "1") {
-          // Strip the prompt from the address bar after accepting it into the local project.
+          // The full prompt is passed in same-tab session storage, not in a query string.
           window.history.replaceState(null, "", window.location.pathname);
+          state.autoRenderOnAssembly = true;
           await buildDraftFromBrief();
+          state.autoRenderOnAssembly = false;
         }
       }
       const storedCount = state.assets.length;
