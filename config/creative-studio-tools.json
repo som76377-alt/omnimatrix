@@ -197,19 +197,21 @@
         "one-bounded-correction-pass",
         "local-webm-technical-qa"
       ],
-      "notes": "Uses the shared multimodal coordinator and configured model. Up to four new source previews and, after the first export, up to four rendered midpoint frames may be sent only after explicit per-run consent. The same model proposes supported edits and may trigger one bounded correction/re-render. The final WebM is reopened locally to verify decoding, duration/dimensions and sample frames for obvious blank/black output. This is not an independent critic or a second AI review of the corrected final render. True cross-dissolves, independent audio tracks, generated raster images and full-video temporal inspection remain unsupported."
+      "notes": "Uses resized preview frames after explicit consent; available in authenticated web mode and via the bounded native mobile endpoint. Native model status is reported honestly. One bounded correction pass is possible when the configured provider is reachable."
     },
     {
       "id": "ai-raster-image-generation",
       "label": "AI image generation provider",
-      "status": "not-connected-not-integrated",
-      "runtime": "server-side-image-provider-required",
-      "cost_class": "provider-and-quota-dependent",
+      "status": "integrated-optional-provider",
+      "runtime": "server-side-gemini-image-endpoint",
+      "cost_class": "provider-quota-or-charges-may-apply",
       "capabilities": [
         "prompt-to-image",
+        "bounded-base64-image-response",
+        "automatic-search-failure-fallback",
         "original-raster-scenes"
       ],
-      "notes": "Do not show as active until a real image-generation provider is configured, called successfully, and its output is validated. The current fallback is deterministic vector graphics only."
+      "notes": "One original image is attempted only when the user initiates Create Video / a direct prompt-to-video workflow and the server has GEMINI_API_KEY plus an available image model. If unavailable, the editor falls back to original deterministic vector scenes. The model output must be reviewed; this does not imply fact-checking."
     }
   ]
 }
