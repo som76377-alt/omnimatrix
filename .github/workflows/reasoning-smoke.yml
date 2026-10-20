@@ -9,6 +9,9 @@ on:
       - "core/models/providers/**"
       - "core/orchestrator/omnitrix.py"
       - "interfaces/web/server.py"
+      - "core/multimodal/**"
+      - "requirements-multimodal-optional.txt"
+      - "docs/MULTIMODAL_WORKERS.md"
       - "benchmarks/**"
       - ".github/workflows/reasoning-smoke.yml"
   workflow_dispatch:
