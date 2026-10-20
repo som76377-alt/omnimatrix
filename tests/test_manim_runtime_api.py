@@ -17,8 +17,10 @@ class FakeManimTool:
     def __init__(self, artifact_path=None, result=None):
         self.artifact_path = artifact_path
         self.result = result
+        self.calls = 0
 
     def execute(self, **kwargs):
+        self.calls += 1
         if self.result is not None:
             return self.result
         self.artifact_path.write_bytes(b"verified-test-mp4-bytes" * 256)
@@ -54,6 +56,19 @@ class ManimRuntimeApiTests(unittest.TestCase):
                 "nodes": [{"label": "A", "x": 0, "y": 0}],
                 "python": "not accepted",
             })
+
+    def test_invalid_input_is_rejected_before_dispatch_when_manim_is_installed(self):
+        tool = FakeManimTool()
+        runtime = make_runtime(tool)
+        with patch("interfaces.web.server.shutil.which", return_value="/usr/bin/manim"):
+            with self.assertRaisesRegex(ValueError, "outside the safe diagram bounds"):
+                runtime.start_manim_render({
+                    "consent": True,
+                    "title": "Invalid coordinates",
+                    "nodes": [{"label": "A", "x": 99, "y": 0}],
+                })
+        self.assertEqual(tool.calls, 0)
+        self.assertEqual(len(runtime.manim_jobs), 0)
 
     def test_missing_manim_is_reported_without_queuing(self):
         tool = FakeManimTool(result=ToolResult(
