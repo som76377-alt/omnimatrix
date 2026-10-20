@@ -166,7 +166,8 @@ class StudioServerTests(unittest.TestCase):
         start.assert_called_once()
 
     def test_mobile_image_generation_requires_consent_and_uses_configured_provider(self):
-        with patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "true"}), \
+             patch("interfaces.web.server._allow_public_creative_model_request", return_value=True), \
              patch("interfaces.web.server.generate_creative_image", return_value={
                  "ok": True, "provider": "google", "model": "gemini-nano-banana-2.1",
                  "mime_type": "image/png", "image_base64": "cG5n",
@@ -211,7 +212,8 @@ class StudioServerTests(unittest.TestCase):
         start.assert_not_called()
 
     def test_mobile_video_generation_starts_direct_provider_job_only_after_cost_ack(self):
-        with patch("interfaces.web.server._allow_public_creative_video_request", return_value=True), \
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "true"}), \
+             patch("interfaces.web.server._allow_public_creative_video_request", return_value=True), \
              patch("interfaces.web.server.start_creative_video_job", return_value={
                  "ok": True, "job_id": "a" * 32, "status": "queued",
                  "provider": "google", "model": "gemini-omni-1.1-flash",
@@ -233,6 +235,23 @@ class StudioServerTests(unittest.TestCase):
         start.assert_called_once_with(
             "A man waves and says hi", aspect_ratio="9:16", resolution="720p"
         )
+
+
+    def test_mobile_paid_video_generation_is_disabled_by_default(self):
+        with patch.dict("os.environ", {"OMNITRIX_ENABLE_PAID_CREATIVE_MEDIA": "false"}), \
+             patch("interfaces.web.server.start_creative_video_job") as start:
+            status, body = self.request(
+                "/api/mobile/creative/generate-video",
+                method="POST",
+                body={
+                    "consent": True, "paid_cost_acknowledged": True,
+                    "prompt": "A man waves and says hi",
+                },
+                authorized=False,
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("code"), "paid_media_disabled")
+        start.assert_not_called()
 
     def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
