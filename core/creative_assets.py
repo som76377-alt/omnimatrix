@@ -282,7 +282,30 @@ def search_creative_assets(
             raise CreativeAssetError("Pexels is not configured yet. Add PEXELS_API_KEY as a server-side secret, or use Wikimedia Commons.")
         items = _pexels_search(q, kind, limit, api_key)
     else:
-        items = _commons_search(q, kind, limit)
+        # Search progressively broader versions of the prompt instead of making
+        # the user guess the exact wording used in an asset's metadata.
+        # Keep the original query first, then widen only as needed.
+        variants = [q]
+        words = re.findall(r"[\\w'-]+", q, flags=re.UNICODE)
+        for width in (4, 3, 2):
+            candidate = " ".join(words[:width]).strip()
+            if len(candidate) >= 2 and candidate.casefold() not in {v.casefold() for v in variants}:
+                variants.append(candidate)
+        items = []
+        seen = set()
+        attempted = []
+        for candidate in variants:
+            if len(items) >= limit:
+                break
+            attempted.append(candidate)
+            for item in _commons_search(candidate, kind, limit):
+                identity = str(item.get("id") or item.get("asset_url") or "")
+                if identity and identity not in seen:
+                    seen.add(identity)
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
+        q = " · ".join(attempted)
     return {
         "ok": True, "provider": provider, "query": q, "items": items[:limit],
         "count": min(len(items), limit),
