@@ -16,7 +16,8 @@
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
     onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
-    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false
+    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false,
+    autoCriticRevisionPerformed: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -599,6 +600,7 @@
 
   async function finishDraftAutomatically(clipIds) {
     if (!$("auto-creative-consent").checked || state.autoFinishBusy) return;
+    state.autoCriticRevisionPerformed = false;
     const selectedIds = Array.from(new Set((clipIds || []).filter((id) =>
       state.project.timeline.some((clip) => clip.id === id)
     ))).slice(0, 6);
@@ -1752,8 +1754,108 @@
     }
   }
 
-  async function renderVideo() {
+  async function critiqueRenderedDraft(inspection, renderSignature) {
+    if (!$("auto-creative-consent").checked || !state.autoFinishBusy) {
+      return { attempted: false, changed: false, message: "No post-render model critique was authorized." };
+    }
+    const token = aiRuntimeToken();
+    if (!token) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
+    if (aiTimelineSignature() !== renderSignature) {
+      return { attempted: false, changed: false, message: "Timeline changed after rendering; the draft was not auto-modified." };
+    }
+    const allowed = new Set(state.lastAutoDraftClipIds.slice(0, 4));
+    const frames = Array.isArray(inspection && inspection.reviewFrames)
+      ? inspection.reviewFrames.filter((frame) => allowed.has(frame.clip_id)).slice(0, 4)
+      : [];
+    if (!frames.length) return { attempted: false, changed: false, message: "No safely mapped rendered-frame samples were available." };
+    await loadAiModelStatus();
+    if (!state.creativeStatus || state.creativeStatus.configured !== true) {
+      return { attempted: false, changed: false, message: "Visual model not configured; no post-render AI critique was run." };
+    }
+    const ids = frames.map((frame) => frame.clip_id);
+    const timelineById = new Map(state.project.timeline.map((clip) => [clip.id, clip]));
+    const records = frames.map((frame) => {
+      const clip = timelineById.get(frame.clip_id);
+      const asset = clip ? assetById(clip.assetId) : null;
+      if (!clip || !asset || clip.assetId !== frame.asset_id || typeof frame.preview_data_url !== "string") {
+        throw new Error("A rendered sample no longer maps to its original shot. The automatic critique was cancelled.");
+      }
+      return {
+        asset_id: clip.assetId,
+        clip_id: clip.id,
+        name: (asset.name || "shot") + " — rendered output at " + Number(frame.time).toFixed(2) + "s",
+        preview_data_url: frame.preview_data_url,
+        duration: Number(clip.duration) || 0,
+        source_duration: Number(asset.duration) || 0,
+        source_in: Number(clip.sourceIn) || 0,
+        media_type: String(asset.type || ""),
+        motion: String(clip.motion || "none"),
+        fit: String(clip.fit || "cover")
+      };
+    });
+    const critiqueBrief = [
+      "POST-RENDER VISUAL CRITIC — THESE ARE SAMPLES FROM THE ACTUAL EXPORTED WEBM, not source thumbnails.",
+      "Inspect only these sampled rendered frames. They include the composition, cropping, text and native graphics that were actually exported.",
+      "Compare visible evidence with the user's brief. Report only concrete defects supported by these frames, such as a clearly irrelevant shot, title covering the subject, unreadable/overflowing text, bad crop or redundant graphic.",
+      "Use only the exact supplied clip/asset IDs. If a shot is visibly off-topic, remove_clip with a specific reason is allowed. Return supported corrective operations only; do not add decorations to make the result busier.",
+      "Do not claim to inspect sound, motion between frames, full clips, or unshown moments. If the frames are acceptable or uncertain, return an empty operations array.",
+      "Original brief: " + String($("creative-brief").value || "").slice(0, 3500)
+    ].join("\n\n");
+    const response = await fetch("./api/creative/analyze", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({
+        consent: true,
+        consent_clip_ids: ids,
+        allow_reorder: false,
+        brief: critiqueBrief.slice(0, 4000),
+        assets: records
+      })
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("The rendered-frame critic returned unreadable JSON."); }
+    if (!response.ok || !data || data.ok !== true) {
+      throw new Error((data && data.error) || "Post-render visual critique could not start.");
+    }
+    if (data.status === "processing" && typeof data.job_id === "string") {
+      aiSetStatus("The local render decoded. Waiting for the consented post-render critic to inspect sampled output frames…", "");
+      data = await pollAiCreativeJob(data.job_id, token);
+    }
+    if (!data || data.ok !== true || data.status !== "complete" || !data.plan) {
+      throw new Error((data && data.error) || "The post-render critic did not return a verified complete plan.");
+    }
+    if (aiTimelineSignature() !== renderSignature) {
+      throw new Error("The timeline changed while the critic was running. Its proposed edits were discarded.");
+    }
+    state.creativePlan = data.plan;
+    state.creativeSnapshot = renderSignature;
+    state.creativeSelectedIds = ids.slice();
+    state.creativeAllowReorder = false;
+    state.creativePlanApplied = false;
+    renderAiPlan(data);
+    const count = Array.isArray(data.plan.operations) ? data.plan.operations.length : 0;
+    if (!count) {
+      return {
+        attempted: true, changed: false,
+        message: "Post-render critic (" + (data.worker || "worker unknown") + " / " + (data.model || "model unknown") + ") returned no supported corrections."
+      };
+    }
+    applyAiPlan();
+    if (!state.creativePlanApplied) {
+      throw new Error("The critic proposed changes, but the local validator rejected them. No automatic correction was applied.");
+    }
+    state.autoCriticRevisionPerformed = true;
+    return {
+      attempted: true, changed: true,
+      message: "Post-render critic (" + (data.worker || "worker unknown") + " / " + (data.model || "model unknown") + ") applied " + count + " validated correction operation(s). A single bounded re-render will follow."
+    };
+  }
+
+  async function renderVideo(options) {
     if (state.exporting) return;
+    const autoCritiqueRetry = Boolean(options && options.autoCritiqueRetry === true);
     if (!state.project.timeline.length) { showMessage("Add at least one shot before rendering.", true); return; }
     if (!("MediaRecorder" in window) || !canvas.captureStream) {
       showMessage("This browser does not support canvas video recording. Try a current version of Chrome or Edge.", true);
@@ -1766,7 +1868,7 @@
     const renderTimelineSnapshot = state.project.timeline.map((clip) => ({
       id: clip.id, assetId: clip.assetId, duration: Number(clip.duration) || 0
     }));
-    const reviewClipIds = state.autoFinishBusy && $("auto-creative-consent").checked
+    const reviewClipIds = state.autoFinishBusy && $("auto-creative-consent").checked && !autoCritiqueRetry
       ? state.lastAutoDraftClipIds.slice(0, 4)
       : [];
     const renderSignature = aiTimelineSignature();
@@ -1797,12 +1899,9 @@
         outputStream.getTracks().forEach((track) => track.stop());
         canvas.width = original.width;
         canvas.height = original.height;
-        state.exporting = false;
         state.recorder = null;
         state.isPlaying = false;
         sourceVideo.pause();
-        $("render-video").disabled = false;
-        $("render-video-bottom").disabled = false;
         drawFrame();
         if (blob.size) {
           let inspection = null;
@@ -1813,6 +1912,26 @@
           } catch (error) {
             inspectionFailure = String(error.message || error);
           }
+          let critique = { attempted: false, changed: false, message: "" };
+          if (!autoCritiqueRetry && state.autoFinishBusy && $("auto-creative-consent").checked &&
+              inspection && inspection.ok && inspection.reviewFrames && inspection.reviewFrames.length) {
+            try {
+              critique = await critiqueRenderedDraft(inspection, renderSignature);
+            } catch (error) {
+              critique = { attempted: true, changed: false, message: "Post-render critic unavailable: " + String(error.message || error) };
+            }
+          }
+
+          if (critique.changed && state.creativePlanApplied && !autoCritiqueRetry) {
+            state.exporting = false;
+            $("render-video").disabled = false;
+            $("render-video-bottom").disabled = false;
+            updateTransport();
+            showMessage(critique.message + " Discarding the intermediate render and rendering the corrected timeline once.", false);
+            await renderVideo({ autoCritiqueRetry: true });
+            return;
+          }
+
           // Keep the actual encoded artifact available even if browser decoding QA cannot complete.
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
@@ -1822,33 +1941,45 @@
           link.click();
           link.remove();
           setTimeout(() => URL.revokeObjectURL(url), 60000);
+          let criticSuffix = "";
+          if (critique.attempted) criticSuffix = " · " + critique.message;
+          else if (state.autoFinishBusy && $("auto-creative-consent").checked && !autoCritiqueRetry) {
+            criticSuffix = " · No verified post-render AI critique: " + (critique.message || "No rendered sample was inspected.");
+          }
           if (inspection && inspection.ok) {
             const dimensionsLabel = inspection.width + "×" + inspection.height;
             if (inspection.warnings.length) {
               showMessage(
                 "WebM exported and decoded · " + formatBytes(blob.size) + " · " + dimensionsLabel + " · " +
                 inspection.duration.toFixed(2) + "s. QA warning: " + inspection.warnings.join("; ") +
-                ". The file was downloaded, but inspect these points before publishing.",
+                ". The file was downloaded, but inspect these points before publishing." + criticSuffix,
                 true
               );
             } else {
+              const correctionNote = state.autoCriticRevisionPerformed
+                ? " One validated correction pass was applied after inspecting the first render; the final render received technical QA, not a second AI critique."
+                : "";
               showMessage(
                 "WebM exported, reopened and decoded locally · " + formatBytes(blob.size) + " · " +
                 dimensionsLabel + " · " + inspection.duration.toFixed(2) + "s · " +
-                inspection.sampledFrames + " sampled frames checked. This is technical QA, not an AI artistic review.",
+                inspection.sampledFrames + " sampled frames checked. This is technical QA, not a guarantee of artistic quality." +
+                correctionNote + criticSuffix,
                 false
               );
             }
           } else {
             showMessage(
               "A " + formatBytes(blob.size) + " WebM was generated and downloaded, but its playback could not be verified: " +
-              (inspectionFailure || "unknown decode error") + ". Open the file and inspect it before publishing.",
+              (inspectionFailure || "unknown decode error") + ". Open the file and inspect it before publishing." + criticSuffix,
               true
             );
           }
         } else {
           showMessage("The browser returned an empty video file. Try a shorter sequence or lower resolution.", true);
         }
+        state.exporting = false;
+        $("render-video").disabled = false;
+        $("render-video-bottom").disabled = false;
         updateTransport();
       };
       recorder.start(500);
