@@ -3164,10 +3164,21 @@
       if (event.key === "Enter") { event.preventDefault(); searchOnlineAssets(); }
     });
     $("pinterest-reference").addEventListener("click", () => {
-      const query = String($("online-asset-query").value || "").trim() || deriveAssetQuery($("creative-brief").value);
+      const query = String($("online-asset-query").value || "").trim() || String($("creative-brief").value || "").trim();
       if (!query) { onlineStatus("Enter a search phrase or write a Director's Brief first.", "error"); return; }
-      const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
-      window.open(url, "_blank", "noopener,noreferrer");
+      const queries = buildVisualSearchQueries(query);
+      const links = queries.map((candidate) => ({
+        query: candidate,
+        url: "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: candidate }).toString()
+      }));
+      const providerSelect = $("online-asset-provider");
+      if (providerSelect) providerSelect.value = "pinterest";
+      renderOnlineResults({
+        provider: "pinterest", query, search_queries: queries, search_links: links,
+        search_url: links[0] ? links[0].url : "https://www.pinterest.com/"
+      });
+      onlineStatus("Prepared " + queries.length + " focused Pinterest searches. Open the relevant results and import only media you have permission to use.", "");
+      $("online-asset-results").scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
     $("import-direct-image").addEventListener("click", async () => {
       const url = safeExternalHttps($("direct-image-url").value);
