@@ -32,7 +32,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("./api/creative/assets/download?", self.studio_js)
         self.assertIn("rightsVerified", self.studio_js)
         self.assertIn("safeExternalHttps", self.studio_js)
-        self.assertIn("Pinterest is for a reference search", self.studio_js)
+        self.assertIn("Pins are not copied automatically", self.studio_js)
 
     def test_automatic_remote_visual_analysis_requires_explicit_per_run_consent(self):
         self.assertIn('id="auto-creative-consent"', self.studio_html)

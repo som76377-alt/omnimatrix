@@ -306,13 +306,13 @@ def validate_plan(
         operations.append(op)
 
     if removed_clip_ids:
-        if len(removed_clip_ids) >= len(clip_by_id):
-            raise CreativeDirectorError("At least one selected shot must remain in the edit.")
         if any(
             op.get("type") != "remove_clip" and op.get("clip_id") in removed_clip_ids
             for op in operations
         ):
             raise CreativeDirectorError("A shot cannot be both removed and edited in the same plan.")
+        if len(removed_clip_ids) >= len(clip_by_id):
+            raise CreativeDirectorError("At least one selected shot must remain in the edit.")
     return {
         "schema_version": 1,
         "summary": summary,
