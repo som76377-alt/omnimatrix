@@ -1,5 +1,7 @@
 """Offline tests for licence-aware creative asset discovery."""
 import unittest
+import base64
+import json
 from unittest.mock import patch
 
 from core.creative_assets import (
@@ -7,6 +9,7 @@ from core.creative_assets import (
     _validate_download_url,
     search_creative_assets,
     download_creative_asset,
+    generate_creative_image,
 )
 
 
@@ -20,6 +23,34 @@ class CreativeAssetSearchTests(unittest.TestCase):
         self.assertEqual(result["items"], [])
         self.assertIn("induction+stove+science", result["search_url"])
         self.assertIn("pinterest.com/search/pins/", result["search_url"])
+
+    def test_image_generation_requires_a_server_side_gemini_key(self):
+        with self.assertRaisesRegex(CreativeAssetError, "GEMINI_API_KEY"):
+            generate_creative_image("A scientific induction coil", environ={})
+
+    def test_image_generation_parses_bounded_inline_image_response(self):
+        image_bytes = b"\x89PNG\r\n\x1a\n" + (b"image-data" * 150)
+        response_body = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(image_bytes).decode("ascii"),
+                    }
+                }]}
+            }]
+        }
+        response = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(response_body).encode("utf-8")
+        with patch("core.creative_assets.urllib.request.urlopen", return_value=response):
+            result = generate_creative_image(
+                "An original technical illustration of an induction stove",
+                environ={"GEMINI_API_KEY": "test-key"},
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["mime_type"], "image/png")
+        self.assertEqual(base64.b64decode(result["image_base64"]), image_bytes)
+        self.assertLessEqual(result["size_bytes"], 6 * 1024 * 1024)
 
     def test_pexels_requires_explicit_server_side_key(self):
         with patch("core.creative_assets._read_json") as read_json:
