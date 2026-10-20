@@ -344,6 +344,99 @@
     return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
   }
 
+  async function createOriginalGraphicCards(brief) {
+    const selector = $("preview-scale");
+    const dimensions = String(selector && selector.value || "1280x720").split("x").map(Number);
+    const width = dimensions[0] || 1280;
+    const height = dimensions[1] || 720;
+    const title = extractBriefTitle(brief).slice(0, 72) || "A closer look";
+    const topic = deriveAssetQuery(brief).slice(0, 96) || title;
+    const induction = /induction|magnetic field|coil|cooktop|stove|electromagnet/i.test(brief);
+    const stages = [
+      { kicker: "01 / THE QUESTION", heading: title, footer: "Start with the phenomenon." },
+      { kicker: "02 / THE MECHANISM", heading: induction ? "FIELD → CURRENT → HEAT" : "FOLLOW THE PROCESS", footer: topic },
+      { kicker: "03 / THE TAKEAWAY", heading: "CAUSE BECOMES EFFECT", footer: "A visual explainer · original vector graphics" }
+    ];
+    const files = [];
+    const stamp = crypto.randomUUID().slice(0, 8);
+    for (let index = 0; index < stages.length; index += 1) {
+      const canvasNode = document.createElement("canvas");
+      canvasNode.width = width;
+      canvasNode.height = height;
+      const g = canvasNode.getContext("2d", { alpha: false });
+      if (!g) throw new Error("This browser cannot create original graphic scenes.");
+      g.fillStyle = "#10120f"; g.fillRect(0, 0, width, height);
+      g.strokeStyle = "#242a22"; g.lineWidth = 1;
+      const step = Math.max(24, Math.round(width / 32));
+      for (let x = 0; x < width; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
+      for (let y = 0; y < height; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
+      const margin = Math.round(width * 0.075);
+      g.fillStyle = "#d5fb63"; g.fillRect(margin, margin, Math.round(width * 0.065), Math.max(3, Math.round(width * 0.004)));
+      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(12, Math.round(width * 0.016)) + "px system-ui";
+      g.fillText(stages[index].kicker, margin, margin + Math.round(height * 0.055));
+      const headingSize = Math.max(22, Math.round(width * (index === 0 ? 0.055 : 0.043)));
+      g.fillStyle = "#f1f3e8"; g.font = "700 " + headingSize + "px system-ui";
+      const words = stages[index].heading.split(/\s+/);
+      let line = "", lines = [];
+      for (const word of words) {
+        const next = line ? line + " " + word : word;
+        if (g.measureText(next).width > width * 0.82 && line) { lines.push(line); line = word; } else line = next;
+      }
+      if (line) lines.push(line);
+      lines.slice(0, 3).forEach((row, i) => g.fillText(row, margin, Math.round(height * 0.31) + i * Math.round(headingSize * 1.15)));
+      const cx = Math.round(width * 0.69), cy = Math.round(height * 0.61), radius = Math.round(Math.min(width, height) * 0.12);
+      g.strokeStyle = "#d5fb63"; g.lineWidth = Math.max(2, Math.round(width * 0.002));
+      if (induction) {
+        // A clean, original schematic: pan, coil and alternating field lines.
+        g.beginPath(); g.ellipse(cx, cy - radius * 0.55, radius * 1.25, radius * 0.28, 0, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(cx - radius * 1.25, cy - radius * 0.55); g.lineTo(cx - radius * 0.95, cy + radius * 0.12); g.quadraticCurveTo(cx, cy + radius * 0.48, cx + radius * 0.95, cy + radius * 0.12); g.lineTo(cx + radius * 1.25, cy - radius * 0.55); g.stroke();
+        for (let j = 0; j < 4; j += 1) { g.beginPath(); g.ellipse(cx, cy + radius * (0.25 + j * 0.13), radius * (0.65 + j * 0.22), radius * (0.10 + j * 0.015), 0, 0, Math.PI * 2); g.stroke(); }
+        g.fillStyle = "#d5fb63"; for (let j = 0; j < 9; j += 1) { const px = cx - radius * 0.85 + j * radius * 0.21; g.beginPath(); g.arc(px, cy + radius * 0.72, Math.max(2, radius * 0.035), 0, Math.PI * 2); g.fill(); }
+      } else {
+        const nodes = [{x:cx-radius*1.1,y:cy},{x:cx,y:cy-radius*0.72},{x:cx+radius*1.1,y:cy},{x:cx,y:cy+radius*0.72}];
+        g.strokeStyle = "#d5fb63";
+        [[0,1],[1,2],[2,3],[3,0],[0,2]].forEach(([a,b])=>{g.beginPath();g.moveTo(nodes[a].x,nodes[a].y);g.lineTo(nodes[b].x,nodes[b].y);g.stroke();});
+        nodes.forEach((n,i)=>{g.fillStyle=i===1?"#d5fb63":"#10120f";g.beginPath();g.arc(n.x,n.y,Math.max(8,radius*0.18),0,Math.PI*2);g.fill();g.strokeStyle="#d5fb63";g.stroke();});
+        for(let j=0;j<7;j++){g.fillStyle="#f1f3e8";g.beginPath();g.arc(cx-radius*0.75+j*radius*0.25,cy+radius*1.1+(j%2)*radius*0.12,Math.max(2,radius*0.025),0,Math.PI*2);g.fill();}
+      }
+      g.fillStyle = "#a7ad9c"; g.font = "500 " + Math.max(12, Math.round(width * 0.015)) + "px system-ui";
+      g.fillText(stages[index].footer.slice(0, 100), margin, height - margin);
+      g.fillStyle = "#d5fb63"; g.font = "600 " + Math.max(11, Math.round(width * 0.012)) + "px ui-monospace, monospace";
+      g.fillText("OMNITRIX / MOTION GRAPHICS", margin, height - Math.round(margin * 0.42));
+      const blob = await new Promise((resolve, reject) => canvasNode.toBlob((value) => value ? resolve(value) : reject(new Error("Original graphic export failed.")), "image/png"));
+      files.push(new File([blob], "omnitrix-original-" + stamp + "-" + (index + 1) + ".png", { type: "image/png", lastModified: Date.now() }));
+    }
+    return files;
+  }
+
+  async function assembleOriginalGraphicFallback(brief) {
+    onlineStatus("No suitable source clips were found. The graphics engineer is creating an original three-scene vector explainer…", "");
+    const files = await createOriginalGraphicCards(brief);
+    const before = new Set(state.assets.map((asset) => asset.name));
+    await importFiles(files);
+    const generated = state.assets.filter((asset) => files.some((file) => file.name === asset.name) && !before.has(asset.name));
+    if (generated.length !== files.length) throw new Error("Original graphics were created, but not all scenes could be added to the media library.");
+    const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+    const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
+    const startIndex = state.project.timeline.length;
+    generated.forEach((asset, index) => {
+      const clip = createClip(asset);
+      clip.duration = targetSeconds / generated.length;
+      clip.fit = "contain";
+      clip.motion = index === 0 ? "slow-zoom" : index === 1 ? "slide-left" : "none";
+      clip.title = "";
+      clip.subtitle = "";
+      state.project.timeline.push(clip);
+    });
+    const added = state.project.timeline.slice(startIndex);
+    state.selectedClipId = added[0] ? added[0].id : state.selectedClipId;
+    state.currentClipId = state.selectedClipId;
+    renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
+    await saveProject(false);
+    onlineStatus("Original motion-graphics draft assembled. It uses locally drawn vector scenes, not generated photographs or a connected image model.", "success");
+    if (state.autoRenderOnAssembly) await renderVideo();
+  }
+
   function updatePreviewResolution() {
     const selector = $("preview-scale");
     if (!selector) return;
@@ -714,12 +807,11 @@
       let data = await searchOnlineAssets();
       if (!data || !Array.isArray(data.items)) return;
       let eligible = data.items.filter(supportedOnlineAsset);
-      if (!eligible.length && provider === "pexels") {
-        onlineStatus("No importable Pexels results. Check its server-side key or switch to Wikimedia Commons.", "error");
-        return;
-      }
-      if (!eligible.length && provider === "commons") {
-        onlineStatus("No usable source media was found after broadening the search. Original motion-graphics fallback is not yet available in this build; nothing was imported.", "error");
+      if (!eligible.length) {
+        if (provider === "pinterest") {
+          onlineStatus("Pinterest is a reference source, not a direct import provider. Creating an original motion-graphics draft instead.", "");
+        }
+        await assembleOriginalGraphicFallback(brief);
         return;
       }
       const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
