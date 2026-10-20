@@ -91,6 +91,11 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn('generateDirectAiVideo(String($("creative-brief").value || "").trim())', self.studio_js)
         self.assertIn('await renderVideo()', self.studio_js)
         self.assertIn("async function renderOriginalMotionClip(brief)", self.studio_js)
+        self.assertIn("file.omnitrixThumbnail instanceof Blob", self.studio_js)
+        self.assertIn("output.omnitrixDuration = duration", self.studio_js)
+        self.assertIn('g.fillText("Hi!", bubbleX, bubbleY)', self.studio_js)
+        self.assertIn("does not embed spoken audio", self.studio_html.lower())
+        self.assertLess(self.studio_html.index('<details class="advanced-brief-controls">'), self.studio_html.index('<details class="paid-video-options">'))
 
 if __name__ == "__main__":
     unittest.main()

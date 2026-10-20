@@ -48,24 +48,24 @@
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
         <p id="agent-state">Creates an original animated clip locally. Web search is optional; a failed download should never stop original creation.</p>
-        <p class="ai-use-note">Human and animal actions use a stylised vector animation for the free route. Realistic footage and generated audio are a separate paid option.</p>
+        <p class="ai-use-note">Free creation draws an original animated scene locally and adds dialogue as on-screen text. It does not embed spoken audio. Realistic footage and generated audio are optional paid generation, not needed for ordinary animated drafts.</p>
         <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Ready when you are.</p>
       </div>
       <div class="brief-actions">
         <button class="button primary create-video-button" id="build-from-brief" type="button">CREATE VIDEO</button>
-        <details class="paid-video-options">
-          <summary>REALISTIC AI VIDEO (PAID)</summary>
-          <p class="ai-use-note">Real generated MP4 with movement and audio requires the explicit paid-video approval below.</p>
-        <label class="auto-creative-consent paid-video-consent" for="paid-video-consent">
-          <input id="paid-video-consent" type="checkbox">
-          <span><strong>Approve one real AI-generated video</strong> Uses Gemini Omni Flash to generate moving footage and native audio. Google's paid API is approximately US$0.10 per generated second at 720p (about US$0.80 for an 8-second clip); actual length and charges can vary. No video-generation call starts until this is checked and you tap the button.</span>
-        </label>
-        <button class="button primary create-video-button" id="generate-ai-video" type="button" disabled>GENERATE REAL AI VIDEO + AUDIO</button>
-        </details>
         <details class="advanced-brief-controls">
           <summary>More controls</summary>
           <button class="button quiet" id="save-brief" type="button">SAVE BRIEF</button>
           <button class="button quiet" id="open-ai-director" type="button">AI DIRECTION</button>
+          <details class="paid-video-options">
+            <summary>Optional paid generation — realistic footage + voice</summary>
+            <p class="ai-use-note">Only use this if you specifically need realistic generated footage with audio. The free animated route does not require it.</p>
+            <label class="auto-creative-consent paid-video-consent" for="paid-video-consent">
+              <input id="paid-video-consent" type="checkbox">
+              <span><strong>Approve one real AI-generated video</strong> Uses Gemini Omni Flash to generate moving footage and native audio. Google's paid API is approximately US$0.10 per generated second at 720p (about US$0.80 for an 8-second clip); actual length and charges can vary. No video-generation call starts until this is checked and you tap the button.</span>
+            </label>
+            <button class="button primary create-video-button" id="generate-ai-video" type="button" disabled>GENERATE REAL AI VIDEO + AUDIO</button>
+          </details>
         </details>
         <details class="science-diagram-controls">
           <summary>BUILD A SCIENTIFIC DIAGRAM</summary>
