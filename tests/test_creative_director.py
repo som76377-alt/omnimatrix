@@ -14,7 +14,8 @@ from core.creative_director import (
 
 def preview_url():
     # Marker-only JPEG is sufficient for the mocked analyzer; production sends it to the provider.
-    image = b"\xff\xd8\xffoffline-test-thumbnail"
+    # Minimal SOF marker for a bounded 1 x 1 JPEG header; the mocked analyzer never decodes pixels.
+    image = b"\xff\xd8\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00\xff\xd9"
     return "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
 
 
@@ -89,6 +90,15 @@ class CreativeDirectorTests(unittest.TestCase):
         payload = make_payload()
         payload["assets"][0]["preview_data_url"] = "data:image/png;base64,AAAA"
         with self.assertRaisesRegex(CreativeDirectorError, "resized JPEG"):
+            analyze_creative_request(payload, analyzer=Mock(), environ={"GEMINI_API_KEY": "test"})
+
+
+    def test_rejects_jpeg_larger_than_thumbnail_bounds(self):
+        payload = make_payload()
+        # A 500 x 220 SOF header exceeds the browser thumbnail's actual bound.
+        oversized = b"\xff\xd8\xff\xc0\x00\x11\x08\x00\xdc\x01\xf4\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00\xff\xd9"
+        payload["assets"][0]["preview_data_url"] = "data:image/jpeg;base64," + base64.b64encode(oversized).decode("ascii")
+        with self.assertRaisesRegex(CreativeDirectorError, "no larger than 360"):
             analyze_creative_request(payload, analyzer=Mock(), environ={"GEMINI_API_KEY": "test"})
 
     def test_unconfigured_provider_returns_unavailable_not_success(self):
