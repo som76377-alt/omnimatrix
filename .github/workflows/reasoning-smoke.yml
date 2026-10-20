@@ -161,9 +161,15 @@ jobs:
                       "The configured route was attempted and Omnitrix returned "
                       "a fallback answer; this run cannot verify Gemini availability."
                   )
+              elif reason == "timeout":
+                  print(
+                      "WARN: Gemini timed out; Omnitrix returned an answer through "
+                      "the configured OpenRouter fallback. The primary Gemini route "
+                      "is not verified by this run."
+                  )
               else:
                   raise SystemExit(
-                      "FAIL: ordinary greeting fell back for a non-rate-limit reason. "
+                      "FAIL: ordinary greeting fell back for an unexpected reason. "
                       "See the safe fallback diagnostic above."
                   )
           PY
