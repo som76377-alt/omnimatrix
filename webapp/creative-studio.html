@@ -47,7 +47,7 @@
       <div class="brief-copy">
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
-        <p id="agent-state">AI director and visual critic are not connected yet. This build does not pretend to make model calls; local editing tools work now.</p>
+        <p id="agent-state">Local editing works now. Optional AI direction uses selected resized previews only after explicit consent; post-render visual criticism is not yet available.</p>
       </div>
       <div class="brief-actions">
         <button class="button quiet" id="save-brief">SAVE BRIEF</button>
@@ -65,6 +65,7 @@
       <div id="ai-selection-list" class="ai-selection-list">
         <p class="ai-muted">Open AI direction to load the current timeline.</p>
       </div>
+      <p id="ai-selection-count" class="ai-muted">0 of up to 6 shots selected</p>
       <label class="ai-consent-row" for="ai-consent">
         <input id="ai-consent" type="checkbox">
         <span>I approve sending the selected resized previews to the configured provider for this analysis. Provider quotas or charges may apply. Nothing will be edited automatically.</span>
