@@ -202,16 +202,18 @@
     {
       "id": "ai-raster-image-generation",
       "label": "AI image generation provider",
-      "status": "integrated-optional-provider",
-      "runtime": "server-side-gemini-image-endpoint",
-      "cost_class": "provider-quota-or-charges-may-apply",
+      "status": "integrated-opt-in-paid-provider",
+      "runtime": "server-side-gemini-interactions-image-endpoint",
+      "cost_class": "paid-only-explicit-per-run-acknowledgement",
       "capabilities": [
         "prompt-to-image",
         "bounded-base64-image-response",
-        "automatic-search-failure-fallback",
-        "original-raster-scenes"
+        "original-raster-scenes",
+        "aspect-ratio-aware-image-generation",
+        "current-interactions-api"
       ],
-      "notes": "One original image is attempted only when the user initiates Create Video / a direct prompt-to-video workflow and the server has GEMINI_API_KEY plus an available image model. If unavailable, the editor falls back to original deterministic vector scenes. The model output must be reviewed; this does not imply fact-checking."
+      "notes": "One original 1K image is generated only after the image/visual-review consent is explicitly enabled. Uses GEMINI_API_KEY server-side and current Gemini Interactions API model gemini-nano-banana-2.1. Budget estimate is about US$0.04/image; actual provider billing can vary. The former gemini-2.5-flash-image default is migrated because it was shut down. Image consent is separate from paid direct-video consent.",
+      "model_default": "gemini-nano-banana-2.1"
     },
     {
       "id": "direct-ai-video-generation",
