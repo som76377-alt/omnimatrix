@@ -1,0 +1,374 @@
+"""License-aware, bounded creative asset discovery for Omnitrix Studio.
+
+Wikimedia Commons works without an API key. Pexels is optional and only enabled
+when the owner configures PEXELS_API_KEY. Pinterest is deliberately a reference
+search link, not scraped or bulk-downloaded: its developer rules prohibit
+unauthorised scraping and restrict storage/reuse of API data.
+"""
+from __future__ import annotations
+
+from html import unescape
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import PurePosixPath
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+
+MAX_QUERY_CHARS = 180
+MAX_RESULTS = 12
+MAX_DOWNLOAD_BYTES = 24 * 1024 * 1024
+_USER_AGENT = "OmnitrixCreativeStudio/1.0 (license-aware asset search)"
+_ALLOWED_DOWNLOAD_HOSTS = {
+    "commons": frozenset({"upload.wikimedia.org"}),
+    "pexels": frozenset({"images.pexels.com", "videos.pexels.com"}),
+}
+_ALLOWED_MIME = frozenset({
+    "image/jpeg", "image/png", "image/webp", "image/avif",
+    "video/mp4", "video/webm", "video/ogg",
+})
+
+
+class CreativeAssetError(ValueError):
+    """A safe error raised for invalid or unavailable asset-search operations."""
+
+
+class _TextOnly(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def _plain(value: Any, limit: int = 500) -> str:
+    if not isinstance(value, str):
+        return ""
+    parser = _TextOnly()
+    try:
+        parser.feed(value)
+        text = unescape(" ".join(parser.parts))
+    except Exception:
+        text = re.sub(r"<[^>]*>", " ", value)
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def _safe_text(value: Any, name: str, max_length: int, *, required: bool = False) -> str:
+    if not isinstance(value, str):
+        raise CreativeAssetError(f"{name} must be text.")
+    text = value.strip()
+    if required and not text:
+        raise CreativeAssetError(f"{name} cannot be empty.")
+    if len(text) > max_length:
+        raise CreativeAssetError(f"{name} exceeds the {max_length}-character limit.")
+    if any(ord(ch) < 32 and ch not in "\t\n\r" for ch in text):
+        raise CreativeAssetError(f"{name} contains unsupported control characters.")
+    return text
+
+
+def _read_json(url: str, *, headers: dict[str, str] | None = None, timeout: float = 12) -> dict[str, Any]:
+    req_headers = {"User-Agent": _USER_AGENT, "Accept": "application/json"}
+    if headers:
+        req_headers.update(headers)
+    request = urllib.request.Request(url, headers=req_headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read(4 * 1024 * 1024 + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise CreativeAssetError("The asset provider rejected its credentials or access scope.") from exc
+        if exc.code == 429:
+            raise CreativeAssetError("The asset provider rate limit was reached. Try later.") from exc
+        raise CreativeAssetError(f"The asset provider returned HTTP {exc.code}.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise CreativeAssetError("Online asset search is unavailable from this server right now.") from exc
+    if len(raw) > 4 * 1024 * 1024:
+        raise CreativeAssetError("The asset provider response was too large.")
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CreativeAssetError("The asset provider returned invalid JSON.") from exc
+    if not isinstance(data, dict):
+        raise CreativeAssetError("The asset provider returned an invalid response.")
+    return data
+
+
+def _commons_search(query: str, kind: str, limit: int) -> list[dict[str, Any]]:
+    params = {
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrnamespace": "6",
+        "gsrlimit": str(limit),
+        "gsrwhat": "text",
+        "prop": "imageinfo",
+        "iiprop": "url|mime|extmetadata",
+        "iiurlwidth": "960",
+        "format": "json",
+        "formatversion": "2",
+    }
+    url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(params)
+    data = _read_json(url, headers={"Accept": "application/json"})
+    pages = data.get("query", {}).get("pages", [])
+    if isinstance(pages, dict):
+        pages = list(pages.values())
+    items: list[dict[str, Any]] = []
+    if not isinstance(pages, list):
+        return items
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        imageinfo = page.get("imageinfo")
+        if not isinstance(imageinfo, list) or not imageinfo or not isinstance(imageinfo[0], dict):
+            continue
+        info = imageinfo[0]
+        mime = str(info.get("mime", "")).lower()
+        is_image = mime.startswith("image/")
+        is_video = mime.startswith("video/")
+        if kind == "image" and not is_image:
+            continue
+        if kind == "video" and not is_video:
+            continue
+        if not (is_image or is_video):
+            continue
+        ext = info.get("extmetadata") if isinstance(info.get("extmetadata"), dict) else {}
+        def meta(key: str, max_length: int = 300) -> str:
+            value = ext.get(key)
+            return _plain(value.get("value", "") if isinstance(value, dict) else value, max_length)
+        license_name = meta("LicenseShortName", 100) or meta("UsageTerms", 100)
+        license_url = meta("LicenseUrl", 500)
+        source_page = str(info.get("descriptionurl") or page.get("canonicalurl") or "")
+        media_url = str(info.get("url") or "")
+        preview_url = str(info.get("thumburl") or (media_url if is_image else ""))
+        if not media_url or not source_page or not preview_url:
+            continue
+        author = meta("Artist", 250) or str(info.get("user", ""))[:250]
+        items.append({
+            "id": "commons-" + str(page.get("pageid", "")),
+            "provider": "commons",
+            "title": _plain(str(page.get("title", "Untitled file")).removeprefix("File:"), 240),
+            "description": meta("ImageDescription", 360),
+            "kind": "image" if is_image else "video",
+            "mime_type": mime,
+            "preview_url": preview_url,
+            "asset_url": media_url if is_video else preview_url,
+            "source_page": source_page,
+            "attribution": author,
+            "license": license_name or "Licence metadata not found — verify before use",
+            "license_url": license_url,
+            "rights_verified": bool(license_name and license_url),
+            "duration": 0,
+        })
+    return items[:limit]
+
+
+def _pexels_search(query: str, kind: str, limit: int, api_key: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if kind in {"image", "any"}:
+        params = urllib.parse.urlencode({"query": query, "per_page": str(limit), "orientation": "landscape"})
+        photos = _read_json(
+            "https://api.pexels.com/v1/search?" + params,
+            headers={"Authorization": api_key},
+        ).get("photos", [])
+        if isinstance(photos, list):
+            for photo in photos:
+                if not isinstance(photo, dict) or not isinstance(photo.get("src"), dict):
+                    continue
+                src = photo["src"]
+                preview = str(src.get("medium") or src.get("large") or "")
+                if not preview:
+                    continue
+                items.append({
+                    "id": "pexels-photo-" + str(photo.get("id", "")),
+                    "provider": "pexels",
+                    "title": _plain(photo.get("alt") or f"Photo by {photo.get('photographer', 'Pexels contributor')}", 240),
+                    "description": _plain(photo.get("alt", ""), 360),
+                    "kind": "image",
+                    "mime_type": "image/jpeg",
+                    "preview_url": preview,
+                    "asset_url": preview,
+                    "source_page": str(photo.get("url") or "https://www.pexels.com/"),
+                    "attribution": _plain(photo.get("photographer", ""), 180),
+                    "license": "Pexels License — review current licence terms",
+                    "license_url": "https://www.pexels.com/license/",
+                    "rights_verified": True,
+                    "duration": 0,
+                })
+    if kind in {"video", "any"} and len(items) < limit:
+        params = urllib.parse.urlencode({"query": query, "per_page": str(limit - len(items)})
+        videos = _read_json(
+            "https://api.pexels.com/v1/videos/search?" + params,
+            headers={"Authorization": api_key},
+        ).get("videos", [])
+        if isinstance(videos, list):
+            for video in videos:
+                if not isinstance(video, dict):
+                    continue
+                files = video.get("video_files")
+                if not isinstance(files, list):
+                    continue
+                usable = [
+                    f for f in files
+                    if isinstance(f, dict)
+                    and str(f.get("file_type", "")).lower() in {"video/mp4", "video/webm"}
+                    and isinstance(f.get("link"), str)
+                ]
+                if not usable:
+                    continue
+                usable.sort(key=lambda f: (
+                    0 if int(f.get("width") or 99999) <= 1280 else 1,
+                    abs(int(f.get("width") or 1280) - 960),
+                ))
+                selected = usable[0]
+                preview = str(video.get("image") or "")
+                if not preview:
+                    continue
+                items.append({
+                    "id": "pexels-video-" + str(video.get("id", "")),
+                    "provider": "pexels",
+                    "title": f"Pexels video {video.get('id', '')}",
+                    "description": "Stock video clip; inspect its content before using it.",
+                    "kind": "video",
+                    "mime_type": str(selected.get("file_type") or "video/mp4"),
+                    "preview_url": preview,
+                    "asset_url": str(selected["link"]),
+                    "source_page": str(video.get("url") or "https://www.pexels.com/videos/"),
+                    "attribution": _plain(video.get("user", {}).get("name", "") if isinstance(video.get("user"), dict) else "", 180),
+                    "license": "Pexels License — review current licence terms",
+                    "license_url": "https://www.pexels.com/license/",
+                    "rights_verified": True,
+                    "duration": max(0, int(video.get("duration") or 0)),
+                })
+    return items[:limit]
+
+
+def search_creative_assets(
+    query: Any,
+    *,
+    provider: Any = "commons",
+    kind: Any = "any",
+    limit: Any = 10,
+    environ: Any = None,
+) -> dict[str, Any]:
+    """Search bounded public assets and return normalized source/licence metadata."""
+    q = _safe_text(query, "Search query", MAX_QUERY_CHARS, required=True)
+    provider = _safe_text(provider, "Provider", 30, required=True).lower()
+    kind = _safe_text(kind, "Asset type", 20, required=True).lower()
+    if provider not in {"commons", "pexels", "pinterest"}:
+        raise CreativeAssetError("Choose Wikimedia Commons, configured Pexels, or Pinterest references.")
+    if kind not in {"any", "image", "video"}:
+        raise CreativeAssetError("Asset type must be any, image or video.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_RESULTS:
+        raise CreativeAssetError(f"Result limit must be between 1 and {MAX_RESULTS}.")
+    env = os.environ if environ is None else environ
+    if provider == "pinterest":
+        search_url = "https://www.pinterest.com/search/pins/?" + urllib.parse.urlencode({"q": q})
+        return {
+            "ok": True, "provider": "pinterest", "query": q, "items": [],
+            "manual_reference_only": True, "search_url": search_url,
+            "note": (
+                "Pinterest is opened as a user-directed reference search. This app does not scrape Pinterest "
+                "or automatically download Pins; use assets only when you have permission to reuse them."
+            ),
+        }
+    if provider == "pexels":
+        api_key = str(env.get("PEXELS_API_KEY", "")).strip()
+        if not api_key:
+            raise CreativeAssetError("Pexels is not configured yet. Add PEXELS_API_KEY as a server-side secret, or use Wikimedia Commons.")
+        items = _pexels_search(q, kind, limit, api_key)
+    else:
+        items = _commons_search(q, kind, limit)
+    return {
+        "ok": True, "provider": provider, "query": q, "items": items[:limit],
+        "count": min(len(items), limit),
+        "note": (
+            "Search metadata is not visual verification. Confirm each result actually matches the scene. "
+            "Only results with a known licence and licence URL are eligible for automatic selection."
+        ),
+    }
+
+
+class _AllowedRedirects(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allowed_hosts: frozenset[str]) -> None:
+        super().__init__()
+        self.allowed_hosts = allowed_hosts
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_download_url(newurl, self.allowed_hosts)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _validate_download_url(url: Any, allowed_hosts: frozenset[str]) -> urllib.parse.ParseResult:
+    if not isinstance(url, str) or len(url) > 3000:
+        raise CreativeAssetError("Asset URL is invalid.")
+    parsed = urllib.parse.urlparse(url)
+    if (
+        parsed.scheme != "https" or not parsed.hostname
+        or parsed.hostname.lower() not in allowed_hosts
+        or parsed.username or parsed.password
+        or parsed.port not in {None, 443}
+        or parsed.fragment
+    ):
+        raise CreativeAssetError("Downloads are restricted to the selected asset provider's official media hosts.")
+    return parsed
+
+
+def download_creative_asset(
+    url: Any,
+    *,
+    provider: Any,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
+) -> tuple[bytes, str, str]:
+    """Download one chosen search result from an allowlisted HTTPS host only."""
+    name = _safe_text(provider, "Provider", 30, required=True).lower()
+    if name not in _ALLOWED_DOWNLOAD_HOSTS:
+        raise CreativeAssetError("Only licence-aware Commons or configured Pexels results may be downloaded directly.")
+    allowed = _ALLOWED_DOWNLOAD_HOSTS[name]
+    parsed = _validate_download_url(url, allowed)
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 1024 <= max_bytes <= MAX_DOWNLOAD_BYTES:
+        raise CreativeAssetError("Invalid asset download size limit.")
+    request = urllib.request.Request(
+        urllib.parse.urlunparse(parsed),
+        headers={"User-Agent": _USER_AGENT, "Accept": "image/*,video/mp4,video/webm"},
+        method="GET",
+    )
+    opener = urllib.request.build_opener(_AllowedRedirects(allowed))
+    try:
+        with opener.open(request, timeout=20) as response:
+            _validate_download_url(response.geturl(), allowed)
+            content_type = str(response.headers.get_content_type() or "").lower()
+            length_header = response.headers.get("Content-Length", "")
+            try:
+                advertised_length = int(length_header)
+            except (TypeError, ValueError):
+                advertised_length = 0
+            if advertised_length > max_bytes:
+                raise CreativeAssetError("The selected asset exceeds the 24 MB import limit.")
+            data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise CreativeAssetError("The selected asset exceeds the 24 MB import limit.")
+    except CreativeAssetError:
+        raise
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403, 404}:
+            raise CreativeAssetError("The asset host would not provide this file. Open the source page to check it.") from exc
+        raise CreativeAssetError(f"The asset host returned HTTP {exc.code}.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise CreativeAssetError("Could not download that asset from the source host.") from exc
+    if content_type not in _ALLOWED_MIME:
+        suffix = PurePosixPath(parsed.path).suffix.lower()
+        extension_mime = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+            ".webp": "image/webp", ".avif": "image/avif",
+            ".mp4": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg",
+        }
+        content_type = extension_mime.get(suffix, "")
+    if content_type not in _ALLOWED_MIME or not data:
+        raise CreativeAssetError("The source did not return a supported image or video file.")
+    filename = PurePosixPath(parsed.path).name[:180] or ("asset.mp4" if content_type.startswith("video/") else "asset.jpg")
+    return data, content_type, filename
