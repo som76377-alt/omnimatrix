@@ -27,6 +27,18 @@ Routes: `POST /api/creative/production/plan` creates a plan; `GET /api/creative/
 
 Honest limit: this checkpoint implements shared coordination and durable task state, not autonomous invocation of separate specialist models. All tasks start as planned; no model/tool runs or paid requests are triggered by plan creation. Blender and independent visual QA remain unavailable until their adapters are implemented and tested.
 
+## Checkpoint 5 — coordinated-workflow integration gates
+
+The regression suite in `tests/test_coordinated_agent_workflows.py` now exercises the shared manifest as a single workflow contract:
+
+- Independent research and asset-scout tasks can both become ready after their common prerequisite succeeds, and can hold running state at the same time without sharing ownership.
+- An attempted output handoff to another task's artifact is rejected without changing the persisted manifest.
+- A failed upstream handoff blocks dependent work visibly; a repaired upstream task only unlocks descendants after it succeeds.
+- Paid creative tools remain excluded in zero-cost mode and require the server-side gate, explicit per-request consent, and a separate cost acknowledgement.
+- Even if every worker reports success, or a worker tries to set the release gate itself, the final output remains awaiting independent verification. A failed final QA task leaves the release blocked.
+
+This checkpoint validates task-state coordination and failure reporting; it does not add autonomous agent dispatch or claim that the tests generated a real video. Independent final visual/audio review, live deployed-render verification, and target-device smoke testing remain separate gates. The branch must pass CI before merge.
+
 ## Current milestone
 
 This is the first creative-production milestone inside Omnitrix. The editor is a separate page at `webapp/creative-studio.html`, designed for phone-first use as well as desktop.
