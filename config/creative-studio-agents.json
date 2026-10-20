@@ -12,7 +12,10 @@
     "prompt_to_video_must_not_search_assets": true,
     "prompt_to_video_must_not_generate_still_images_as_video_substitute": true,
     "rendered_video_visual_review_required_for_final_status": true,
-    "block_low_fidelity_human_animal_output": true
+    "block_low_fidelity_human_animal_output": true,
+    "human_subject_renderer": "webapp/code-3d-character-renderer.js",
+    "human_renderer_status": "procedural_3d_not_photorealistic_requires_visual_review",
+    "unsupported_animal_subjects": "block_without_placeholder"
   },
   "agents": [
     {
@@ -94,14 +97,17 @@
         "compose text overlays",
         "apply supported pan and zoom presets",
         "record a local WebM draft",
-        "run the code-first render and require actual encoded-file technical QA before import"
+        "run the code-first render and require actual encoded-file technical QA before import",
+        "route human briefs to the procedural Three.js code renderer",
+        "require rendered-frame visual review before artistic approval"
       ],
       "cannot": [
         "edit original source files destructively",
         "claim support for unimplemented effects",
         "silently use paid compute",
         "use online assets or generated still images as a substitute for code-authored video scenes",
-        "mark a render as visually approved without a frame-level visual critique"
+        "mark a render as visually approved without a frame-level visual critique",
+        "claim the procedural 3D character is photorealistic without evidence"
       ]
     },
     {
