@@ -116,5 +116,5 @@ def run_ffmpeg(arguments: list[str], *, timeout_seconds: int = 60) -> subprocess
         raw_stderr = stderr_file.read(64 * 1024 + 1)
         stderr_text = raw_stderr[:64 * 1024].decode("utf-8", errors="replace")
         if len(raw_stderr) > 64 * 1024:
-            stderr_text += "\\n[FFmpeg stderr truncated]"
+            stderr_text += "\n[FFmpeg stderr truncated]"
         return subprocess.CompletedProcess(completed.args, completed.returncode, "", stderr_text)
