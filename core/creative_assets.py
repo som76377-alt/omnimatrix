@@ -417,6 +417,11 @@ def search_creative_assets(
         }
     searched_queries = [q]
     if provider == "google":
+        if not str(env.get("GOOGLE_CSE_API_KEY", "")).strip() or not str(env.get("GOOGLE_CSE_CX", "")).strip():
+            search_url = "https://www.google.com/search?" + urllib.parse.urlencode({"tbm": "isch", "q": q})
+            return {"ok": True, "provider": "google", "query": q, "items": [], "count": 0,
+                    "manual_reference_only": True, "search_url": search_url,
+                    "note": "Google's image-search API is unavailable to new customers. Open Google Images, choose an image, copy its direct image address, and import it below. Direct imports are unverified and intended for private drafts until rights are checked."}
         items = _google_images_search(q, limit, env)
     elif provider == "pexels":
         api_key = str(env.get("PEXELS_API_KEY", "")).strip()
@@ -491,7 +496,7 @@ def download_creative_asset(
 ) -> tuple[bytes, str, str]:
     """Download one chosen search result from an allowlisted HTTPS host only."""
     name = _safe_text(provider, "Provider", 30, required=True).lower()
-    if name == "google":
+    if name in {"google", "web"}:
         parsed = _validate_public_image_url(url)
         allowed = None
     else:
@@ -501,11 +506,11 @@ def download_creative_asset(
         parsed = _validate_download_url(url, allowed)
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 1024 <= max_bytes <= MAX_DOWNLOAD_BYTES:
         raise CreativeAssetError("Invalid asset download size limit.")
-    request = urllib.request.Request(urllib.parse.urlunparse(parsed), headers={"User-Agent": _USER_AGENT, "Accept": "image/*" if name == "google" else "image/*,video/mp4,video/webm"}, method="GET")
-    opener = urllib.request.build_opener(_PublicImageRedirects() if name == "google" else _AllowedRedirects(allowed))
+    request = urllib.request.Request(urllib.parse.urlunparse(parsed), headers={"User-Agent": _USER_AGENT, "Accept": "image/*" if name in {"google", "web"} else "image/*,video/mp4,video/webm"}, method="GET")
+    opener = urllib.request.build_opener(_PublicImageRedirects() if name in {"google", "web"} else _AllowedRedirects(allowed))
     try:
         with opener.open(request, timeout=20) as response:
-            if name == "google":
+            if name in {"google", "web"}:
                 _validate_public_image_url(response.geturl())
             else:
                 _validate_download_url(response.geturl(), allowed)
@@ -536,7 +541,7 @@ def download_creative_asset(
             ".mp4": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg",
         }
         content_type = extension_mime.get(suffix, "")
-    if name == "google" and not content_type.startswith("image/"):
+    if name in {"google", "web"} and not content_type.startswith("image/"):
         raise CreativeAssetError("Google Images import only accepts image files, not videos or other content.")
     if content_type not in _ALLOWED_MIME or not data:
         raise CreativeAssetError("The source did not return a supported image or video file.")
