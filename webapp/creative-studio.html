@@ -48,7 +48,7 @@
         <label for="creative-brief">DIRECTOR'S BRIEF</label>
         <textarea id="creative-brief" rows="2" maxlength="4000" placeholder="Describe the video you want, the role of your references, mood, pacing and intended result…"></textarea>
         <p id="agent-state">Describe the result. Omnitrix will research available media, assemble a draft and render it. Advanced controls stay out of the way. Post-render visual criticism is not yet available on the native path.</p>
-        <p class="ai-use-note">When configured, Create Video may generate an original image and send small preview frames for AI review. Provider quota or charges may apply; original media stays on this device.</p>
+        <p class="ai-use-note">Create Video starts with original graphics and attempts one image from the configured image model. The video itself is rendered locally as WebM; this is not a generative text-to-video model. Image generation needs a working server-side model key. Online media is optional.</p>
         <p id="online-asset-status" class="online-asset-status" role="status" aria-live="polite">Ready when you are.</p>
       </div>
       <div class="brief-actions">
@@ -119,7 +119,8 @@
             </div>
             <div class="online-search-controls">
             <input id="online-asset-query" type="search" maxlength="180" placeholder="Search scenes, objects, science…" aria-label="Search online visual assets">
-            <select id="online-asset-provider" aria-label="Online asset source">
+            <select id="online-asset-provider" aria-label="Creation/source mode">
+              <option value="original" selected>Original graphics + AI image generation (default)</option>
               <option value="commons">Wikimedia Commons · open licence metadata</option>
               <option value="google">Google Images · search and import for private drafts</option>
               <option value="pexels">Pexels · needs server API key</option>
