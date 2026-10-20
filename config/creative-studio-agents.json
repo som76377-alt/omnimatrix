@@ -50,6 +50,31 @@
       ]
     },
     {
+      "id": "visual-search-planner",
+      "label": "Visual search query planner",
+      "status": "integrated-deterministic-fallback",
+      "implementation": "core/creative_search_planner.py + webapp/creative-studio.js",
+      "model_required": false,
+      "responsibilities": [
+        "remove production-instruction noise from a visual brief",
+        "produce multiple concise subject/action/object query variants",
+        "prioritise the most specific query and broader concept phrases",
+        "return attempted-query metadata so poor search can be diagnosed"
+      ],
+      "limitations": [
+        "this is deterministic phrase decomposition, not an LLM semantic planner",
+        "it does not visually inspect results or guarantee semantic relevance",
+        "Google Images remains reference-link based for new API customers",
+        "Pinterest remains reference-link only until OAuth and approved API access exist"
+      ],
+      "release_gate": [
+        "query-variant tests for action prompts and science prompts",
+        "deduplication across provider searches",
+        "honest search query reporting",
+        "eventual scene-level search plans from the shared production manifest"
+      ]
+    },
+    {
       "id": "timeline-executor",
       "label": "Timeline executor",
       "status": "active-local",
@@ -181,5 +206,11 @@
         "guarantee visual quality or eliminate every form of AI slop"
       ]
     }
-  ]
+  ],
+  "coordination_contract": {
+    "source_of_truth": "config/creative-production-contract.json",
+    "status": "contract-defined-runtime-enforcement-pending",
+    "rule": "Specialist labels must not imply independent execution. The target runtime uses one shared production manifest with stable artifact IDs, scoped ownership, dependency edges, and a task ledger.",
+    "runtime_enforced": false
+  }
 }
