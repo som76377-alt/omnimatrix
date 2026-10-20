@@ -4151,13 +4151,15 @@
           // The full prompt is passed in same-tab session storage, not in a query string.
           window.history.replaceState(null, "", window.location.pathname);
           // A chat prompt never authorizes a paid provider call. Human-motion
-          // requests are held for explicit paid-video consent; the default
-          // original-graphics flow does not search or download web assets.
+          // requests use the free local rig by default; realistic footage and
+          // generated speech remain a separate, explicitly approved paid option.
           if (needsDirectAiVideo(inboundBrief)) {
-            onlineStatus("Prompt received. This needs actual movement and audio, not a still-image slideshow. No web search or paid model call was started; approve the estimated cost above to generate the clip.", "");
-          } else {
-            state.autoRenderOnAssembly = true;
+            onlineStatus("Prompt received. Creating a stylised rigged 2D character locally. This is not photorealistic footage and does not add spoken audio. No paid model request or web asset download will start.", "");
+          }
+          state.autoRenderOnAssembly = true;
+          try {
             await buildDraftFromBrief();
+          } finally {
             state.autoRenderOnAssembly = false;
           }
         }

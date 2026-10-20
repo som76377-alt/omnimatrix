@@ -118,6 +118,14 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertNotIn('if ($("auto-creative-consent").checked) {\\n      try {\\n        onlineStatus("No suitable source media.', fallback)
 
 
+    def test_chat_human_motion_prompt_uses_local_rig_without_paid_provider_call(self):
+        inbound = self.studio_js.split('if (inboundBrief) {', 1)[1].split('const storedCount = state.assets.length;', 1)[0]
+        self.assertIn("Creating a stylised rigged 2D character locally", inbound)
+        self.assertIn("await buildDraftFromBrief()", inbound)
+        self.assertIn("finally", inbound)
+        self.assertNotIn("approve the estimated cost above to generate the clip", inbound)
+        self.assertIn("generateDirectAiVideo", self.studio_js)
+
     def test_human_motion_or_dialogue_uses_stylised_local_action_and_keeps_paid_option(self):
         self.assertIn("function needsDirectAiVideo(brief)", self.studio_js)
         self.assertIn("The free local route will draw a stylised animated character", self.studio_js)
