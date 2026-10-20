@@ -64,7 +64,7 @@ class SingleAttachmentWorkflowTests(unittest.TestCase):
         self.assertIn("OCR text only", result["context"])
         self.assertIn("not full multimodal understanding", result["context"].lower())
         self.assertEqual([x.value for x in execute.call_args_list[1].args[0].required_capabilities], ["ocr"])
-        self.assertEqual(execute.call_args_list[2].kwargs["privacy_tier"], "local")
+        self.assertEqual(execute.call_args_list[1].kwargs["privacy_tier"], "local")
 
     def test_audio_uses_local_transcription_as_limited_fallback(self):
         record = dict(self.record, name="clip.wav", mime_type="audio/wav")
