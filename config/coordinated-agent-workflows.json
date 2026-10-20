@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "science_diagram_ui_integrated_full_team_orchestration_pending",
+  "status": "shared-manifest-and-task-state-api-integrated_agent_dispatch_pending",
   "default_spend_mode": "zero_cost",
   "orchestrator_owns": [
     "user_objective",
@@ -291,6 +291,10 @@
     "shared_manifest_enforced_for_all_production_roles": false,
     "persistent_job_queue_and_background_worker": false,
     "independent_visual_critic": false,
-    "deployed_manim_render_verified": false
+    "deployed_manim_render_verified": false,
+    "shared_manifest_enforced": true,
+    "persisted_production_job_api": true,
+    "specialist_dispatch": false,
+    "note": "The shared manifest now persists scene assignments, task dependencies, exclusive artifact ownership, worker handoff revisions and unverified artifact references through authenticated plan/status/task-update routes. These routes coordinate and record work; they do not automatically invoke separate specialist models or mark final output verified."
   }
 }

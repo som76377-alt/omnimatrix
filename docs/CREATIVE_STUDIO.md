@@ -19,6 +19,14 @@ The authenticated `GET /api/creative/tools` endpoint returns a registry snapshot
 
 Cline is represented as an external coding-agent client, not as a model or an automatically available API-free coder. Ollama is a local inference option with no per-token provider fee after model download, but it requires a separately running service and host resources. Its endpoint/model configuration remains unverified until an actual health check is implemented. Blender, FFmpeg and Manim are not called integrated merely because they appear in the catalogue.
 
+## Checkpoint 4 — shared production orchestration
+
+An authenticated production API now creates one persisted job manifest shared by the director, researcher, asset scout, graphics engineer, scene renderer(s), compositor and critic. It assigns a single owner to every task and output artifact, declares scene IDs and renderer choices, reuses stable asset IDs, and records dependencies. Optional graphics-overlay work is created only when a scene explicitly requests overlays and is skipped for Manim scenes so the renderer keeps ownership of the core scientific diagram.
+
+Routes: `POST /api/creative/production/plan` creates a plan; `GET /api/creative/production/jobs/{job_id}` reads the same persisted manifest; `POST /api/creative/production/jobs/{job_id}/tasks/{task_id}` records a task handoff. Task starts require the current manifest revision and successful dependencies. Success requires evidence plus exactly the artifacts owned by that task. Handoffs never change `verified` to true; the release gate remains closed until independent verification exists. The API is authenticated and uses atomic file replacement for persisted snapshots.
+
+Honest limit: this checkpoint implements shared coordination and durable task state, not autonomous invocation of separate specialist models. All tasks start as planned; no model/tool runs or paid requests are triggered by plan creation. Blender and independent visual QA remain unavailable until their adapters are implemented and tested.
+
 ## Current milestone
 
 This is the first creative-production milestone inside Omnitrix. The editor is a separate page at `webapp/creative-studio.html`, designed for phone-first use as well as desktop.
