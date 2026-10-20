@@ -75,8 +75,21 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         fallback = self.studio_js.split("async function assembleOriginalGraphicFallback(brief)", 1)[1].split("\\n  function renderAssets()", 1)[0]
         self.assertIn("await requestGeneratedImage(brief)", fallback)
         self.assertIn("await renderVideo()", fallback)
-        self.assertIn("this is not a generative text-to-video model", self.studio_html.lower())
+        self.assertIn("real generated mp4 with movement and audio", self.studio_html.lower())
+        self.assertIn('id="paid-video-consent"', self.studio_html)
+        self.assertIn('id="generate-ai-video"', self.studio_html)
+        self.assertIn('"/api/mobile/creative/generate-video"', self.studio_js)
+        self.assertIn('paid_cost_acknowledged: true', self.studio_js)
+        self.assertIn("needsDirectAiVideo", self.studio_js)
         self.assertNotIn('if ($("auto-creative-consent").checked) {\\n      try {\\n        onlineStatus("No suitable source media.', fallback)
 
-if __name__ == "__main__":
+
+    def test_human_motion_or_dialogue_routes_to_actual_video_not_vector_cards(self):
+        self.assertIn("function needsDirectAiVideo(brief)", self.studio_js)
+        self.assertIn('onlineStatus("This prompt needs genuine moving people/animals or spoken dialogue.', self.studio_js)
+        self.assertIn('if (needsDirectAiVideo(brief))', self.studio_js)
+        self.assertIn('generateDirectAiVideo(requestedBrief)', self.studio_js)
+        self.assertIn('await renderVideo()', self.studio_js)
+        self.assertIn('No web search or download will run.', self.studio_js)
+\nif __name__ == "__main__":
     unittest.main()
