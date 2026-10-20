@@ -83,7 +83,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         rig = self.studio_js[start:end]
         for action in ("wave", "run", "walk", "dance", "jump", "nod", "idle"):
             self.assertIn('"' + action + '"', rig)
-        for invariant in ("const child=", "const leftElbow=", "const rightElbow=", "const leftWrist=", "const rightWrist=", "const leftKnee=", "const rightKnee=", "function limb(", "function joint(", 'g.fillText("Hi!", bubbleX, bubbleY)'):
+        for invariant in ("const child=", "const leftElbow=", "const rightElbow=", "leftWrist=child(", "const rightWrist=", "const leftKnee=", "const rightKnee=", "const limb=", "const joint=", 'g.fillText("Hi!", bubbleX, bubbleY)'):
             self.assertIn(invariant, rig)
         self.assertIn("drawRiggedHuman(g, brief, elapsed, duration, width, height)", self.studio_js)
         self.assertIn("floorY - (127 + lift) * unit", rig)

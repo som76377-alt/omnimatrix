@@ -476,7 +476,7 @@
     g.save();g.globalAlpha=jump?0.3-Math.max(0,swing)*0.14:0.36;ellipse(ox,floorY+4*unit,jump?43:52,6,"#050705",0);g.restore();
 
     // Back-to-front layer order: legs, rear arm, torso, raised arm, head and hands.
-    const stride=walk?.46:run?.76:dance?.48:0;
+    const stride = walk ? 0.46 : run ? 0.76 : dance ? 0.48 : 0;
     const leftLegAngle=.05+swing*stride,rightLegAngle=-.05+opposite*stride;
     const leftKnee=child(leftHip,leftLegAngle,58),rightKnee=child(rightHip,rightLegAngle,58);
     const leftAnkle=child(leftKnee,leftLegAngle*.35-Math.max(0,swing)*stride*.22,61);
@@ -518,7 +518,7 @@
     g.quadraticCurveTo(head.x+22*unit,head.y-39*unit,head.x+27*unit,head.y-14*unit);
     g.lineTo(head.x+17*unit,head.y-9*unit);g.lineTo(head.x+10*unit,head.y-19*unit);
     g.lineTo(head.x-unit,head.y-10*unit);g.lineTo(head.x-13*unit,head.y-16*unit);g.closePath();g.fill();
-    const eyeY=head.y+2*unit,blink=Math.sin(t*1.7+.3)>.992,eyeH=blink?.7:2.2;
+    const eyeY=head.y+2*unit,blink=Math.sin(t*1.7+.3)>.992,eyeH=blink ? 0.7 : 2.2;
     ellipse(head.x-9*unit,eyeY,2.3,eyeH,ink,0);ellipse(head.x+9*unit,eyeY,2.3,eyeH,ink,0);
     line({x:head.x-14*unit,y:head.y-4*unit},{x:head.x-5*unit,y:head.y-5*unit},skinShade,1.5);
     line({x:head.x+5*unit,y:head.y-5*unit},{x:head.x+14*unit,y:head.y-4*unit},skinShade,1.5);
