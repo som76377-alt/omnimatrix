@@ -72,6 +72,44 @@ def _identifier(value: Any, name: str) -> str:
     return value
 
 
+def _jpeg_dimensions(image: bytes) -> tuple[int, int] | None:
+    """Read JPEG frame dimensions without decoding pixels or adding a dependency."""
+    if not image.startswith(b"\xff\xd8"):
+        return None
+    index = 2
+    start_of_frame = {
+        0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+        0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
+    }
+    while index + 4 <= len(image):
+        if image[index] != 0xFF:
+            index += 1
+            continue
+        while index < len(image) and image[index] == 0xFF:
+            index += 1
+        if index >= len(image):
+            break
+        marker = image[index]
+        index += 1
+        if marker in {0xD8, 0xD9, 0x01} or 0xD0 <= marker <= 0xD7:
+            continue
+        if index + 2 > len(image):
+            break
+        segment_length = int.from_bytes(image[index:index + 2], "big")
+        if segment_length < 2 or index + segment_length > len(image):
+            break
+        if marker in start_of_frame:
+            if segment_length < 7:
+                return None
+            height = int.from_bytes(image[index + 3:index + 5], "big")
+            width = int.from_bytes(image[index + 5:index + 7], "big")
+            return (width, height) if width > 0 and height > 0 else None
+        if marker == 0xDA:
+            break
+        index += segment_length
+    return None
+
+
 def _decode_preview(value: Any, index: int) -> bytes:
     if not isinstance(value, str) or len(value) > ((MAX_PREVIEW_BYTES * 4 // 3) + 128):
         raise CreativeDirectorError(f"Preview {index + 1} is too large.")
@@ -88,6 +126,12 @@ def _decode_preview(value: Any, index: int) -> bytes:
         raise CreativeDirectorError(f"Preview {index + 1} exceeds the {MAX_PREVIEW_BYTES // 1024} KiB limit.")
     if not decoded.startswith(b"\xff\xd8\xff"):
         raise CreativeDirectorError(f"Preview {index + 1} is not a JPEG image.")
+    dimensions = _jpeg_dimensions(decoded)
+    if dimensions is None:
+        raise CreativeDirectorError(f"Preview {index + 1} has no readable JPEG dimensions.")
+    width, height = dimensions
+    if width > 360 or height > 220:
+        raise CreativeDirectorError(f"Preview {index + 1} must be a resized thumbnail no larger than 360 × 220 pixels.")
     return decoded
 
 
