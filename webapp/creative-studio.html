@@ -136,8 +136,7 @@
             <input id="auto-creative-consent" type="checkbox">
             <span><strong>Optional: let the Director + graphics engineer finish and check this draft.</strong> For this run only, I authorise sending up to four resized source-preview thumbnails and, after export, up to four small frames from the actual rendered WebM to the configured visual model. Original media files are not uploaded. The model may propose validated edits, and Omnitrix may apply one bounded correction pass and re-render once. This is the same model role, not an independent second opinion. Provider quotas or charges may apply; I will inspect the final file before publishing.</span>
           </label>
-          <p class="online-asset-note">Auto-assembly only uses results with identifiable licence metadata. Search results are not visual proof; inspect the preview and source. Pinterest is for reference discovery only here: Omnitrix will not scrape Pins or assume their images are reusable.</p>
-          <p class="online-asset-note">Google Images opens a reference search only; results are not automatically imported. Omnitrix imports from supported providers and keeps source details where available.</p>
+          <p class="online-asset-note">Google Images is a reference fallback, not an automatic import source. Commons assets with incomplete rights metadata may be used in a private draft, but that does not grant permission to publish them.</p>
           <div class="online-asset-results" id="online-asset-results"></div>
           </details>
         </section>
@@ -280,13 +279,15 @@
           <div><span>VIDEO LENGTH</span><strong id="export-length">00:00</strong></div>
           <div><span>EXECUTION</span><strong>ON THIS DEVICE</strong></div>
         </div>
+        <details class="agent-diagnostics"><summary>Agent status and technical details</summary>
         <div class="agent-status-grid">
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Media librarian</strong><small>Local metadata and thumbnails</small></div><span class="agent-label">ACTIVE</span></div>
           <div class="agent-status"><span class="agent-indicator live"></span><div><strong>Timeline executor</strong><small>Reversible local edit operations</small></div><span class="agent-label">ACTIVE</span></div>
           <div class="agent-status"><span id="visual-analyst-indicator" class="agent-indicator pending"></span><div><strong>Visual analyst</strong><small id="visual-analyst-detail">Selected preview analysis; requires a configured provider</small></div><span id="visual-analyst-status" class="agent-label pending-text">CHECKING</span></div>
           <div class="agent-status"><span id="director-indicator" class="agent-indicator pending"></span><div><strong>Director / critic</strong><small id="director-detail">Creates a schema-checked proposal; not a post-render critic</small></div><span id="director-status" class="agent-label pending-text">NOT CONNECTED</span></div>
         </div>
-        <p class="export-note">The browser render is a useful first export path, not a replacement for a full workstation engine. Dedicated music/narration tracks, advanced masking, generative object changes and cloud rendering are later phases. No media is uploaded for AI analysis unless you explicitly approve selected resized previews in AI direction; provider quota or charges may apply.</p>
+        <p class="export-note">This browser renderer is the local first-export path. Dedicated audio tracks, advanced masking, generative object changes and cloud rendering are later phases. AI review needs a configured provider and explicit per-run consent; provider quota or charges may apply.</p>
+        </details>
         <div class="export-actions">
           <button class="button primary" id="render-video-bottom">RENDER CURRENT SEQUENCE ↗</button>
           <button class="button quiet" id="download-manifest">DOWNLOAD EDIT MANIFEST</button>
