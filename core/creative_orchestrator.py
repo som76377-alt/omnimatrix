@@ -333,6 +333,8 @@ def update_shared_production_task(
         raise ProductionContractError("Unsupported task state.")
     with _LOCK:
         plan, path = _load(job_id, root)
+        if isinstance(payload.get("manifest_revision"), bool) or payload.get("manifest_revision") != plan["revision"]:
+            raise ProductionContractError("Manifest revision mismatch; reload the shared plan before updating task state.")
         task_map = {task["task_id"]: task for task in plan["tasks"]}
         task = task_map.get(target)
         if task is None:
@@ -340,12 +342,11 @@ def update_shared_production_task(
         current = task["status"]
         if state != current and state not in _TRANSITIONS[current]:
             raise ProductionContractError("Invalid task transition: " + current + " -> " + state + ".")
+        if state == "ready" and any(task_map[dep]["status"] != "succeeded" for dep in task["depends_on"]):
+            raise ProductionContractError("A task cannot become ready until every dependency has succeeded.")
         if state == "running":
             if any(task_map[dep]["status"] != "succeeded" for dep in task["depends_on"]):
                 raise ProductionContractError("A task cannot run until every dependency has succeeded.")
-            revision = payload.get("manifest_revision")
-            if revision != plan["revision"]:
-                raise ProductionContractError("Manifest revision mismatch; reload the shared plan before starting work.")
         if state == "succeeded":
             if current != "running":
                 raise ProductionContractError("A task must be running before it can succeed.")
@@ -372,7 +373,10 @@ def update_shared_production_task(
                     raise ProductionContractError("A task may report only artifacts it owns.")
                 artifact["uri"] = uri
                 artifact["kind"] = _text(output.get("kind", "worker-output"), "artifact kind", 80, True)
-                artifact["sha256"] = _text(output.get("sha256", ""), "artifact sha256", 64)
+                digest = _text(output.get("sha256", ""), "artifact sha256", 64)
+                if digest and not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+                    raise ProductionContractError("artifact sha256 must be a 64-character hexadecimal digest.")
+                artifact["sha256"] = digest.lower() if digest else None
                 artifact["verified"] = False
                 artifact["verification_status"] = "reported-unverified"
             if actual != expected:

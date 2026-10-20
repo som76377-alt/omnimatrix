@@ -48,7 +48,7 @@ class SharedCreativeOrchestratorTests(unittest.TestCase):
         self.create()
         with self.assertRaisesRegex(ProductionContractError, "dependencies"):
             update_shared_production_task("job-test", "director-01",
-                {"state": "running", "manifest_revision": 1}, root=self.root)
+                {"state": "ready", "manifest_revision": 1}, root=self.root)
         with self.assertRaisesRegex(ProductionContractError, "revision mismatch"):
             update_shared_production_task("job-test", "intent-01",
                 {"state": "running", "manifest_revision": 99}, root=self.root)
@@ -63,12 +63,12 @@ class SharedCreativeOrchestratorTests(unittest.TestCase):
             {"state": "running", "manifest_revision": 1}, root=self.root)
         with self.assertRaisesRegex(ProductionContractError, "evidence"):
             update_shared_production_task("job-test", "intent-01",
-                {"state": "succeeded", "evidence": [], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief"}]}, root=self.root)
+                {"state": "succeeded", "manifest_revision": 2, "evidence": [], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief"}]}, root=self.root)
         with self.assertRaisesRegex(ProductionContractError, "owns"):
             update_shared_production_task("job-test", "intent-01",
-                {"state": "succeeded", "evidence": ["brief written"], "outputs": [{"artifact_id": "scene_plan", "uri": "artifact://scene"}]}, root=self.root)
+                {"state": "succeeded", "manifest_revision": 2, "evidence": ["brief written"], "outputs": [{"artifact_id": "scene_plan", "uri": "artifact://scene"}]}, root=self.root)
         plan = update_shared_production_task("job-test", "intent-01",
-            {"state": "succeeded", "evidence": ["brief artifact emitted"], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief", "kind": "json"}]}, root=self.root)
+            {"state": "succeeded", "manifest_revision": 2, "evidence": ["brief artifact emitted"], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief", "kind": "json"}]}, root=self.root)
         self.assertEqual(plan["tasks"][0]["status"], "succeeded")
         self.assertEqual(plan["tasks"][1]["status"], "ready")
         artifact = next(a for a in plan["artifact_registry"] if a["artifact_id"] == "job_brief")
@@ -98,7 +98,7 @@ class SharedCreativeOrchestratorTests(unittest.TestCase):
         update_shared_production_task("job-test", "intent-01",
             {"state": "running", "manifest_revision": 1}, root=self.root)
         plan = update_shared_production_task("job-test", "intent-01",
-            {"state": "succeeded", "evidence": ["brief"], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief"}]}, root=self.root)
+            {"state": "succeeded", "manifest_revision": 2, "evidence": ["brief"], "outputs": [{"artifact_id": "job_brief", "uri": "artifact://brief"}]}, root=self.root)
         self.assertFalse(plan["release_gate"]["final_verified"])
         self.assertEqual(plan["status"], "planned")
 
