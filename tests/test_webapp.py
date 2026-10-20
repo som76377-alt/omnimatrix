@@ -211,6 +211,30 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn("TEST_TIMEOUT_SECONDS", server)
         self.assertNotIn("shell=True", server)
 
+    def test_creative_direction_requires_explicit_consent_and_review(self):
+        self.assertIn('id="open-ai-director"', self.creative_html)
+        self.assertIn('id="ai-consent"', self.creative_html)
+        self.assertIn('id="ai-analyze"', self.creative_html)
+        self.assertIn('id="ai-plan-preview"', self.creative_html)
+        self.assertIn('id="ai-apply-plan"', self.creative_html)
+        self.assertIn('if (!$("ai-consent").checked)', self.creative_js)
+        self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
+        self.assertIn("aiTimelineSignature() !== state.creativeSnapshot", self.creative_js)
+        self.assertIn("Nothing has been edited yet.", self.creative_js)
+        self.assertIn("Only selected resized previews", self.creative_html)
+
+    def test_creative_api_is_authenticated_bounded_and_uses_shared_worker(self):
+        server = (ROOT / "interfaces/web/server.py").read_text(encoding="utf-8")
+        director = (ROOT / "core/creative_director.py").read_text(encoding="utf-8")
+        self.assertIn('route == "/api/creative/status"', server)
+        self.assertIn('route == "/api/creative/analyze"', server)
+        self.assertIn("MAX_CREATIVE_BODY_BYTES", server)
+        self.assertIn("runtime.creative_analysis_lock", server)
+        self.assertIn("from core.multimodal.workflow import analyze_multiple_attachments", director)
+        self.assertIn("used_resized_previews_only", director)
+        self.assertIn("edits_applied", director)
+        self.assertIn("Consent", director)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js not installed in this test environment")
     def test_browser_javascript_parses(self):
         for script in ("app.js", "sw.js", "creative-studio.js"):
