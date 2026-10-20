@@ -306,7 +306,26 @@
       $("upload-progress-bar").style.width = Math.round((i / accepted.length) * 100) + "%";
       $("upload-progress-text").textContent = "Preparing " + (i + 1) + " of " + accepted.length + " · " + file.name;
       try {
-        const metadata = await inspectFile(file);
+        let metadata;
+        try {
+          metadata = await inspectFile(file);
+        } catch (error) {
+          // Locally rendered WebM clips already have a known duration and a canvas-made
+          // thumbnail. Do not discard a valid render just because mobile WebView metadata
+          // probing is unreliable for a just-created MediaRecorder file.
+          if (file.type === "video/webm" && file.omnitrixThumbnail instanceof Blob &&
+              Number(file.omnitrixDuration) > 0) {
+            metadata = {
+              type: file.type,
+              width: Number(file.omnitrixWidth) || 0,
+              height: Number(file.omnitrixHeight) || 0,
+              duration: Number(file.omnitrixDuration),
+              thumb: file.omnitrixThumbnail
+            };
+          } else {
+            throw error;
+          }
+        }
         const row = {
           id: crypto.randomUUID(), name: file.name, type: metadata.type, size: file.size,
           lastModified: file.lastModified, duration: metadata.duration || 0,
@@ -553,6 +572,25 @@
       g.fillStyle = "#20231e";
       g.beginPath(); g.arc(headX + headR * 0.26, headY, Math.max(2, headR * 0.055), 0, Math.PI * 2); g.fill();
       line(headX + headR * 0.19, headY + headR * 0.35, headX + headR * 0.46, headY + headR * 0.31, "#704e3b", Math.max(1.5, scale * 2));
+      // The free route cannot embed a synthesized voice, so make the requested
+      // greeting explicit in the scene rather than implying the clip has audio.
+      const bubbleX = width * 0.68;
+      const bubbleY = height * 0.23 + Math.sin(elapsed * 2.2) * height * 0.008;
+      const bubbleW = width * 0.16;
+      const bubbleH = height * 0.095;
+      g.fillStyle = "#f1f3e8";
+      g.beginPath();
+      g.roundRect(bubbleX - bubbleW / 2, bubbleY - bubbleH / 2, bubbleW, bubbleH, Math.max(8, 14 * scale));
+      g.fill();
+      g.beginPath();
+      g.moveTo(bubbleX - bubbleW * 0.27, bubbleY + bubbleH * 0.42);
+      g.lineTo(bubbleX - bubbleW * 0.36, bubbleY + bubbleH * 0.62);
+      g.lineTo(bubbleX - bubbleW * 0.08, bubbleY + bubbleH * 0.42);
+      g.closePath(); g.fill();
+      g.fillStyle = "#20231e";
+      g.font = "700 " + Math.max(18, Math.round(height * 0.047)) + "px system-ui, sans-serif";
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText("Hi!", bubbleX, bubbleY);
       label(title, margin, Math.round(height * 0.9), 16, "#a7ad9c", 500);
       return;
     }
@@ -673,9 +711,18 @@
       if (blob.size > 24 * 1024 * 1024) {
         throw new Error("The original animation exceeds the 24 MB transfer limit. Choose a shorter duration or lower resolution.");
       }
-      return new File([blob], "omnitrix-original-motion-" + slug(brief).slice(0, 48) + "-" + crypto.randomUUID().slice(0, 6) + ".webm", {
+      // The recorder has stopped, so reuse the scene canvas to create a thumbnail
+      // from an actual animation frame. Keep this metadata attached until IndexedDB import.
+      drawOriginalMotionFrame(sceneContext, brief, duration * 0.55, duration, width, height);
+      const thumbnail = await makeThumbnailFromCanvas(scene, width, height);
+      const output = new File([blob], "omnitrix-original-motion-" + slug(brief).slice(0, 48) + "-" + crypto.randomUUID().slice(0, 6) + ".webm", {
         type: "video/webm", lastModified: Date.now()
       });
+      output.omnitrixThumbnail = thumbnail;
+      output.omnitrixDuration = duration;
+      output.omnitrixWidth = width;
+      output.omnitrixHeight = height;
+      return output;
     } finally {
       stream.getTracks().forEach((track) => track.stop());
     }
