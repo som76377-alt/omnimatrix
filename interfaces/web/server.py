@@ -1700,6 +1700,9 @@ def make_handler(
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
+            if route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"} and payload.get("consent") is not True:
+                self._send_json({"ok": False, "error": "Explicit consent is required before generating an image with a model."}, 400)
+                return
             if route in {"/api/mobile/creative/analyze", "/api/mobile/creative/generate-image"}:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
