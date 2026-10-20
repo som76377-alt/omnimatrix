@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "proposed_not_runtime_wired",
+  "status": "partial_runtime_components_added_full_orchestrator_wiring_pending",
   "default_spend_mode": "zero_cost",
   "orchestrator_owns": [
     "user_objective",
@@ -23,7 +23,12 @@
     "parallelism": "only_independent_tasks",
     "retry_policy": "bounded_classified_failures_only",
     "final_critic": {
-      "required_for": ["multi_asset_media", "code_changes", "scientific_visualization", "multi_step_research"],
+      "required_for": [
+        "multi_asset_media",
+        "code_changes",
+        "scientific_visualization",
+        "multi_step_research"
+      ],
       "must_be_independent_when_available": true,
       "must_inspect_final_artifact": true,
       "must_not_only_review_prompts_or_plans": true
@@ -32,67 +37,180 @@
   "roles": [
     {
       "id": "intent_engineer",
-      "owns": ["job_brief", "acceptance_criteria", "ambiguity_flags"],
-      "outputs": ["job_brief.json"],
-      "may_start_after": ["user_request"],
-      "must_not": ["execute_tools", "invent_user_constraints"]
+      "owns": [
+        "job_brief",
+        "acceptance_criteria",
+        "ambiguity_flags"
+      ],
+      "outputs": [
+        "job_brief.json"
+      ],
+      "may_start_after": [
+        "user_request"
+      ],
+      "must_not": [
+        "execute_tools",
+        "invent_user_constraints"
+      ]
     },
     {
       "id": "researcher",
-      "owns": ["source_evidence", "source_freshness", "citations", "licence_metadata"],
-      "outputs": ["research_manifest.json"],
-      "may_start_after": ["job_brief.json"],
-      "must_not": ["declare_unverified_sources_true", "silently_reuse_unlicensed_media"]
+      "owns": [
+        "source_evidence",
+        "source_freshness",
+        "citations",
+        "licence_metadata"
+      ],
+      "outputs": [
+        "research_manifest.json"
+      ],
+      "may_start_after": [
+        "job_brief.json"
+      ],
+      "must_not": [
+        "declare_unverified_sources_true",
+        "silently_reuse_unlicensed_media"
+      ]
     },
     {
       "id": "asset_scout",
-      "owns": ["candidate_assets", "visual_relevance_checks", "asset_rights"],
-      "outputs": ["asset_manifest.json"],
-      "may_start_after": ["job_brief.json"],
-      "must_not": ["search_one_exact_phrase_only", "treat_filename_as_visual_verification", "scrape_pinterest"]
+      "owns": [
+        "candidate_assets",
+        "visual_relevance_checks",
+        "asset_rights"
+      ],
+      "outputs": [
+        "asset_manifest.json"
+      ],
+      "may_start_after": [
+        "job_brief.json"
+      ],
+      "must_not": [
+        "search_one_exact_phrase_only",
+        "treat_filename_as_visual_verification",
+        "scrape_pinterest"
+      ]
     },
     {
       "id": "visual_analyst",
-      "owns": ["frame_and_asset_inspection", "continuity_findings", "visual_evidence"],
-      "outputs": ["visual_review.json"],
-      "may_start_after": ["asset_manifest.json", "draft_artifact"],
-      "must_not": ["judge_only_from_metadata", "claim_to_have_seen_unavailable_media"]
+      "owns": [
+        "frame_and_asset_inspection",
+        "continuity_findings",
+        "visual_evidence"
+      ],
+      "outputs": [
+        "visual_review.json"
+      ],
+      "may_start_after": [
+        "asset_manifest.json",
+        "draft_artifact"
+      ],
+      "must_not": [
+        "judge_only_from_metadata",
+        "claim_to_have_seen_unavailable_media"
+      ]
     },
     {
       "id": "graphics_engineer",
-      "owns": ["original_graphics", "labels", "arrows", "schematics", "motion_spec"],
-      "outputs": ["graphics_manifest.json", "graphics_assets"],
-      "may_start_after": ["job_brief.json", "research_manifest.json"],
-      "must_not": ["recreate_existing_owned_assets_without_reason", "duplicate_editor_owned_titles_or_transitions"]
+      "owns": [
+        "original_graphics",
+        "labels",
+        "arrows",
+        "schematics",
+        "motion_spec"
+      ],
+      "outputs": [
+        "graphics_manifest.json",
+        "graphics_assets"
+      ],
+      "may_start_after": [
+        "job_brief.json",
+        "research_manifest.json"
+      ],
+      "must_not": [
+        "recreate_existing_owned_assets_without_reason",
+        "duplicate_editor_owned_titles_or_transitions"
+      ]
     },
     {
       "id": "manim_worker",
-      "owns": ["programmatic_math_and_science_animation"],
-      "outputs": ["manim_scene_source", "rendered_animation", "render_metadata"],
-      "may_start_after": ["job_brief.json", "research_manifest.json"],
-      "status": "candidate_not_integrated",
-      "must_not": ["claim_runtime_available_without_probe", "replace_simple_vector_work_that_is_already_owned"]
+      "owns": [
+        "programmatic_math_and_science_animation"
+      ],
+      "outputs": [
+        "manim_scene_source",
+        "rendered_animation",
+        "render_metadata"
+      ],
+      "may_start_after": [
+        "job_brief.json",
+        "research_manifest.json"
+      ],
+      "status": "registered_bounded_template_renderer_runtime_install_required",
+      "must_not": [
+        "claim_runtime_available_without_probe",
+        "replace_simple_vector_work_that_is_already_owned",
+        "accept_or_execute_model_written_python"
+      ]
     },
     {
       "id": "media_editor",
-      "owns": ["timeline", "shot_order", "transitions", "audio_mix", "export_settings"],
-      "outputs": ["edit_manifest.json", "draft_video"],
-      "may_start_after": ["asset_manifest.json", "graphics_manifest.json"],
-      "must_not": ["regenerate_assets_owned_by_other_roles", "silently_drop_audio_or_scenes"]
+      "owns": [
+        "timeline",
+        "shot_order",
+        "transitions",
+        "audio_mix",
+        "export_settings"
+      ],
+      "outputs": [
+        "edit_manifest.json",
+        "draft_video"
+      ],
+      "may_start_after": [
+        "asset_manifest.json",
+        "graphics_manifest.json"
+      ],
+      "must_not": [
+        "regenerate_assets_owned_by_other_roles",
+        "silently_drop_audio_or_scenes"
+      ]
     },
     {
       "id": "coder",
-      "owns": ["repository_changes", "integration_adapters", "tests"],
-      "outputs": ["patch", "test_report"],
-      "may_start_after": ["approved_implementation_plan"],
-      "must_not": ["edit_files_owned_by_another_active_coder_task", "claim_tests_passed_without_execution"]
+      "owns": [
+        "repository_changes",
+        "integration_adapters",
+        "tests"
+      ],
+      "outputs": [
+        "patch",
+        "test_report"
+      ],
+      "may_start_after": [
+        "approved_implementation_plan"
+      ],
+      "must_not": [
+        "edit_files_owned_by_another_active_coder_task",
+        "claim_tests_passed_without_execution"
+      ]
     },
     {
       "id": "critic",
-      "owns": ["independent_error_hunt", "acceptance_test_results", "release_recommendation"],
-      "outputs": ["qa_report.json"],
-      "may_start_after": ["candidate_final_artifact"],
-      "must_not": ["approve_based_only_on_agent_claims", "skip_failed_acceptance_checks"]
+      "owns": [
+        "independent_error_hunt",
+        "acceptance_test_results",
+        "release_recommendation"
+      ],
+      "outputs": [
+        "qa_report.json"
+      ],
+      "may_start_after": [
+        "candidate_final_artifact"
+      ],
+      "must_not": [
+        "approve_based_only_on_agent_claims",
+        "skip_failed_acceptance_checks"
+      ]
     }
   ],
   "tool_catalog": [
@@ -142,9 +260,11 @@
     {
       "id": "manim",
       "purpose": "Programmatic mathematical and scientific animation",
-      "status": "candidate_not_integrated",
+      "status": "registered_structured_diagram_tool_manim_executable_required",
       "runtime_probe_required": true,
-      "license_review_required": true
+      "license_review_required": true,
+      "security": "fixed_template_only; structured labels, coordinates and edge indices; 90-second timeout; 100MB output cap",
+      "output": "MP4 artifact under OMNITRIX_ARTIFACT_DIR (defaults to /tmp/omnitrix-artifacts)"
     },
     {
       "id": "ffmpeg",
@@ -161,5 +281,13 @@
     "require_source_and_license_manifest_for_imported_media": true,
     "require_truthful_model_and_tool_status": true,
     "require_owner_approval_for_paid_or_external_side_effects": true
+  },
+  "runtime_components": {
+    "shared_manifest_module": "core/creative_production.py",
+    "manim_tool": "core/tools/implementations/manim_renderer.py",
+    "registered_in_default_tool_registry": true,
+    "fully_wired_into_creative_studio_timeline": false,
+    "persistent_job_queue_and_background_worker": false,
+    "independent_visual_critic": false
   }
 }
