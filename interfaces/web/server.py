@@ -39,8 +39,36 @@ from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
+from core.creative_assets import CreativeAssetError, download_creative_asset, search_creative_assets
+
+
 from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
+
+
+# Public mobile Creative Studio uses Wikimedia Commons only. Keep this endpoint
+# useful without a local runtime token while bounding requests from any one IP.
+_PUBLIC_CREATIVE_RATE_LOCK = threading.Lock()
+_PUBLIC_CREATIVE_REQUESTS: dict[str, deque[float]] = {}
+_PUBLIC_CREATIVE_RATE_WINDOW_SECONDS = 60.0
+_PUBLIC_CREATIVE_RATE_LIMIT = 24
+
+
+def _allow_public_creative_request(client_ip: str) -> bool:
+    now = time.monotonic()
+    key = str(client_ip or "unknown")[:120]
+    with _PUBLIC_CREATIVE_RATE_LOCK:
+        bucket = _PUBLIC_CREATIVE_REQUESTS.setdefault(key, deque())
+        while bucket and now - bucket[0] >= _PUBLIC_CREATIVE_RATE_WINDOW_SECONDS:
+            bucket.popleft()
+        if len(bucket) >= _PUBLIC_CREATIVE_RATE_LIMIT:
+            return False
+        bucket.append(now)
+        if len(_PUBLIC_CREATIVE_REQUESTS) > 1024:
+            for stale_key in list(_PUBLIC_CREATIVE_REQUESTS)[:128]:
+                if stale_key != key:
+                    _PUBLIC_CREATIVE_REQUESTS.pop(stale_key, None)
+        return True
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
@@ -1323,7 +1351,7 @@ def make_handler(
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "connect-src 'self' https://api.github.com; "
-                "img-src 'self' data:; base-uri 'self'; form-action 'self'; "
+                "img-src 'self' data: blob: https://upload.wikimedia.org https://images.pexels.com; base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'",
             )
             self.send_header("Cache-Control", "no-store")
@@ -1339,6 +1367,19 @@ def make_handler(
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
+
+        def _send_bytes(self, data: bytes, content_type: str, filename: str, status: int = 200) -> None:
+            if len(data) > 24 * 1024 * 1024:
+                self._send_json({"ok": False, "error": "The selected asset exceeds the import limit."}, 413)
+                return
+            safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", filename)[:120] or "creative-asset"
+            self.send_response(status)
+            self._headers(content_type, api=True)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", 'attachment; filename="' + safe_name + '"')
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
 
         def _authorized(self) -> bool:
             supplied = self.headers.get("Authorization", "")
@@ -1448,6 +1489,37 @@ def make_handler(
                     LOGGER.warning("Public attachment listing failed: %s", type(exc).__name__)
                     self._send_json({"ok": False, "error": "Attachment list is temporarily unavailable."}, 500)
                 return
+            if route in {"/api/mobile/creative/search", "/api/mobile/creative/assets/download"}:
+                forwarded = self.headers.get("X-Forwarded-For", "")
+                client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
+                if not _allow_public_creative_request(client_ip):
+                    self._send_json({"ok": False, "error": "Creative Studio is temporarily rate-limited for this connection. Try again in a minute.", "code": "rate_limited"}, 429)
+                    return
+                try:
+                    if route == "/api/mobile/creative/search":
+                        raw_limit = self._first_query("limit", "8")
+                        try:
+                            requested_limit = int(raw_limit)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("Asset search limit must be an integer between 1 and 8.") from exc
+                        limit = min(8, max(1, requested_limit))
+                        self._send_json(search_creative_assets(
+                            self._first_query("q", ""),
+                            provider="commons",
+                            kind=self._first_query("kind", "any"),
+                            limit=limit,
+                        ))
+                    else:
+                        content, content_type, filename = download_creative_asset(
+                            self._first_query("url", ""), provider="commons"
+                        )
+                        self._send_bytes(content, content_type, filename)
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 400)
+                except Exception as exc:
+                    LOGGER.warning("Public mobile creative request failed: %s", type(exc).__name__)
+                    self._send_json({"ok": False, "error": "Online creative assets are temporarily unavailable."}, 502)
+                return
             if route.startswith("/api/"):
                 if not self._authorized():
                     self._send_json(
@@ -1460,7 +1532,24 @@ def make_handler(
                     )
                     return
                 try:
-                    if route == "/api/creative/status":
+                    if route == "/api/creative/search":
+                        raw_limit = self._first_query("limit", "10")
+                        try:
+                            limit = int(raw_limit)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("Asset search limit must be an integer between 1 and 12.") from exc
+                        self._send_json(search_creative_assets(
+                            self._first_query("q", ""),
+                            provider=self._first_query("provider", "commons"),
+                            kind=self._first_query("kind", "any"),
+                            limit=limit,
+                        ))
+                    elif route == "/api/creative/assets/download":
+                        provider = self._first_query("provider", "")
+                        url = self._first_query("url", "")
+                        content, content_type, filename = download_creative_asset(url, provider=provider)
+                        self._send_bytes(content, content_type, filename)
+                    elif route == "/api/creative/status":
                         self._send_json(creative_model_status())
                     elif route.startswith("/api/creative/jobs/"):
                         job_id = route.rsplit("/", 1)[-1]

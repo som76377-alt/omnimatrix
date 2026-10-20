@@ -30,6 +30,9 @@ jobs:
       - name: Compile Python source and tests
         run: python -m compileall -q core interfaces tests
 
+      - name: Validate browser JavaScript syntax
+        run: node --check webapp/app.js && node --check webapp/creative-studio.js && node --check webapp/sw.js
+
       - name: Validate checked-in model configuration
         run: |
           python -m json.tool config/demo.models.json > /dev/null

@@ -1,12 +1,17 @@
 package com.omnitrix.mobile
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.os.Bundle
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,6 +73,12 @@ import java.util.Base64
 import java.util.UUID
 import android.text.method.LinkMovementMethod
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.TextView
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
@@ -91,7 +102,30 @@ private const val HOSTED_BACKEND_DISCOVERY_URL =
     "https://raw.githubusercontent.com/som76377-alt/omnimatrix/main/config/mobile-backend.json"
 
 private enum class AppTab(val title: String) {
-    CHAT("Chat"), REPO("Repo"), STATUS("Runs"), ACCOUNT("Account")
+    CHAT("Chat"), VIDEO("Video"), REPO("Repo"), STATUS("Runs"), ACCOUNT("Account")
+}
+
+internal object VideoPromptIntent {
+    private val creationCommand = Regex(
+        """^(?:please\s+)?(?:create|make|generate|produce|render|edit|assemble|animate|build|turn|convert)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val mediaTarget = Regex(
+        """\b(?:video|videos|clip|reel|shorts?|animation|motion\s+graphics)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun isCreationPrompt(prompt: String): Boolean {
+        val text = prompt.trim()
+        if (text.isEmpty() || text.length > 4000) return false
+        if (!creationCommand.containsMatchIn(text) || !mediaTarget.containsMatchIn(text)) return false
+        if (text.startsWith("how ", true) || text.startsWith("what ", true) ||
+            text.startsWith("why ", true) || text.startsWith("can you ", true) ||
+            text.startsWith("can u ", true) || text.startsWith("could you ", true) ||
+            text.startsWith("do you ", true) || text.startsWith("is it possible ", true)
+        ) return false
+        return true
+    }
 }
 private data class ChatMessage(
     val role: String,
@@ -828,6 +862,10 @@ private class RuntimeClient(context: Context) {
         }
     }
 
+    suspend fun creativeStudioBase(): String {
+        return if (!useHostedBackend && ready()) base else discoverHostedBase()
+    }
+
     suspend fun activity(sessionId: String): JSONObject {
         if (!useHostedBackend && ready()) {
             val health = requestPrivate("GET", "/api/health", null)
@@ -1098,6 +1136,12 @@ private fun OmnitrixApp() {
     val github = remember { GitHubClient(context) }
     val runtime = remember { RuntimeClient(context) }
     var tab by remember { mutableStateOf(AppTab.CHAT) }
+    var pendingVideoPrompt by remember { mutableStateOf("") }
+    var videoStudioUrl by remember { mutableStateOf("") }
+    var videoStudioMessage by remember { mutableStateOf("Ready when you are. Describe a video or send a creation prompt from Chat.") }
+    var videoRequestKey by remember { mutableIntStateOf(0) }
+    var savedVideoUri by remember { mutableStateOf<Uri?>(null) }
+    var savedVideoName by remember { mutableStateOf("") }
     var clientId by remember { mutableStateOf(github.clientId) }
     var githubConnected by remember { mutableStateOf(github.ready()) }
     var username by remember { mutableStateOf(github.username) }
@@ -1345,6 +1389,38 @@ private fun OmnitrixApp() {
         }
     }
 
+    fun openVideoStudio(prompt: String = "") {
+        pendingVideoPrompt = prompt.trim().take(4000)
+        videoRequestKey += 1
+        savedVideoUri = null
+        savedVideoName = ""
+        videoStudioUrl = ""
+        videoStudioMessage = if (pendingVideoPrompt.isNotBlank()) {
+            "Connecting to Studio, then building a draft from your prompt…"
+        } else {
+            "Connecting to Creative Studio…"
+        }
+        tab = AppTab.VIDEO
+        val thisRequest = videoRequestKey
+        scope.launch {
+            try {
+                val base = runtime.creativeStudioBase()
+                if (thisRequest == videoRequestKey) {
+                    videoStudioUrl = base
+                    videoStudioMessage = if (pendingVideoPrompt.isNotBlank()) {
+                        "Connected. Looking for reusable public assets and preparing your video."
+                    } else {
+                        "Connected. Describe your video below; adding assets is optional."
+                    }
+                }
+            } catch (e: Exception) {
+                if (thisRequest == videoRequestKey) {
+                    videoStudioMessage = "Studio connection failed: " + (e.message ?: "Hosted Studio is not available.")
+                }
+            }
+        }
+    }
+
     fun connectRuntime() {
         scope.launch {
             chatBusy = true
@@ -1434,7 +1510,13 @@ private fun OmnitrixApp() {
                     AppTab.entries.forEach { destination ->
                         Column(
                             Modifier.weight(1f).background(if (tab == destination) SurfaceRaised else Black, RoundedCornerShape(2.dp))
-                                .clickable { tab = destination }.padding(vertical = 13.dp),
+                                .clickable {
+                                    if (destination == AppTab.VIDEO && videoStudioUrl.isBlank()) {
+                                        openVideoStudio(pendingVideoPrompt)
+                                    } else {
+                                        tab = destination
+                                    }
+                                }.padding(vertical = 13.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(destination.title, fontSize = 14.sp, color = if (tab == destination) Green else Grey, fontWeight = if (tab == destination) FontWeight.Bold else FontWeight.Medium, fontFamily = Pixel)
@@ -1463,7 +1545,13 @@ private fun OmnitrixApp() {
                         {
                             val prompt = chatInput.trim()
                             val readyAttachments = attachments.filter { it.status == "READY" && !it.attachmentId.isNullOrBlank() }
-                            if (runtimeConnected && (prompt.isNotEmpty() || readyAttachments.isNotEmpty()) && !chatBusy &&
+                            val isVideoCommand = runtimeConnected && prompt.isNotEmpty() &&
+                                attachments.isEmpty() && VideoPromptIntent.isCreationPrompt(prompt) && !chatBusy
+                            if (isVideoCommand) {
+                                messages = messages + ChatMessage("YOU", prompt)
+                                chatInput = ""
+                                openVideoStudio(prompt)
+                            } else if (runtimeConnected && (prompt.isNotEmpty() || readyAttachments.isNotEmpty()) && !chatBusy &&
                                 attachments.none { it.status == "UPLOADING" }) {
                                 val sentPrompt = prompt.ifBlank { "Please analyze the attached files." }
                                 val userText = buildString {
@@ -1565,6 +1653,36 @@ private fun OmnitrixApp() {
                             }
                         },
                         { connectHostedRuntime() }
+                    )
+                    AppTab.VIDEO -> VideoStudioScreen(
+                        studioUrl = videoStudioUrl,
+                        prompt = pendingVideoPrompt,
+                        requestKey = videoRequestKey,
+                        statusMessage = videoStudioMessage,
+                        savedVideoUri = savedVideoUri,
+                        savedVideoName = savedVideoName,
+                        onVideoSaved = { uri, name ->
+                            savedVideoUri = Uri.parse(uri)
+                            savedVideoName = name
+                            videoStudioMessage = "Video saved to Movies/Omnitrix."
+                        },
+                        onStatus = { videoStudioMessage = it },
+                        onOpenSaved = {
+                            val uri = savedVideoUri
+                            if (uri != null) {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(uri, "video/webm")
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    videoStudioMessage = "Saved video, but no compatible player was found: " +
+                                        (e.message ?: "open it from Movies/Omnitrix in Files.")
+                                }
+                            }
+                        },
+                        onRetry = { openVideoStudio(pendingVideoPrompt) }
                     )
                     AppTab.REPO -> RepoScreen(
                         connected = githubConnected,
@@ -1733,6 +1851,196 @@ private fun OmnitrixApp() {
             )
         }
 
+        }
+    }
+}
+
+@Composable
+private fun VideoStudioScreen(
+    studioUrl: String,
+    prompt: String,
+    requestKey: Int,
+    statusMessage: String,
+    savedVideoUri: Uri?,
+    savedVideoName: String,
+    onVideoSaved: (String, String) -> Unit,
+    onStatus: (String) -> Unit,
+    onOpenSaved: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val context = LocalContext.current
+    val chooserCallback = remember { arrayOfNulls<ValueCallback<Array<Uri>>>(1) }
+    val assetPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val callback = chooserCallback[0]
+        chooserCallback[0] = null
+        callback?.onReceiveValue(uris.toTypedArray())
+    }
+    val viewHolder = remember(requestKey, studioUrl) { arrayOfNulls<WebView>(1) }
+    DisposableEffect(requestKey, studioUrl) {
+        onDispose {
+            val view = viewHolder[0]
+            if (view != null) {
+                view.stopLoading()
+                view.loadUrl("about:blank")
+                view.removeJavascriptInterface("OmnitrixNativeBridge")
+                view.destroy()
+                viewHolder[0] = null
+            }
+            chooserCallback[0]?.onReceiveValue(null)
+            chooserCallback[0] = null
+        }
+    }
+    Column(Modifier.fillMaxSize().background(Black)) {
+        AppHeader("Video Studio", detail = "PROMPT → EDITABLE DRAFT → WEBM")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(statusMessage, color = if (statusMessage.contains("failed", true) || statusMessage.contains("error", true)) Red else Grey,
+                    fontSize = 12.sp, lineHeight = 17.sp, maxLines = 3)
+                if (savedVideoName.isNotBlank() && savedVideoUri != null) {
+                    Text("SAVED · $savedVideoName", color = Green, fontSize = 12.sp, lineHeight = 16.sp)
+                }
+            }
+            if (savedVideoUri != null) {
+                TextButton(onClick = onOpenSaved) { Text("OPEN VIDEO", color = Green, fontSize = 12.sp) }
+            }
+            if (studioUrl.isBlank() && statusMessage.contains("failed", true)) {
+                TextButton(onClick = onRetry) { Text("RETRY", color = Green, fontSize = 12.sp) }
+            }
+        }
+        if (studioUrl.isBlank()) {
+            Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Creative Studio is connecting", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Video creation needs the hosted Omnitrix Studio service. Once connected, enter a prompt; you do not need to attach source media.",
+                    color = Grey, fontSize = 14.sp, lineHeight = 21.sp
+                )
+                if (statusMessage.contains("failed", true)) {
+                    PrimaryButton("RETRY CONNECTION", onRetry)
+                }
+            }
+        } else {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { webContext ->
+                    WebView(webContext).apply {
+                        viewHolder[0] = this
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = true
+                        settings.javaScriptCanOpenWindowsAutomatically = false
+                        settings.setSupportMultipleWindows(false)
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onShowFileChooser(
+                                webView: WebView?,
+                                filePathCallback: ValueCallback<Array<Uri>>?,
+                                fileChooserParams: FileChooserParams?
+                            ): Boolean {
+                                val callback = filePathCallback ?: return false
+                                chooserCallback[0]?.onReceiveValue(null)
+                                chooserCallback[0] = callback
+                                assetPicker.launch(arrayOf("image/*", "video/*"))
+                                return true
+                            }
+                        }
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val target = request?.url ?: return true
+                                val sourceHost = Uri.parse(studioUrl).host
+                                return target.scheme != "https" || !target.host.equals(sourceHost, ignoreCase = true)
+                            }
+                        }
+                        addJavascriptInterface(
+                            CreativeStudioNativeBridge(
+                                context = webContext,
+                                initialPromptText = prompt,
+                                onSaved = onVideoSaved,
+                                onError = onStatus
+                            ),
+                            "OmnitrixNativeBridge"
+                        )
+                        val suffix = if (prompt.isNotBlank()) "?mobile=1&autoDraft=1" else "?mobile=1"
+                        loadUrl(studioUrl.trimEnd('/') + "/creative-studio.html" + suffix)
+                    }
+                },
+                update = { view ->
+                    if (viewHolder[0] !== view) viewHolder[0] = view
+                }
+            )
+        }
+    }
+}
+
+private class CreativeStudioNativeBridge(
+    private val context: Context,
+    private val initialPromptText: String,
+    private val onSaved: (String, String) -> Unit,
+    private val onError: (String) -> Unit
+) {
+    @JavascriptInterface
+    fun initialPrompt(): String = initialPromptText
+
+    @JavascriptInterface
+    fun saveVideoBase64(fileName: String, mimeType: String, encoded: String): String {
+        var destination: Uri? = null
+        return try {
+            require(mimeType.lowercase().startsWith("video/webm")) { "Only rendered WebM video is accepted." }
+            require(encoded.isNotBlank() && encoded.length <= 34 * 1024 * 1024) {
+                "The encoded video exceeds the phone-save limit."
+            }
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            require(bytes.size in 2048..(24 * 1024 * 1024)) {
+                "The rendered video is empty or exceeds the 24 MB save limit."
+            }
+            val safeName = fileName
+                .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+                .trim('-', '.', '_')
+                .take(90)
+                .ifBlank { "omnitrix-video-draft.webm" }
+                .let { if (it.endsWith(".webm", ignoreCase = true)) it else "$it.webm" }
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "video/webm")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Omnitrix")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                destination = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IOException("Android could not create a video in Movies/Omnitrix.")
+                val output = resolver.openOutputStream(destination!!, "w")
+                    ?: throw IOException("Android could not open the new video file.")
+                output.use { it.write(bytes); it.flush() }
+                resolver.update(destination!!, ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }, null, null)
+            } else {
+                val folder = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "Omnitrix")
+                if (!folder.exists() && !folder.mkdirs()) throw IOException("Could not create the Omnitrix video folder.")
+                val file = File(folder, safeName)
+                file.outputStream().use { it.write(bytes); it.flush() }
+                destination = androidx.core.content.FileProvider.getUriForFile(
+                    context, context.packageName + ".fileprovider", file
+                )
+            }
+            val savedUri = destination!!.toString()
+            Handler(Looper.getMainLooper()).post { onSaved(savedUri, safeName) }
+            "saved"
+        } catch (e: Exception) {
+            destination?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+            val reason = (e.message ?: "Video save failed.").take(180)
+            Handler(Looper.getMainLooper()).post { onError("Video generated, but Android could not save it: $reason") }
+            "error: $reason"
         }
     }
 }

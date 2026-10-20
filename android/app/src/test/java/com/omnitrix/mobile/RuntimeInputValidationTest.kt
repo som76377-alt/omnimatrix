@@ -68,6 +68,27 @@ class RuntimeInputValidationTest {
 
 
     @Test
+    fun detectsDirectVideoCreationPrompts() {
+        assertTrue(VideoPromptIntent.isCreationPrompt(
+            "Create a 12-second vertical science explainer video about induction stoves"
+        ))
+        assertTrue(VideoPromptIntent.isCreationPrompt(
+            "Make a motion graphics animation about the life cycle of a star"
+        ))
+        assertTrue(VideoPromptIntent.isCreationPrompt(
+            "Please generate a short video showing how magnetic induction works"
+        ))
+    }
+
+    @Test
+    fun doesNotRouteQuestionsOrOrdinaryChatToVideoStudio() {
+        assertEquals(false, VideoPromptIntent.isCreationPrompt("Can you generate a motion graphics video?"))
+        assertEquals(false, VideoPromptIntent.isCreationPrompt("How does an induction stove work?"))
+        assertEquals(false, VideoPromptIntent.isCreationPrompt("Explain the process in a video"))
+        assertEquals(false, VideoPromptIntent.isCreationPrompt(""))
+    }
+
+    @Test
     fun normalizesCommonLatexDelimitersForNativeRenderer() {
         val normalized = MarkwonMathNormalizer.normalize("Force: \\(F = ma\\)\n\\[E = mc^2\\]")
         assertTrue(normalized.contains("\$F = ma\$"))

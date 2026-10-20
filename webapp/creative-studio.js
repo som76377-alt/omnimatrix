@@ -14,7 +14,10 @@
     audioSource: null, audioOutput: null, audioMonitor: null, lastFrameUi: 0,
     currentClipId: null, error: null,
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
-    creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false
+    creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
+    onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
+    autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false,
+    autoCriticRevisionPerformed: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -105,7 +108,10 @@
       id: row.id, name: row.name, type: row.type, size: row.size,
       lastModified: row.lastModified, duration: row.duration || 0,
       width: row.width || 0, height: row.height || 0, thumb: row.thumb || null,
-      importedAt: row.importedAt
+      importedAt: row.importedAt, sourceProvider: row.sourceProvider || "",
+      sourcePage: row.sourcePage || "", attribution: row.attribution || "",
+      license: row.license || "", licenseUrl: row.licenseUrl || "",
+      rightsVerified: row.rightsVerified === true
     }));
     updateStorageLabel();
     renderAssets();
@@ -324,6 +330,488 @@
     if (failed) showMessage(failed + " file(s) could not be imported. Try a browser-supported image or video format.", true);
   }
 
+  function onlineStatus(message, kind) {
+    const target = $("online-asset-status");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = "online-asset-status" + (kind ? " " + kind : "");
+  }
+
+  function deriveAssetQuery(brief) {
+    let value = String(brief || "").trim();
+    value = value.replace(/\b(?:create|make|produce|generate|build|a|an|the|video|film|clip|short|vertical|horizontal|cinematic|premium|realistic|documentary|reel|shorts|explaining|explain|showing|show|about|for|with|please|use|style|duration|seconds?|secs?|\d{1,3}|9:16|16:9)\b/gi, " ");
+    value = value.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
+    return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
+  }
+
+  function updatePreviewResolution() {
+    const selector = $("preview-scale");
+    if (!selector) return;
+    const dimensions = String(selector.value || "1280x720").split("x").map(Number);
+    const width = dimensions[0] || 1280;
+    const height = dimensions[1] || 720;
+    canvas.width = width;
+    canvas.height = height;
+    const ratio = width === height ? "1:1" : width > height ? "16:9" : "9:16";
+    const ratioLabel = document.querySelector(".resolution-tag");
+    if (ratioLabel) ratioLabel.textContent = ratio;
+    const wrapper = document.querySelector(".canvas-wrap");
+    if (wrapper) wrapper.style.aspectRatio = width + " / " + height;
+    updateStats();
+    drawFrame();
+  }
+
+  function setPreviewResolutionFromBrief(brief) {
+    const selector = $("preview-scale");
+    if (!selector) return;
+    const text = String(brief || "");
+    let target = "";
+    if (/\b(?:vertical|portrait|9\s*[:x/]\s*16|9\s+by\s+16|tiktok|reels?|shorts?)\b/i.test(text)) {
+      target = "720x1280";
+    } else if (/\b(?:square|1\s*[:x/]\s*1|1\s+by\s+1)\b/i.test(text)) {
+      target = "720x720";
+    } else if (/\b(?:horizontal|landscape|wide|16\s*[:x/]\s*9|16\s+by\s+9)\b/i.test(text)) {
+      target = "1280x720";
+    }
+    if (target && Array.from(selector.options).some((option) => option.value === target)) {
+      selector.value = target;
+      updatePreviewResolution();
+    }
+  }
+
+  function safeExternalHttps(value) {
+    try {
+      const parsed = new URL(String(value || ""));
+      return parsed.protocol === "https:" && !parsed.username && !parsed.password ? parsed.href : "";
+    } catch { return ""; }
+  }
+
+  function safePreviewUrl(item) {
+    try {
+      const parsed = new URL(String(item.preview_url || ""));
+      const allowed = item.provider === "commons"
+        ? new Set(["upload.wikimedia.org"])
+        : item.provider === "pexels" ? new Set(["images.pexels.com"]) : new Set();
+      return parsed.protocol === "https:" && allowed.has(parsed.hostname.toLowerCase()) ? parsed.href : "";
+    } catch { return ""; }
+  }
+
+  function supportedOnlineAsset(item) {
+    const mime = String(item.mime_type || "").toLowerCase();
+    return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
+      (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
+      /^https:\/\//i.test(String(item.asset_url || "")) &&
+      (item.rights_verified === true));
+  }
+
+  function renderOnlineResults(response) {
+    const target = $("online-asset-results");
+    target.replaceChildren();
+    const items = response && Array.isArray(response.items) ? response.items : [];
+    if (response && response.provider === "pinterest" && response.search_url) {
+      const note = document.createElement("div");
+      note.className = "empty-state";
+      const heading = document.createElement("strong");
+      heading.textContent = "Pinterest reference search";
+      const copy = document.createElement("span");
+      copy.textContent = "Open Pinterest to browse inspiration. Pins are not copied automatically because source rights and platform permissions must be respected.";
+      const link = document.createElement("a");
+      link.href = safeExternalHttps(response.search_url) || "https://www.pinterest.com/";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "OPEN PINTEREST RESULTS ↗";
+      note.append(heading, copy, link);
+      target.append(note);
+      return;
+    }
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      const heading = document.createElement("strong");
+      heading.textContent = "No importable matches";
+      const copy = document.createElement("span");
+      copy.textContent = "Try a broader search or switch source. Only results with supported media formats and licence metadata can be imported automatically.";
+      empty.append(heading, copy);
+      target.append(empty);
+      return;
+    }
+    for (const item of items) {
+      const card = document.createElement("article");
+      card.className = "online-asset-card";
+      const preview = safePreviewUrl(item);
+      if (preview) {
+        const image = document.createElement("img");
+        image.loading = "lazy";
+        image.referrerPolicy = "no-referrer";
+        image.src = preview;
+        image.alt = "";
+        image.addEventListener("error", () => { image.hidden = true; }, { once: true });
+        card.append(image);
+      }
+      const body = document.createElement("div");
+      body.className = "online-asset-card-body";
+      const title = document.createElement("div");
+      title.className = "online-asset-title";
+      title.textContent = item.title || "Untitled asset";
+      const meta = document.createElement("div");
+      meta.className = "online-asset-meta";
+      meta.textContent = [String(item.kind || "media").toUpperCase(), item.attribution ? "By " + item.attribution : item.provider].filter(Boolean).join(" · ");
+      const licence = document.createElement("div");
+      licence.className = "online-asset-license";
+      licence.textContent = item.license || "Licence not identified — verify before reuse";
+      body.append(title, meta, licence);
+      if (item.description) {
+        const description = document.createElement("div");
+        description.className = "online-asset-meta";
+        description.textContent = String(item.description).slice(0, 220);
+        body.append(description);
+      }
+      const actions = document.createElement("div");
+      actions.className = "online-asset-card-actions";
+      const source = document.createElement("a");
+      source.className = "button quiet small";
+      source.href = safeExternalHttps(item.source_page) || "https://commons.wikimedia.org/";
+      source.target = "_blank";
+      source.rel = "noopener noreferrer";
+      source.textContent = "SOURCE ↗";
+      actions.append(source);
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "button primary small";
+      add.textContent = "IMPORT + ADD";
+      add.disabled = !supportedOnlineAsset(item);
+      add.title = add.disabled ? "Supported media and identifiable licence metadata are required for automatic import." : "Download a bounded copy and add it to your local timeline";
+      add.addEventListener("click", async () => {
+        add.disabled = true;
+        add.textContent = "IMPORTING…";
+        try {
+          const id = await importOnlineAsset(item, true);
+          onlineStatus("Imported " + item.title + " and added it to the local timeline. Original source and licence metadata are saved with the asset.", "success");
+          add.textContent = "ADDED";
+          add.disabled = true;
+          return id;
+        } catch (error) {
+          add.textContent = "RETRY IMPORT";
+          add.disabled = false;
+          onlineStatus(String(error.message || error), "error");
+        }
+      });
+      actions.append(add);
+      body.append(actions);
+      card.append(body);
+      target.append(card);
+    }
+  }
+
+  async function searchOnlineAssets(options) {
+    const nativeMode = isNativeMobileStudio();
+    const provider = nativeMode ? "commons" : ($("online-asset-provider").value || "commons");
+    const queryInput = $("online-asset-query");
+    let query = String(queryInput.value || "").trim();
+    if (!query) query = deriveAssetQuery($("creative-brief").value);
+    if (!query) {
+      onlineStatus("Enter a search phrase or describe the video in the Director's Brief.", "error");
+      return null;
+    }
+    queryInput.value = query;
+    if (state.onlineSearchBusy) return null;
+    if (provider === "pinterest") {
+      const link = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
+      renderOnlineResults({ provider: "pinterest", search_url: link, items: [] });
+      onlineStatus("Pinterest is available as a reference search. Omnitrix does not scrape or auto-import Pins.", "");
+      return { provider, query, items: [], search_url: link, manual_reference_only: true };
+    }
+    const token = aiRuntimeToken();
+    if (!nativeMode && !token) {
+      onlineStatus("The authenticated Python-backed Studio runtime is not connected in this tab. Open the core Studio, connect its runtime, then return here.", "error");
+      return null;
+    }
+    state.onlineSearchBusy = true;
+    $("search-online-assets").disabled = true;
+    onlineStatus("Searching " + (provider === "commons" ? "Wikimedia Commons" : "Pexels") + " for “" + query + "”…", "");
+    try {
+      const params = new URLSearchParams({ q: query, provider, kind: $("online-asset-kind").value || "any", limit: "12" });
+      const endpoint = nativeMode ? "./api/mobile/creative/search?" : "./api/creative/search?";
+      const response = await fetch(endpoint + params.toString(), {
+        method: "GET", cache: "no-store",
+        headers: nativeMode ? { Accept: "application/json" } : { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error("Asset search returned unreadable JSON."); }
+      if (!response.ok || !data || data.ok !== true) throw new Error((data && data.error) || "Online asset search failed.");
+      state.onlineAssetResults = data.items || [];
+      renderOnlineResults(data);
+      onlineStatus(
+        (data.count || state.onlineAssetResults.length) + " result(s) from " + provider + ". " +
+        (data.note || "Review each source and licence before publishing."),
+        "success"
+      );
+      return data;
+    } catch (error) {
+      onlineStatus(String(error.message || error), "error");
+      return null;
+    } finally {
+      state.onlineSearchBusy = false;
+      $("search-online-assets").disabled = false;
+    }
+  }
+
+  async function importOnlineAsset(item, addToTimeline) {
+    if (!supportedOnlineAsset(item)) throw new Error("This result has no supported media format or identifiable licence metadata; it was not imported.");
+    if (state.onlineImportBusy) throw new Error("Another online asset is still importing. Retry after it finishes.");
+    state.onlineImportBusy = true;
+    try {
+      const nativeMode = isNativeMobileStudio();
+      const token = aiRuntimeToken();
+      if (!nativeMode && !token) throw new Error("The authenticated Studio runtime is not connected.");
+      onlineStatus("Downloading a bounded copy of “" + (item.title || "asset") + "”…", "");
+      const params = new URLSearchParams({ provider: nativeMode ? "commons" : item.provider, url: item.asset_url });
+      const endpoint = nativeMode ? "./api/mobile/creative/assets/download?" : "./api/creative/assets/download?";
+      const response = await fetch(endpoint + params.toString(), {
+        method: "GET", cache: "no-store",
+        headers: nativeMode ? {} : { Authorization: "Bearer " + token }
+      });
+      if (!response.ok) {
+        let failure = {};
+        try { failure = await response.json(); } catch {}
+        throw new Error(failure.error || "The source could not provide this media file.");
+      }
+      const blob = await response.blob();
+      if (!blob.size || blob.size > 24 * 1024 * 1024) throw new Error("The downloaded asset is empty or exceeds the 24 MB import limit.");
+      const mime = (blob.type || item.mime_type || "").split(";")[0].toLowerCase();
+      if (!["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) {
+        throw new Error("The downloaded file has an unsupported media type: " + (mime || "unknown") + ".");
+      }
+      const extension = ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif", "video/mp4": ".mp4", "video/webm": ".webm" })[mime];
+      const base = slug(String(item.title || "online-asset")).slice(0, 75);
+      const file = new File([blob], base + extension, { type: mime, lastModified: Date.now() });
+      const metadata = await inspectFile(file);
+      if (file.type.startsWith("video/") && (!metadata.duration || !metadata.thumb)) {
+        throw new Error("The browser could not inspect this video or create its preview thumbnail. It was not added.");
+      }
+      const existing = state.assets.find((asset) => asset.sourcePage && asset.sourcePage === item.source_page && asset.sourceProvider === item.provider);
+      if (existing) {
+        if (addToTimeline) addAssetToTimeline(existing.id);
+        return existing.id;
+      }
+      const row = {
+        id: crypto.randomUUID(), name: file.name, type: metadata.type, size: file.size,
+        lastModified: file.lastModified, duration: metadata.duration || 0,
+        width: metadata.width || 0, height: metadata.height || 0, thumb: metadata.thumb || null,
+        blob: file, importedAt: new Date().toISOString(),
+        sourceProvider: item.provider, sourcePage: String(item.source_page || ""),
+        attribution: String(item.attribution || "").slice(0, 180),
+        license: String(item.license || "").slice(0, 180),
+        licenseUrl: String(item.license_url || "").slice(0, 500),
+        rightsVerified: item.rights_verified === true
+      };
+      await dbPut("assets", row);
+      state.assets.unshift({
+        id: row.id, name: row.name, type: row.type, size: row.size,
+        lastModified: row.lastModified, duration: row.duration, width: row.width, height: row.height,
+        thumb: row.thumb, importedAt: row.importedAt,
+        sourceProvider: row.sourceProvider, sourcePage: row.sourcePage, attribution: row.attribution,
+        license: row.license, licenseUrl: row.licenseUrl, rightsVerified: row.rightsVerified
+      });
+      renderAssets();
+      updateStats();
+      if (addToTimeline) addAssetToTimeline(row.id);
+      else scheduleSave();
+      return row.id;
+    } finally {
+      state.onlineImportBusy = false;
+    }
+  }
+
+  function extractBriefTitle(brief) {
+    let text = String(brief || "").trim();
+    const markers = [/(?:explaining|about|covering|showing|on the topic of)\s+(.+?)(?:[.!?]|$)/i, /(?:video|film|clip)\s+(?:about|on)\s+(.+?)(?:[.!?]|$)/i];
+    for (const pattern of markers) {
+      const match = text.match(pattern);
+      if (match && match[1]) { text = match[1]; break; }
+    }
+    text = text.replace(/^how\s+/i, "").replace(/\b(?:in|for)\s+\d+\s*(?:seconds?|secs?)\b/gi, "");
+    text = text.replace(/\b(?:vertical|horizontal|cinematic|realistic|premium|science|documentary|style|video)\b/gi, " ");
+    text = text.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+    return text ? text.slice(0, 76).toLocaleUpperCase() : "A CLOSER LOOK";
+  }
+
+  async function finishDraftAutomatically(clipIds) {
+    if (!$("auto-creative-consent").checked || state.autoFinishBusy) return;
+    state.autoCriticRevisionPerformed = false;
+    const selectedIds = Array.from(new Set((clipIds || []).filter((id) =>
+      state.project.timeline.some((clip) => clip.id === id)
+    ))).slice(0, 6);
+    if (!selectedIds.length) {
+      onlineStatus("No new draft shots remain to direct. Your library is untouched.", "error");
+      return;
+    }
+    state.autoFinishBusy = true;
+    const button = $("build-from-brief");
+    button.disabled = true;
+    try {
+      $("ai-director-panel").hidden = false;
+      renderAiSelectionList();
+      const selected = new Set(selectedIds);
+      $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
+        checkbox.checked = selected.has(checkbox.value);
+      });
+      $("ai-consent").checked = true;
+      updateAiControls();
+      await loadAiModelStatus();
+      if (state.creativeStatus && state.creativeStatus.configured) {
+        onlineStatus("The visual director is examining only the selected new shots' resized thumbnails…", "");
+        await runAiDirection();
+        if (state.creativePlan && Array.isArray(state.creativePlan.operations) && state.creativePlan.operations.length) {
+          applyAiPlan();
+        }
+        if (state.creativePlanApplied) {
+          onlineStatus("Validated visual edits and graphics were applied to the new draft. Starting local WebM export; inspect it before publishing.", "success");
+        } else {
+          onlineStatus("The initial timeline is ready, but the visual director did not apply a validated proposal. " +
+            (String($("ai-status").textContent || "").trim() || "No supported changes were returned.") +
+            " Exporting the supported basic edit.", "");
+        }
+      } else {
+        onlineStatus("A basic asset-based cut is ready, but the visual model is not configured or reachable. No AI visual analysis was claimed. Exporting the basic draft.", "");
+      }
+      await saveProject(false);
+      $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      renderVideo();
+    } catch (error) {
+      onlineStatus("Automatic visual direction could not finish: " + String(error.message || error) + ". The current local timeline is preserved; inspect it and export manually if useful.", "error");
+    } finally {
+      state.autoFinishBusy = false;
+      button.disabled = false;
+    }
+  }
+
+  async function buildDraftFromBrief() {
+    if (state.onlineImportBusy || state.onlineSearchBusy) {
+      onlineStatus("Another asset task is running. Wait for it to finish before starting a second one.", "error");
+      return;
+    }
+    const brief = String($("creative-brief").value || "").trim();
+    if (!brief) {
+      onlineStatus("Write your desired video in Director's Brief first, then press Auto-assemble Draft.", "error");
+      $("creative-brief").focus();
+      return;
+    }
+    setPreviewResolutionFromBrief(brief);
+    const provider = $("online-asset-provider").value || "commons";
+    if (provider === "pinterest") {
+      onlineStatus("Pinterest is for inspiration links here, not reusable source media. Switch to Wikimedia Commons or configured Pexels for importable assets.", "error");
+      await searchOnlineAssets();
+      return;
+    }
+    if (state.project.timeline.length && !window.confirm("Append a new draft to your existing timeline? Existing shots will be kept.")) return;
+    $("build-from-brief").disabled = true;
+    try {
+      if (!$("online-asset-query").value.trim()) $("online-asset-query").value = deriveAssetQuery(brief);
+      let data = await searchOnlineAssets();
+      if (!data || !Array.isArray(data.items)) return;
+      let eligible = data.items.filter(supportedOnlineAsset);
+      if (!eligible.length && provider === "pexels") {
+        onlineStatus("No importable Pexels results. Check its server-side key or switch to Wikimedia Commons.", "error");
+        return;
+      }
+      if (!eligible.length && provider === "commons") {
+        onlineStatus("No results with supported formats and identifiable licences were found. Try a broader phrase; nothing was imported.", "error");
+        return;
+      }
+      const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
+      const ranked = eligible.map((item, index) => {
+        const haystack = (item.title + " " + item.description).toLowerCase();
+        const score = terms.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
+        return { item, index, score };
+      }).sort((a, b) => b.score - a.score || a.index - b.index);
+      const selected = [];
+      const seen = new Set();
+      for (const row of ranked) {
+        const key = String(row.item.title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        selected.push(row.item);
+        if (selected.length >= 4) break;
+      }
+      if (!selected.length) throw new Error("No licence-identified assets passed the format and rights checks. Nothing was imported.");
+      const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
+      const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
+      const importedIds = [];
+      for (let i = 0; i < selected.length; i += 1) {
+        onlineStatus("Building draft: importing selected asset " + (i + 1) + " of " + selected.length + "…", "");
+        const id = await importOnlineAsset(selected[i], false);
+        importedIds.push(id);
+      }
+      // Add the selected assets as one batch after all downloads/metadata checks succeed.
+      const startIndex = state.project.timeline.length;
+      importedIds.forEach((id) => addAssetToTimeline(id));
+      const draftClips = state.project.timeline.slice(startIndex);
+      const baseDuration = targetSeconds / Math.max(1, draftClips.length);
+      const title = extractBriefTitle(brief);
+      draftClips.forEach((clip, index) => {
+        const asset = assetById(clip.assetId);
+        let duration = Math.min(6, Math.max(2, baseDuration));
+        if (asset && asset.type.startsWith("video/") && Number(asset.duration) > 0) {
+          duration = Math.min(duration, Number(asset.duration));
+          clip.motion = "none";
+        } else {
+          clip.motion = index === 0 ? "slow-zoom" : "none";
+        }
+        clip.duration = Math.max(0.5, duration);
+        clip.fit = "cover";
+        clip.title = index === 0 ? title : "";
+        clip.subtitle = "";
+        clip.titlePosition = "bottom";
+        clip.titleColor = "#f1f3e8";
+        clip.titleSize = 44;
+        clip.titleFont = "sans";
+        clip.layers = Array.isArray(clip.layers) ? clip.layers : [];
+      });
+      state.selectedClipId = draftClips[0] ? draftClips[0].id : state.selectedClipId;
+      state.currentClipId = state.selectedClipId;
+      state.playhead = Math.max(0, startIndex >= 0 ? state.project.timeline.slice(0, startIndex).reduce((sum, clip) => sum + clip.duration, 0) : 0);
+      renderTimeline();
+      renderInspector();
+      renderGraphicLayers();
+      updateStats();
+      drawFrame();
+      await saveProject(false);
+      state.lastAutoDraftClipIds = draftClips.map((clip) => clip.id).slice(0, 6);
+      const automaticDirection = $("auto-creative-consent").checked;
+      $("ai-director-panel").hidden = false;
+      renderAiSelectionList();
+      // Select only the newly assembled clips, never earlier project shots.
+      const draftIds = new Set(state.lastAutoDraftClipIds);
+      $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
+        checkbox.checked = draftIds.has(checkbox.value);
+      });
+      updateAiControls();
+
+      if (automaticDirection) {
+        // This path requires the explicit per-run checkbox above.
+        await finishDraftAutomatically(state.lastAutoDraftClipIds);
+      } else {
+        onlineStatus(
+          "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results.",
+          "success"
+        );
+        await loadAiModelStatus();
+        if (state.autoRenderOnAssembly) {
+          onlineStatus("The main chat requested a video, so the local basic draft is being exported now. No thumbnails were shared with a model. For richer AI-directed edits on a future run, explicitly enable the visual-direction consent.", "success");
+          renderVideo();
+        }
+        $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } catch (error) {
+      onlineStatus(String(error.message || error), "error");
+    } finally {
+      state.onlineImportBusy = false;
+      $("build-from-brief").disabled = false;
+    }
+  }
+
   function renderAssets() {
     const target = $("asset-grid");
     const search = $("asset-search").value.trim().toLowerCase();
@@ -381,6 +869,26 @@
       size.textContent = formatBytes(asset.size);
       meta.append(kind, size);
       info.append(name, meta);
+      if (asset.sourceProvider && asset.sourcePage) {
+        const sourceNote = document.createElement("div");
+        sourceNote.className = "asset-source-note";
+        sourceNote.textContent = (asset.sourceProvider.toUpperCase() + " · " + (asset.license || "licence unknown")).slice(0, 220);
+        if (asset.licenseUrl) {
+          const licenceLink = document.createElement("a");
+          licenceLink.href = safeExternalHttps(asset.licenseUrl) || "https://commons.wikimedia.org/";
+          licenceLink.target = "_blank";
+          licenceLink.rel = "noopener noreferrer";
+          licenceLink.textContent = " Licence ↗";
+          sourceNote.append(licenceLink);
+        }
+        const sourceLink = document.createElement("a");
+        sourceLink.href = safeExternalHttps(asset.sourcePage) || "https://commons.wikimedia.org/";
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        sourceLink.textContent = " Source ↗";
+        sourceNote.append(sourceLink);
+        info.append(sourceNote);
+      }
       const remove = document.createElement("button");
       remove.className = "asset-delete";
       remove.type = "button";
@@ -593,11 +1101,11 @@
     return {
       id: crypto.randomUUID(),
       type: type,
-      name: (type === "text" ? "Text" : type === "rect" ? "Rectangle" : "Circle") + " " + count,
+      name: (type === "text" ? "Text" : type === "rect" ? "Rectangle" : type === "circle" ? "Circle" : type === "line" ? "Line" : "Arrow") + " " + count,
       text: type === "text" ? "New graphic" : "",
       x: 50, y: type === "text" ? 76 : 50,
-      width: type === "text" ? 70 : 22,
-      height: type === "text" ? 12 : 16,
+      width: type === "text" ? 70 : (type === "line" || type === "arrow" ? 32 : 22),
+      height: type === "text" ? 12 : (type === "line" || type === "arrow" ? 1 : 16),
       fontSize: 44,
       color: "#d6fa62", opacity: 1, font: "sans", animation: "fade-in"
     };
@@ -621,7 +1129,7 @@
       const select = document.createElement("button");
       select.type = "button";
       select.className = "graphic-layer-select";
-      select.textContent = (layer.type === "text" ? "T" : layer.type === "rect" ? "▰" : "●") + "  " + (layer.name || "Graphic layer");
+      select.textContent = (layer.type === "text" ? "T" : layer.type === "rect" ? "▰" : layer.type === "circle" ? "●" : layer.type === "line" ? "／" : "→") + "  " + (layer.name || "Graphic layer");
       select.addEventListener("click", () => {
         state.selectedGraphicLayerId = layer.id;
         renderGraphicLayers();
@@ -681,6 +1189,8 @@
     $("add-text-layer").addEventListener("click", () => addGraphicLayer("text"));
     $("add-rect-layer").addEventListener("click", () => addGraphicLayer("rect"));
     $("add-circle-layer").addEventListener("click", () => addGraphicLayer("circle"));
+    $("add-line-layer").addEventListener("click", () => addGraphicLayer("line"));
+    $("add-arrow-layer").addEventListener("click", () => addGraphicLayer("arrow"));
     const fields = {
       "graphic-layer-name": ["name", (v) => v.slice(0, 100)],
       "graphic-layer-text": ["text", (v) => v.slice(0, 300)],
@@ -943,6 +1453,28 @@
         ctx.beginPath();
         ctx.ellipse(x, y, width / 2, height / 2, 0, 0, Math.PI * 2);
         ctx.fill();
+      } else if (layer.type === "line" || layer.type === "arrow") {
+        const x1 = x - width / 2;
+        const y1 = y - height / 2;
+        const x2 = x + width / 2;
+        const y2 = y + height / 2;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = Math.max(2, W * 0.0025);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        if (layer.type === "arrow") {
+          const head = Math.max(8, Math.min(W, H) * 0.022);
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+          ctx.closePath();
+          ctx.fill();
+        }
       } else if (layer.type === "text" && layer.text) {
         const fontSize = Math.max(10, Math.round((Number(layer.fontSize) || 44) * W / 960));
         const family = layer.font === "serif" ? 'Georgia, "Times New Roman", serif'
@@ -1105,8 +1637,296 @@
     target.className = "render-message" + (isError ? " error" : " success");
   }
 
-  async function renderVideo() {
+  function waitForVideoEvent(video, eventName, timeoutMs, failureMessage) {
+    return new Promise((resolve, reject) => {
+      let timer = 0;
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        video.removeEventListener(eventName, onReady);
+        video.removeEventListener("error", onError);
+      };
+      const onReady = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error(failureMessage || "The exported video could not be decoded.")); };
+      video.addEventListener(eventName, onReady, { once: true });
+      video.addEventListener("error", onError, { once: true });
+      timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out while checking the exported video."));
+      }, timeoutMs);
+      if (eventName === "loadedmetadata" && video.readyState >= 1) onReady();
+      if (eventName === "loadeddata" && video.readyState >= 2) onReady();
+    });
+  }
+
+  async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot) {
+    if (!(blob instanceof Blob) || !blob.size) throw new Error("The browser returned an empty video file.");
+    if (blob.size < 2048) throw new Error("The exported video is unexpectedly tiny and may be incomplete.");
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.setAttribute("aria-hidden", "true");
+    video.style.position = "fixed";
+    video.style.left = "-10000px";
+    video.style.width = "2px";
+    video.style.height = "2px";
+    document.body.append(video);
+    const warnings = [];
+    try {
+      const metadata = waitForVideoEvent(video, "loadedmetadata", 12000, "The exported WebM could not be reopened for verification.");
+      video.src = url;
+      video.load();
+      await metadata;
+      const duration = Number(video.duration);
+      const width = Number(video.videoWidth);
+      const height = Number(video.videoHeight);
+      if (!Number.isFinite(duration) || duration <= 0 || width <= 0 || height <= 0) {
+        throw new Error("The exported file did not expose valid playable video metadata.");
+      }
+      if (Number.isFinite(expectedDuration) && expectedDuration > 0) {
+        const tolerance = Math.max(1.25, expectedDuration * 0.12);
+        if (Math.abs(duration - expectedDuration) > tolerance) {
+          warnings.push("duration differs from the timeline (" + duration.toFixed(2) + "s vs " + expectedDuration.toFixed(2) + "s)");
+        }
+      }
+      const probe = document.createElement("canvas");
+      probe.width = 64;
+      probe.height = 36;
+      const probeContext = probe.getContext("2d", { willReadFrequently: true });
+      if (!probeContext) throw new Error("The browser could not create the local frame-inspection canvas.");
+      const times = Array.from(new Set([
+        Math.min(duration * 0.02, 0.08),
+        duration * 0.25,
+        duration * 0.5,
+        duration * 0.75,
+        Math.max(0, duration - Math.min(duration * 0.02, 0.08))
+      ].map((time) => Math.max(0, Math.min(duration - 0.01, time)).toFixed(3)))).map(Number);
+      const frameStats = [];
+      const reviewFrames = [];
+      const seekTo = async (time) => {
+        if (Math.abs(video.currentTime - time) <= 0.02) return;
+        await new Promise((resolve, reject) => {
+          let timer = 0;
+          const cleanup = () => {
+            window.clearTimeout(timer);
+            video.removeEventListener("seeked", onSeeked);
+            video.removeEventListener("error", onError);
+          };
+          const onSeeked = () => { cleanup(); resolve(); };
+          const onError = () => { cleanup(); reject(new Error("A sampled frame could not be decoded.")); };
+          timer = window.setTimeout(() => {
+            cleanup();
+            reject(new Error("Timed out seeking within the exported video."));
+          }, 5000);
+          video.addEventListener("seeked", onSeeked, { once: true });
+          video.addEventListener("error", onError, { once: true });
+          video.currentTime = time;
+        });
+      };
+      await waitForVideoEvent(video, "loadeddata", 8000, "The exported video did not decode its first frame.");
+      for (const time of times) {
+        await seekTo(time);
+        probeContext.drawImage(video, 0, 0, probe.width, probe.height);
+        const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
+        let sum = 0;
+        let squared = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const luma = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+          sum += luma;
+          squared += luma * luma;
+        }
+        const count = pixels.length / 4;
+        const mean = sum / count;
+        const variance = Math.max(0, squared / count - mean * mean);
+        frameStats.push({ time, mean, variance });
+      }
+
+      const reviewSet = new Set(Array.isArray(reviewClipIds) ? reviewClipIds : []);
+      const timeline = Array.isArray(renderTimelineSnapshot) ? renderTimelineSnapshot : [];
+      let timelineStart = 0;
+      const reviewCanvas = document.createElement("canvas");
+      const reviewScale = Math.min(1, 360 / Math.max(1, width), 640 / Math.max(1, height));
+      reviewCanvas.width = Math.max(1, Math.round(width * reviewScale));
+      reviewCanvas.height = Math.max(1, Math.round(height * reviewScale));
+      const reviewContext = reviewCanvas.getContext("2d", { alpha: false });
+      if (reviewContext && reviewSet.size) {
+        for (const clip of timeline) {
+          const clipDuration = Math.max(0.5, Number(clip.duration) || 0);
+          const targetTime = Math.min(duration - 0.01, Math.max(0, timelineStart + clipDuration / 2));
+          timelineStart += clipDuration;
+          if (!reviewSet.has(clip.id) || reviewFrames.length >= 4) continue;
+          await seekTo(targetTime);
+          reviewContext.fillStyle = "#10130f";
+          reviewContext.fillRect(0, 0, reviewCanvas.width, reviewCanvas.height);
+          reviewContext.drawImage(video, 0, 0, reviewCanvas.width, reviewCanvas.height);
+          let dataUrl = reviewCanvas.toDataURL("image/jpeg", 0.7);
+          // Keep every consented rendered sample under the existing 350 KB preview cap.
+          if (dataUrl.length > 340000) dataUrl = reviewCanvas.toDataURL("image/jpeg", 0.5);
+          if (dataUrl.length <= 350000) {
+            reviewFrames.push({
+              time: targetTime,
+              clip_id: clip.id,
+              asset_id: clip.assetId,
+              preview_data_url: dataUrl
+            });
+          } else {
+            warnings.push("could not create a small rendered review frame for clip " + String(clip.id).slice(0, 12));
+          }
+        }
+      }
+      const suspiciousDark = frameStats.filter((frame) => frame.mean < 5 && frame.variance < 3);
+      if (suspiciousDark.length) {
+        warnings.push("possible black/blank output near " + suspiciousDark.map((frame) => frame.time.toFixed(1) + "s").join(", "));
+      }
+      return {
+        ok: true, decodable: true, duration, width, height,
+        sampledFrames: frameStats.length,
+        reviewFrames,
+        warnings
+      };
+    } finally {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function critiqueRenderedDraft(inspection, renderSignature) {
+    if (!$("auto-creative-consent").checked) {
+      return { attempted: false, changed: false, message: "Post-render model critique consent was switched off before upload." };
+    }
+    const token = aiRuntimeToken();
+    if (!token) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
+    if (aiTimelineSignature() !== renderSignature) {
+      return { attempted: false, changed: false, message: "Timeline changed after rendering; the draft was not auto-modified." };
+    }
+    const allowed = new Set(state.lastAutoDraftClipIds.slice(0, 4));
+    const frames = Array.isArray(inspection && inspection.reviewFrames)
+      ? inspection.reviewFrames.filter((frame) => allowed.has(frame.clip_id)).slice(0, 4)
+      : [];
+    if (!frames.length) return { attempted: false, changed: false, message: "No safely mapped rendered-frame samples were available." };
+    await loadAiModelStatus();
+    if (!state.creativeStatus || state.creativeStatus.configured !== true) {
+      return { attempted: false, changed: false, message: "Visual model not configured; no post-render AI critique was run." };
+    }
+    const ids = frames.map((frame) => frame.clip_id);
+    const timelineById = new Map(state.project.timeline.map((clip) => [clip.id, clip]));
+    const records = frames.map((frame) => {
+      const clip = timelineById.get(frame.clip_id);
+      const asset = clip ? assetById(clip.assetId) : null;
+      if (!clip || !asset || clip.assetId !== frame.asset_id || typeof frame.preview_data_url !== "string") {
+        throw new Error("A rendered sample no longer maps to its original shot. The automatic critique was cancelled.");
+      }
+      return {
+        asset_id: clip.assetId,
+        clip_id: clip.id,
+        name: (asset.name || "shot") + " — rendered output at " + Number(frame.time).toFixed(2) + "s",
+        preview_data_url: frame.preview_data_url,
+        duration: Number(clip.duration) || 0,
+        source_duration: Number(asset.duration) || 0,
+        source_in: Number(clip.sourceIn) || 0,
+        media_type: String(asset.type || ""),
+        motion: String(clip.motion || "none"),
+        fit: String(clip.fit || "cover")
+      };
+    });
+    const critiqueBrief = [
+      "POST-RENDER VISUAL CRITIC — THESE ARE SAMPLES FROM THE ACTUAL EXPORTED WEBM, not source thumbnails.",
+      "Inspect only these sampled rendered frames. They include the composition, cropping, text and native graphics that were actually exported.",
+      "Compare visible evidence with the user's brief. Report only concrete defects supported by these frames, such as a clearly irrelevant shot, title covering the subject, unreadable/overflowing text, bad crop or redundant graphic.",
+      "Use only the exact supplied clip/asset IDs. If a shot is visibly off-topic, remove_clip with a specific reason is allowed. Return supported corrective operations only; do not add decorations to make the result busier.",
+      "Do not claim to inspect sound, motion between frames, full clips, or unshown moments. If the frames are acceptable or uncertain, return an empty operations array.",
+      "Original brief: " + String($("creative-brief").value || "").slice(0, 3500)
+    ].join("\n\n");
+    const response = await fetch("./api/creative/analyze", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({
+        consent: true,
+        consent_clip_ids: ids,
+        allow_reorder: false,
+        brief: critiqueBrief.slice(0, 4000),
+        assets: records
+      })
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("The rendered-frame critic returned unreadable JSON."); }
+    if (!response.ok || !data || data.ok !== true) {
+      throw new Error((data && data.error) || "Post-render visual critique could not start.");
+    }
+    if (data.status === "processing" && typeof data.job_id === "string") {
+      aiSetStatus("The local render decoded. Waiting for the consented post-render critic to inspect sampled output frames…", "");
+      data = await pollAiCreativeJob(data.job_id, token);
+    }
+    if (!data || data.ok !== true || data.status !== "complete" || !data.plan) {
+      throw new Error((data && data.error) || "The post-render critic did not return a verified complete plan.");
+    }
+    if (aiTimelineSignature() !== renderSignature) {
+      throw new Error("The timeline changed while the critic was running. Its proposed edits were discarded.");
+    }
+    state.creativePlan = data.plan;
+    state.creativeSnapshot = renderSignature;
+    state.creativeSelectedIds = ids.slice();
+    state.creativeAllowReorder = false;
+    state.creativePlanApplied = false;
+    renderAiPlan(data);
+    const count = Array.isArray(data.plan.operations) ? data.plan.operations.length : 0;
+    if (!count) {
+      return {
+        attempted: true, changed: false,
+        message: "Post-render critic (" + (data.worker || "worker unknown") + " / " + (data.model || "model unknown") + ") returned no supported corrections."
+      };
+    }
+    applyAiPlan();
+    if (!state.creativePlanApplied) {
+      throw new Error("The critic proposed changes, but the local validator rejected them. No automatic correction was applied.");
+    }
+    state.autoCriticRevisionPerformed = true;
+    return {
+      attempted: true, changed: true,
+      message: "Post-render critic (" + (data.worker || "worker unknown") + " / " + (data.model || "model unknown") + ") applied " + count + " validated correction operation(s). A single bounded re-render will follow."
+    };
+  }
+
+  async function deliverRenderedVideo(blob, fileName) {
+    if (isNativeMobileStudio()) {
+      if (!(blob instanceof Blob) || !blob.size) throw new Error("The renderer returned an empty WebM.");
+      if (blob.size > 24 * 1024 * 1024) {
+        throw new Error("This render is over the 24 MB mobile-save limit. Choose a shorter duration or lower resolution, then render again.");
+      }
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 32768)));
+      }
+      const response = window.OmnitrixNativeBridge.saveVideoBase64(fileName, blob.type || "video/webm", btoa(binary));
+      if (response !== "saved") {
+        const detail = String(response || "").startsWith("error:") ? String(response).slice(6) : "";
+        throw new Error(detail || "Android did not confirm saving the generated video.");
+      }
+      return "saved to Movies/Omnitrix on this phone";
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return "downloaded to this device";
+  }
+
+  async function renderVideo(options) {
     if (state.exporting) return;
+    const autoCritiqueRetry = Boolean(options && options.autoCritiqueRetry === true);
+    const runPostRenderCritic = Boolean(!autoCritiqueRetry && state.autoFinishBusy && $("auto-creative-consent").checked);
     if (!state.project.timeline.length) { showMessage("Add at least one shot before rendering.", true); return; }
     if (!("MediaRecorder" in window) || !canvas.captureStream) {
       showMessage("This browser does not support canvas video recording. Try a current version of Chrome or Edge.", true);
@@ -1115,6 +1935,14 @@
     pausePreview();
     const dimensions = $("preview-scale").value.split("x").map(Number);
     const original = { width: canvas.width, height: canvas.height };
+    const expectedDuration = totalDuration();
+    const renderTimelineSnapshot = state.project.timeline.map((clip) => ({
+      id: clip.id, assetId: clip.assetId, duration: Number(clip.duration) || 0
+    }));
+    const reviewClipIds = runPostRenderCritic
+      ? state.lastAutoDraftClipIds.slice(0, 4)
+      : [];
+    const renderSignature = aiTimelineSignature();
     canvas.width = dimensions[0] || 1280;
     canvas.height = dimensions[1] || 720;
     state.playhead = 0;
@@ -1137,31 +1965,91 @@
       state.recorder = recorder;
       recorder.ondataavailable = (event) => { if (event.data && event.data.size) state.chunks.push(event.data); };
       recorder.onerror = (event) => showMessage("Recorder error: " + ((event.error && event.error.message) || "unknown browser recording error"), true);
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const blob = new Blob(state.chunks, { type: recorder.mimeType || "video/webm" });
         outputStream.getTracks().forEach((track) => track.stop());
         canvas.width = original.width;
         canvas.height = original.height;
-        state.exporting = false;
         state.recorder = null;
         state.isPlaying = false;
         sourceVideo.pause();
-        $("render-video").disabled = false;
-        $("render-video-bottom").disabled = false;
         drawFrame();
         if (blob.size) {
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = slug(state.project.name) + "-draft.webm";
-          document.body.append(link);
-          link.click();
-          link.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-          showMessage("Render complete · " + formatBytes(blob.size) + " · downloaded as WebM. Keep original source media for future edits.", false);
+          let inspection = null;
+          let inspectionFailure = "";
+          showMessage("Checking the actual WebM file locally (decode, duration, size and sampled frames)…", false);
+          try {
+            inspection = await inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot);
+          } catch (error) {
+            inspectionFailure = String(error.message || error);
+          }
+          let critique = { attempted: false, changed: false, message: "" };
+          if (runPostRenderCritic && $("auto-creative-consent").checked &&
+              inspection && inspection.ok && inspection.reviewFrames && inspection.reviewFrames.length) {
+            try {
+              critique = await critiqueRenderedDraft(inspection, renderSignature);
+            } catch (error) {
+              critique = { attempted: true, changed: false, message: "Post-render critic unavailable: " + String(error.message || error) };
+            }
+          }
+
+          if (critique.changed && state.creativePlanApplied && !autoCritiqueRetry) {
+            state.exporting = false;
+            $("render-video").disabled = false;
+            $("render-video-bottom").disabled = false;
+            updateTransport();
+            showMessage(critique.message + " Discarding the intermediate render and rendering the corrected timeline once.", false);
+            await renderVideo({ autoCritiqueRetry: true });
+            return;
+          }
+
+          // Deliver the actual encoded artifact. Native Android saves it to Movies/Omnitrix;
+          // standard browsers receive a regular WebM download.
+          let deliveryLabel = "";
+          try {
+            deliveryLabel = await deliverRenderedVideo(blob, slug(state.project.name) + "-draft.webm");
+          } catch (error) {
+            deliveryLabel = "not saved: " + String(error.message || error);
+          }
+          let criticSuffix = "";
+          if (critique.attempted) criticSuffix = " · " + critique.message;
+          else if (runPostRenderCritic && $("auto-creative-consent").checked) {
+            criticSuffix = " · No verified post-render AI critique: " + (critique.message || "No rendered sample was inspected.");
+          }
+          if (inspection && inspection.ok) {
+            const dimensionsLabel = inspection.width + "×" + inspection.height;
+            if (inspection.warnings.length) {
+              showMessage(
+                "WebM exported and decoded · " + formatBytes(blob.size) + " · " + dimensionsLabel + " · " +
+                inspection.duration.toFixed(2) + "s. QA warning: " + inspection.warnings.join("; ") +
+                ". The file was " + deliveryLabel + "; inspect these points before publishing." + criticSuffix,
+                true
+              );
+            } else {
+              const correctionNote = state.autoCriticRevisionPerformed
+                ? " One validated correction pass was applied after inspecting the first render; the final render received technical QA, not a second AI critique."
+                : "";
+              showMessage(
+                "WebM exported, reopened and decoded locally · " + deliveryLabel + " · " + formatBytes(blob.size) + " · " +
+                dimensionsLabel + " · " + inspection.duration.toFixed(2) + "s · " +
+                inspection.sampledFrames + " sampled frames checked. This is technical QA, not a guarantee of artistic quality." +
+                correctionNote + criticSuffix,
+                false
+              );
+            }
+          } else {
+            showMessage(
+              "A " + formatBytes(blob.size) + " WebM was generated and " + (deliveryLabel || "delivered") + ", but its playback could not be verified: " +
+              (inspectionFailure || "unknown decode error") + ". Open the file and inspect it before publishing." + criticSuffix,
+              true
+            );
+          }
         } else {
           showMessage("The browser returned an empty video file. Try a shorter sequence or lower resolution.", true);
         }
+        state.exporting = false;
+        $("render-video").disabled = false;
+        $("render-video-bottom").disabled = false;
         updateTransport();
       };
       recorder.start(500);
@@ -1213,12 +2101,16 @@
       },
       media: state.assets.map((asset) => ({
         id: asset.id, name: asset.name, type: asset.type, size: asset.size,
-        duration: asset.duration, width: asset.width, height: asset.height
+        duration: asset.duration, width: asset.width, height: asset.height,
+        sourceProvider: asset.sourceProvider || "", sourcePage: asset.sourcePage || "",
+        attribution: asset.attribution || "", license: asset.license || "",
+        licenseUrl: asset.licenseUrl || "", rightsVerified: asset.rightsVerified === true
       })),
       notes: [
         "This is an editable decision manifest, not a media archive.",
         "Original media remains in the browser's local IndexedDB store. Back up originals separately.",
-        "Audio tracks, transitions between shots, masks and model-generated changes are not yet part of this prototype."
+        "Online asset source, licence and attribution metadata are included where available; verify rights before publication.",
+        "This render path uses browser MediaRecorder. Independent music/narration tracks, true transitions, masks, post-render model critique and generated raster imagery remain unsupported."
       ]
     };
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
@@ -1265,6 +2157,14 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "ai-status" + (kind ? " " + kind : "");
+  }
+
+  function isNativeMobileStudio() {
+    try {
+      return Boolean(window.OmnitrixNativeBridge &&
+        typeof window.OmnitrixNativeBridge.initialPrompt === "function" &&
+        typeof window.OmnitrixNativeBridge.saveVideoBase64 === "function");
+    } catch (_) { return false; }
   }
 
   function aiRuntimeToken() {
@@ -1436,12 +2336,14 @@
     const clip = state.project.timeline.find((item) => item.id === op.clip_id);
     const name = clip ? (assetById(clip.assetId)?.name || clip.name || "Shot") : "Shot";
     switch (op.type) {
+      case "remove_clip": return name + " — remove this shot: " + op.reason + ".";
       case "set_duration": return name + " — set duration to " + op.duration_seconds + " seconds.";
       case "set_motion": return name + " — use " + op.preset + " motion.";
       case "set_fit": return name + " — frame fit: " + op.fit + ".";
       case "set_title": return name + " — title: " + (op.text || "(clear title)");
       case "set_subtitle": return name + " — subtitle: " + (op.text || "(clear subtitle)");
       case "set_title_style": return name + " — title style: " + op.position + ", " + op.font + ", " + op.size + " px, " + op.color + ".";
+      case "add_graphic_layer": return name + " — add purposeful " + op.layer_type + " layer “" + (op.name || "Graphic") + (op.text ? " / " + op.text : "") + "” with " + op.animation + " motion.";
       case "reorder_timeline": return "Reorder the complete timeline: " + op.clip_ids.map((id) => {
         const row = state.project.timeline.find((item) => item.id === id);
         return row ? (assetById(row.assetId)?.name || row.name || id) : id;
@@ -1663,6 +2565,7 @@
     const allowedPosition = new Set(["bottom", "center", "top"]);
     const allowedFont = new Set(["sans", "serif", "mono"]);
     const allowedColor = /^#[0-9a-fA-F]{6}$/;
+    const removedClipIds = new Set();
     try {
       for (const op of plan.operations) {
         if (!op || typeof op !== "object") throw new Error("The proposed plan contains an invalid operation.");
@@ -1683,6 +2586,12 @@
           throw new Error("An operation no longer matches the reviewed asset selection; nothing was applied.");
         }
         switch (op.type) {
+          case "remove_clip":
+            if (typeof op.reason !== "string" || op.reason.trim().length < 12 || op.reason.length > 180) {
+              throw new Error("A removed shot requires a specific evidence-based reason; nothing was applied.");
+            }
+            removedClipIds.add(clip.id);
+            break;
           case "set_duration":
             if (typeof op.duration_seconds !== "number" || !Number.isFinite(op.duration_seconds) ||
                 op.duration_seconds < 0.5 || op.duration_seconds > 600) throw new Error("Invalid shot duration; nothing was applied.");
@@ -1720,9 +2629,44 @@
             clip.titleSize = op.size;
             clip.titleColor = op.color;
             break;
+          case "add_graphic_layer": {
+            const allowedLayerTypes = new Set(["text", "rect", "circle", "line", "arrow"]);
+            const allowedAnimations = new Set(["none", "fade-in", "slide-up", "slide-left", "scale-in"]);
+            const numberInRange = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+            if (!allowedLayerTypes.has(op.layer_type) || !allowedAnimations.has(op.animation) ||
+                !allowedFont.has(op.font) || typeof op.name !== "string" || op.name.length > 100 ||
+                typeof op.text !== "string" || op.text.length > 200 ||
+                (op.layer_type === "text" && !op.text.trim()) ||
+                !numberInRange(op.x, 0, 100) || !numberInRange(op.y, 0, 100) ||
+                !numberInRange(op.width, 1, 100) || !numberInRange(op.height, 1, 100) ||
+                !numberInRange(op.opacity, 0, 1) ||
+                !Number.isInteger(op.font_size) || op.font_size < 10 || op.font_size > 180 ||
+                typeof op.color !== "string" || !allowedColor.test(op.color)) {
+              throw new Error("The graphics engineer proposed an invalid native layer; nothing was applied.");
+            }
+            if (!Array.isArray(clip.layers)) clip.layers = [];
+            if (clip.layers.length >= 3) throw new Error("A shot may have no more than three added graphic layers.");
+            clip.layers.push({
+              id: crypto.randomUUID(), type: op.layer_type, name: op.name, text: op.text,
+              x: op.x, y: op.y, width: op.width, height: op.height,
+              fontSize: op.font_size, color: op.color, font: op.font,
+              opacity: op.opacity, animation: op.animation
+            });
+            break;
+          }
           default:
             throw new Error("This build cannot apply the proposed operation '" + String(op.type) + "'. Nothing was changed.");
         }
+      }
+      if (removedClipIds.size) {
+        const survivingSelected = working.filter((clip) =>
+          state.creativeSelectedIds.includes(clip.id) && !removedClipIds.has(clip.id)
+        );
+        if (!survivingSelected.length) {
+          throw new Error("At least one selected shot must remain in the edit; nothing was applied.");
+        }
+        const retained = working.filter((clip) => !removedClipIds.has(clip.id));
+        working.splice(0, working.length, ...retained);
       }
     } catch (error) {
       aiSetStatus(String(error.message || error), "error");
@@ -1741,8 +2685,16 @@
     scheduleSave();
     drawFrame();
     $("ai-apply-plan").disabled = true;
-    aiSetStatus("Reviewed plan applied to the local editable timeline and queued for autosave. No transition, audio track, mask, or generated asset was added.", "success");
-    $("agent-state").textContent = "AI-directed changes were applied only after your approval. The rendered result still needs a visual review.";
+    const autoAuthorized = state.autoFinishBusy;
+    aiSetStatus(
+      (autoAuthorized ? "Validated plan applied under your explicit per-run consent." : "Reviewed plan applied to the local editable timeline.") +
+      " The editable project was queued for autosave. Unsupported effects were not added.",
+      "success"
+    );
+    $("agent-state").textContent = (autoAuthorized
+      ? "The validated proposal was automatically applied under your per-run consent."
+      : "AI-directed changes were applied after your review.") +
+      " The exported result still needs a visual review.";
   }
 
   function clearAiProposal() {
@@ -1771,6 +2723,22 @@
     dropzone.addEventListener("drop", (event) => importFiles(event.dataTransfer && event.dataTransfer.files));
     $("asset-search").addEventListener("input", renderAssets);
     $("add-all-assets").addEventListener("click", addAllAssets);
+    $("search-online-assets").addEventListener("click", () => searchOnlineAssets());
+    $("online-asset-query").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); searchOnlineAssets(); }
+    });
+    $("pinterest-reference").addEventListener("click", () => {
+      const query = String($("online-asset-query").value || "").trim() || deriveAssetQuery($("creative-brief").value);
+      if (!query) { onlineStatus("Enter a search phrase or write a Director's Brief first.", "error"); return; }
+      const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+    $("build-from-brief").addEventListener("click", buildDraftFromBrief);
+    $("auto-creative-consent").addEventListener("change", () => {
+      if ($("auto-creative-consent").checked && state.lastAutoDraftClipIds.length) {
+        finishDraftAutomatically(state.lastAutoDraftClipIds);
+      }
+    });
     $("save-project").addEventListener("click", () => saveProject(true));
     $("save-brief").addEventListener("click", () => { state.project.brief = $("creative-brief").value; scheduleSave(); toast("Director's brief saved with project."); });
     $("open-ai-director").addEventListener("click", openAiDirector);
@@ -1816,11 +2784,7 @@
       const index = entry ? Math.min(state.project.timeline.length - 1, entry.index + 1) : 0;
       if (state.project.timeline[index]) selectClip(state.project.timeline[index].id);
     });
-    $("preview-scale").addEventListener("change", () => {
-      const dims = $("preview-scale").value.split("x").map(Number);
-      canvas.width = dims[0] || 1280; canvas.height = dims[1] || 720;
-      updateStats(); drawFrame();
-    });
+    $("preview-scale").addEventListener("change", updatePreviewResolution);
     bindInspector();
     bindGraphicLayers();
   }
@@ -1830,6 +2794,39 @@
       state.db = await openDatabase();
       bindUi();
       await loadProject();
+      const launchParams = new URLSearchParams(window.location.search);
+      const nativeMode = isNativeMobileStudio();
+      if (nativeMode) {
+        const provider = $("online-asset-provider");
+        if (provider) { provider.value = "commons"; provider.disabled = true; }
+        const referenceButton = $("pinterest-reference");
+        if (referenceButton) referenceButton.hidden = true;
+      }
+      let inboundBrief = "";
+      if (nativeMode) {
+        try { inboundBrief = String(window.OmnitrixNativeBridge.initialPrompt() || "").slice(0, 4000).trim(); }
+        catch (_) {}
+      }
+      if (!inboundBrief) {
+        try {
+          inboundBrief = String(sessionStorage.getItem("omnitrix-creative-brief-pending") || "").slice(0, 4000).trim();
+          sessionStorage.removeItem("omnitrix-creative-brief-pending");
+        } catch (_) {}
+      }
+      if (inboundBrief) {
+        $("creative-brief").value = inboundBrief;
+        state.project.brief = inboundBrief;
+        $("online-asset-query").value = deriveAssetQuery(inboundBrief);
+        setPreviewResolutionFromBrief(inboundBrief);
+        await saveProject(false);
+        if (launchParams.get("autoDraft") === "1") {
+          // The full prompt is passed in same-tab session storage, not in a query string.
+          window.history.replaceState(null, "", window.location.pathname);
+          state.autoRenderOnAssembly = true;
+          await buildDraftFromBrief();
+          state.autoRenderOnAssembly = false;
+        }
+      }
       const storedCount = state.assets.length;
       $("agent-state").textContent = "Local editing is active. AI direction uses a configured provider only after explicit consent for selected resized previews. No media is sent until you request analysis.";
       updateStorageLabel();

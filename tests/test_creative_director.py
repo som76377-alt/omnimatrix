@@ -207,5 +207,136 @@ class CreativeDirectorTests(unittest.TestCase):
         self.assertEqual(status["model"], "demo-model")
 
 
+    def test_native_graphic_layer_operation_is_validated(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "coil.png"}]
+        plan = {
+            "schema_version": 1,
+            "summary": "Add one label that explains the magnetic field.",
+            "observations": [],
+            "operations": [{
+                "type": "add_graphic_layer",
+                "asset_id": "asset-1",
+                "clip_id": "clip-1",
+                "layer_type": "text",
+                "name": "Field label",
+                "text": "ALTERNATING MAGNETIC FIELD",
+                "x": 50, "y": 75, "width": 70, "height": 14,
+                "font_size": 32, "color": "#f1f3e8", "font": "sans",
+                "opacity": 1, "animation": "fade-in",
+            }],
+        }
+        result = validate_plan(plan, assets, allow_reorder=False)
+        self.assertEqual(result["operations"][0]["type"], "add_graphic_layer")
+        self.assertEqual(result["operations"][0]["layer_type"], "text")
+        self.assertEqual(result["operations"][0]["animation"], "fade-in")
+
+    def test_graphic_layer_rejects_out_of_bounds_and_unsupported_motion(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "coil.png"}]
+        base = {
+            "type": "add_graphic_layer", "asset_id": "asset-1", "clip_id": "clip-1",
+            "layer_type": "rect", "name": "Explain", "text": "",
+            "x": 50, "y": 75, "width": 60, "height": 10,
+            "font_size": 32, "color": "#d6fa62", "font": "sans",
+            "opacity": 1, "animation": "fade-in",
+        }
+        for patch, message in (
+            ({"x": 120}, "outside its supported range"),
+            ({"animation": "particle-explosion"}, "unsupported"),
+            ({"color": "url(javascript:alert(1))"}, "six-digit hex"),
+        ):
+            operation = dict(base)
+            operation.update(patch)
+            with self.subTest(patch=patch):
+                with self.assertRaisesRegex(CreativeDirectorError, message):
+                    validate_plan({
+                        "schema_version": 1, "summary": "Validated graphic test.",
+                        "observations": [], "operations": [operation],
+                    }, assets, allow_reorder=False)
+
+    def test_graphics_engineer_cannot_stack_more_than_three_layers_per_shot(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "coil.png"}]
+        base = {
+            "type": "add_graphic_layer", "asset_id": "asset-1", "clip_id": "clip-1",
+            "layer_type": "rect", "name": "Meaningful rule", "text": "",
+            "x": 50, "y": 75, "width": 60, "height": 2,
+            "font_size": 32, "color": "#d6fa62", "font": "sans",
+            "opacity": 1, "animation": "none",
+        }
+        plan = {
+            "schema_version": 1, "summary": "Bounded number of design layers.",
+            "observations": [], "operations": [dict(base) for _ in range(4)],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "at most three"):
+            validate_plan(plan, assets, allow_reorder=False)
+
+
+    def test_native_arrow_layer_is_supported_with_bounded_motion(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "pan.png"}]
+        plan = {
+            "schema_version": 1,
+            "summary": "Point to the heated pan base.",
+            "observations": [],
+            "operations": [{
+                "type": "add_graphic_layer", "asset_id": "asset-1", "clip_id": "clip-1",
+                "layer_type": "arrow", "name": "Heat direction", "text": "",
+                "x": 51, "y": 63, "width": 24, "height": 5,
+                "font_size": 24, "color": "#d6fa62", "font": "sans",
+                "opacity": 0.9, "animation": "fade-in",
+            }],
+        }
+        result = validate_plan(plan, assets, allow_reorder=False)
+        self.assertEqual(result["operations"][0]["layer_type"], "arrow")
+        self.assertEqual(result["operations"][0]["width"], 24)
+
+    def test_visual_director_can_remove_one_irrelevant_candidate_with_a_reason(self):
+        assets = [
+            {"asset_id": "asset-1", "clip_id": "clip-1", "name": "unrelated.png"},
+            {"asset_id": "asset-2", "clip_id": "clip-2", "name": "induction-pan.png"},
+        ]
+        plan = {
+            "schema_version": 1,
+            "summary": "Discard the unrelated result and keep the pan shot.",
+            "observations": [],
+            "operations": [{
+                "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                "reason": "The thumbnail shows a beach, unrelated to the induction stove.",
+            }],
+        }
+        result = validate_plan(plan, assets, allow_reorder=False)
+        self.assertEqual(result["operations"][0]["type"], "remove_clip")
+        self.assertIn("beach", result["operations"][0]["reason"])
+
+    def test_visual_director_cannot_remove_every_selected_shot(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "only.png"}]
+        plan = {
+            "schema_version": 1, "summary": "Attempt to remove the sole shot.",
+            "observations": [],
+            "operations": [{
+                "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                "reason": "This shot appears unrelated to the desired subject.",
+            }],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "At least one selected shot must remain"):
+            validate_plan(plan, assets, allow_reorder=False)
+
+    def test_visual_director_cannot_remove_and_edit_the_same_shot(self):
+        assets = [{"asset_id": "asset-1", "clip_id": "clip-1", "name": "only.png"}]
+        plan = {
+            "schema_version": 1, "summary": "Conflicting operations.",
+            "observations": [],
+            "operations": [
+                {
+                    "type": "remove_clip", "asset_id": "asset-1", "clip_id": "clip-1",
+                    "reason": "This shot is clearly unrelated to the desired subject.",
+                },
+                {
+                    "type": "set_title", "asset_id": "asset-1", "clip_id": "clip-1",
+                    "text": "Not a useful title",
+                },
+            ],
+        }
+        with self.assertRaisesRegex(CreativeDirectorError, "both removed and edited"):
+            validate_plan(plan, assets, allow_reorder=False)
+
 if __name__ == "__main__":
     unittest.main()
