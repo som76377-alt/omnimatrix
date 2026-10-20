@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "product": "Omnitrix Creative Studio",
+  "status": "coordination-contract-defined-runtime-enforcement-pending",
+  "source_of_truth": "one versioned production manifest per video job",
+  "manifest": {
+    "required_sections": [
+      "brief",
+      "design_system",
+      "scenes",
+      "artifact_registry",
+      "task_ledger",
+      "render_plan",
+      "qa_results"
+    ],
+    "scene_fields": [
+      "scene_id",
+      "purpose",
+      "duration_seconds",
+      "renderer",
+      "camera_or_framing",
+      "asset_refs",
+      "layer_refs",
+      "audio_refs"
+    ],
+    "artifact_fields": [
+      "artifact_id",
+      "kind",
+      "owner_agent",
+      "producer_task_id",
+      "source_or_prompt",
+      "file_ref",
+      "reuse_policy",
+      "verification_status"
+    ],
+    "task_fields": [
+      "task_id",
+      "agent_id",
+      "scene_ids",
+      "reads",
+      "writes",
+      "depends_on",
+      "status",
+      "evidence"
+    ],
+    "allowed_task_statuses": [
+      "queued",
+      "running",
+      "blocked",
+      "complete",
+      "failed",
+      "needs_review"
+    ]
+  },
+  "ownership_rules": [
+    "Every scene and artifact has one owner; collaborators reference its stable ID instead of recreating it.",
+    "The background, shared motifs, and core diagram are owned by the assigned scene renderer; overlay and narration tasks consume the registered artifact.",
+    "No worker may write outside the output artifacts listed in its task.",
+    "All workers read the same manifest revision before starting and must report the revision they used.",
+    "A manifest update invalidates only downstream tasks that depend on changed artifact IDs, not the whole project.",
+    "No task is complete without a concrete artifact reference or a verifiable failure reason.",
+    "Renderer adapters are selected per scene: Motion Canvas for general 2D motion design, Manim for math/science geometry, Blender for selected 3D scenes.",
+    "The compositor assembles scene outputs; it must not silently replace a failed scene with static filler cards.",
+    "The critic inspects the rendered output and attaches frame/time-specific defects; prompt compliance alone is not quality evidence."
+  ],
+  "agent_roles": [
+    {
+      "id": "director",
+      "responsibility": "Own the brief, visual system, storyboard, scene boundaries, continuity, and task dependencies."
+    },
+    {
+      "id": "search-planner",
+      "responsibility": "Produce focused query variants per visual beat and provide provenance/licence metadata for candidate assets."
+    },
+    {
+      "id": "asset-builder",
+      "responsibility": "Create or import registered assets; reuse existing IDs when the visual asset already exists."
+    },
+    {
+      "id": "renderer-manim",
+      "responsibility": "Own mathematical/scientific scenes, equations, vectors, graphs, and diagram components assigned in the manifest."
+    },
+    {
+      "id": "renderer-motion-canvas",
+      "responsibility": "Own general 2D typography, editorial motion, compositing within scenes, and transitions assigned in the manifest."
+    },
+    {
+      "id": "renderer-blender",
+      "responsibility": "Own only scenes that actually need 3D geometry/camera/materials."
+    },
+    {
+      "id": "coding-agent",
+      "responsibility": "Implement bounded scene code against renderer adapters and tested components; never rewrite unrelated project code per video."
+    },
+    {
+      "id": "compositor",
+      "responsibility": "Assemble approved scene outputs and audio without recreating their visual content."
+    },
+    {
+      "id": "critic",
+      "responsibility": "Inspect actual rendered frames and sound checks; request targeted repairs against defects."
+    }
+  ],
+  "current_runtime_truth": {
+    "shared_manifest_enforced": false,
+    "independent_specialist_llms": false,
+    "manim_adapter_integrated": false,
+    "motion_canvas_adapter_integrated": false,
+    "blender_adapter_integrated": false,
+    "note": "This contract records the required design. Do not label coordination or renderer support active until a runtime path consumes and validates this manifest."
+  }
+}
