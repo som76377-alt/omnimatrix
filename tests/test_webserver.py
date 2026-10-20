@@ -91,6 +91,23 @@ class StudioServerTests(unittest.TestCase):
             raw = exc.read()
             return exc.code, json.loads(raw.decode("utf-8"))
 
+    def test_manim_render_and_artifact_routes_require_runtime_token(self):
+        status, body = self.request(
+            "/api/creative/manim-render",
+            method="POST",
+            body={"consent": True, "title": "Not authorized", "nodes": [{"label": "A", "x": 0, "y": 0}]},
+            authorized=False,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["code"], "unauthorized")
+
+        status, body = self.request(
+            "/api/creative/manim-jobs/" + ("a" * 32) + "/artifact",
+            authorized=False,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["code"], "unauthorized")
+
     def test_static_studio_shell_is_available_without_runtime_token(self):
         with urlopen(self.base_url + "/", timeout=3) as response:
             body = response.read().decode("utf-8")

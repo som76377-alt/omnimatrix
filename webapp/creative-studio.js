@@ -17,7 +17,7 @@
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
     onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
     autoFinishBusy: false, lastAutoDraftClipIds: [], autoRenderOnAssembly: false, aiVideoBusy: false,
-    autoCriticRevisionPerformed: false
+    autoCriticRevisionPerformed: false, scienceDiagramBusy: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -3144,6 +3144,350 @@
     aiSetStatus("Proposal cleared. Your timeline was not changed.", "");
   }
 
+
+  function resolveScienceDiagramSteps() {
+    const input = $("science-diagram-steps");
+    const brief = String($("creative-brief").value || "").trim();
+    let raw = String(input && input.value || "").trim();
+    if (!raw && /\b(?:induction stove|induction cooktop|induction hob|induction heating)\b/i.test(brief)) {
+      raw = "Alternating current in the coil → changing magnetic field → eddy currents in the pan base → electrical resistance produces heat";
+      if (input) input.value = raw;
+    }
+    if (!raw && /(?:→|⇒|->|\n)/.test(brief)) raw = brief;
+    const steps = raw.split(/\s*(?:→|⇒|->|;|\n)\s*/).map((part) => part.trim()).filter(Boolean);
+    if (steps.length < 2) {
+      throw new Error("Add at least two causal steps separated by →, ->, semicolons, or new lines. Omnitrix will not invent scientific steps.");
+    }
+    if (steps.length > 8) throw new Error("A single diagram is limited to 8 steps. Split a longer explanation into separate scenes.");
+    if (steps.some((step) => step.length > 72 || /[\u0000-\u001f]/.test(step))) {
+      throw new Error("Each step must be plain text of at most 72 characters.");
+    }
+    if (steps.some((step) => !step)) throw new Error("Every diagram step must contain text.");
+    return steps;
+  }
+
+  function manimNodeLayout(steps) {
+    if (steps.length <= 4) {
+      return steps.map((label, index) => ({
+        label: label,
+        x: steps.length === 1 ? 0 : -4.2 + (8.4 * index / (steps.length - 1)),
+        y: 0
+      }));
+    }
+    return steps.map((label, index) => {
+      const offset = index % 4;
+      return { label: label, x: index < 4 ? -4.5 + offset * 3 : 4.5 - offset * 3, y: index < 4 ? 1.2 : -1.2 };
+    });
+  }
+
+  async function renderScienceDiagramWithManim(steps, title) {
+    const token = aiRuntimeToken();
+    if (isNativeMobileStudio() || !token) {
+      throw new Error("The authenticated Manim endpoint is not available in this Studio session.");
+    }
+    const startResponse = await fetch("./api/creative/manim-render", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({
+        consent: true,
+        title: String(title || "Scientific diagram").slice(0, 100),
+        nodes: manimNodeLayout(steps),
+        arrows: steps.slice(1).map((_, index) => [index, index + 1]),
+        quality: "low"
+      })
+    });
+    let accepted;
+    try { accepted = await startResponse.json(); }
+    catch { throw new Error("The Manim service returned unreadable JSON."); }
+    if (!startResponse.ok || !accepted || accepted.ok !== true || typeof accepted.job_id !== "string") {
+      throw new Error((accepted && accepted.error) || "The Manim render could not be started.");
+    }
+    onlineStatus("Manim accepted the scientific diagram. Waiting for its bounded render job…", "");
+    const jobBase = "./api/creative/manim-jobs/" + encodeURIComponent(accepted.job_id);
+    let result = null;
+    for (let attempt = 0; attempt < 115; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      const statusResponse = await fetch(jobBase, {
+        method: "GET", cache: "no-store",
+        headers: { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      let status;
+      try { status = await statusResponse.json(); }
+      catch { throw new Error("The Manim job status could not be decoded."); }
+      if (!statusResponse.ok || status.ok !== true) {
+        throw new Error((status && status.error) || "The Manim job status is unavailable.");
+      }
+      if (status.status === "complete" && status.result && status.result.ok === true) {
+        result = status.result;
+        break;
+      }
+      if (status.status === "failed") {
+        throw new Error((status.result && status.result.error) || "The Manim renderer reported a failed job.");
+      }
+      if (attempt === 29 || attempt === 69) onlineStatus("Manim is still rendering. The job remains bounded; the browser fallback is used if the hosted render is unavailable.", "");
+    }
+    if (!result) throw new Error("The Manim render exceeded the Studio polling window.");
+    const artifactResponse = await fetch(jobBase + "/artifact", {
+      method: "GET", cache: "no-store",
+      headers: { Authorization: "Bearer " + token }
+    });
+    if (!artifactResponse.ok) throw new Error("The Manim artifact was not available for verified import.");
+    const blob = await artifactResponse.blob();
+    if (!blob.size || blob.size > 24 * 1024 * 1024) throw new Error("The Manim MP4 is empty or exceeds the 24 MB Studio import limit.");
+    return {
+      file: new File([blob], "omnitrix-science-diagram-" + crypto.randomUUID().slice(0, 8) + ".mp4", {
+        type: "video/mp4", lastModified: Date.now()
+      }),
+      renderer: "Manim",
+      note: "The server verified artifact integrity. Scientific correctness and visual quality still need review."
+    };
+  }
+
+  function drawLocalScienceDiagram(context, width, height, steps, title, progress) {
+    context.fillStyle = "#0d0f0d";
+    context.fillRect(0, 0, width, height);
+    const portrait = height > width;
+    const titleFont = Math.max(20, Math.min(44, Math.round(Math.min(width, height) * 0.045)));
+    context.fillStyle = "#f1f3e8";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = "700 " + titleFont + "px system-ui, sans-serif";
+    const titleLines = [];
+    let titleLine = "";
+    for (const word of String(title || "SCIENTIFIC PROCESS").split(/\s+/)) {
+      const candidate = titleLine ? titleLine + " " + word : word;
+      if (context.measureText(candidate).width > width * 0.82 && titleLine) {
+        titleLines.push(titleLine);
+        titleLine = word;
+      } else titleLine = candidate;
+    }
+    if (titleLine) titleLines.push(titleLine);
+    titleLines.slice(0, 2).forEach((line, index) =>
+      context.fillText(line, width / 2, height * (portrait ? 0.065 : 0.10) + index * titleFont * 1.12)
+    );
+
+    const positions = [];
+    let cardWidth, cardHeight;
+    if (portrait) {
+      cardWidth = width * 0.78;
+      cardHeight = Math.min(150, height * 0.105);
+      steps.forEach((_, index) => positions.push({
+        x: width / 2,
+        y: height * 0.19 + (height * 0.63) * (index / Math.max(1, steps.length - 1))
+      }));
+    } else if (steps.length <= 4) {
+      cardWidth = Math.min(310, width * 0.78 / steps.length);
+      cardHeight = Math.min(150, height * 0.23);
+      steps.forEach((_, index) => positions.push({
+        x: width * (index + 1) / (steps.length + 1),
+        y: height * 0.57
+      }));
+    } else {
+      cardWidth = Math.min(270, width * 0.205);
+      cardHeight = Math.min(145, height * 0.22);
+      steps.forEach((_, index) => {
+        const row = index < 4 ? 0 : 1;
+        const column = row === 0 ? index : 7 - index;
+        positions.push({ x: width * (column + 0.5) / 4, y: height * (row === 0 ? 0.40 : 0.72) });
+      });
+    }
+    const nodeProgress = progress * steps.length;
+    const arrowProgress = progress * Math.max(1, steps.length - 1);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    for (let index = 0; index < steps.length - 1; index += 1) {
+      const amount = Math.max(0, Math.min(1, arrowProgress - index));
+      if (!amount) continue;
+      const start = positions[index], end = positions[index + 1];
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const divisor = Math.max(0.0001, Math.min(
+        cardWidth * 0.53 / Math.max(0.0001, Math.abs(dx)),
+        cardHeight * 0.53 / Math.max(0.0001, Math.abs(dy))
+      ));
+      const sx = start.x + dx * divisor, sy = start.y + dy * divisor;
+      const ex = end.x - dx * divisor, ey = end.y - dy * divisor;
+      const px = sx + (ex - sx) * amount, py = sy + (ey - sy) * amount;
+      context.strokeStyle = "#d6fa62";
+      context.lineWidth = Math.max(2, Math.round(Math.min(width, height) * 0.004));
+      context.beginPath(); context.moveTo(sx, sy); context.lineTo(px, py); context.stroke();
+      if (amount >= 0.98) {
+        const angle = Math.atan2(ey - sy, ex - sx);
+        const head = Math.max(9, Math.min(width, height) * 0.018);
+        context.beginPath();
+        context.moveTo(ex, ey);
+        context.lineTo(ex - head * Math.cos(angle - Math.PI / 6), ey - head * Math.sin(angle - Math.PI / 6));
+        context.moveTo(ex, ey);
+        context.lineTo(ex - head * Math.cos(angle + Math.PI / 6), ey - head * Math.sin(angle + Math.PI / 6));
+        context.stroke();
+      }
+    }
+
+    steps.forEach((step, index) => {
+      const reveal = Math.max(0, Math.min(1, nodeProgress - index));
+      if (!reveal) return;
+      const point = positions[index];
+      context.globalAlpha = 0.35 + reveal * 0.65;
+      context.fillStyle = reveal >= 0.98 && index === Math.min(steps.length - 1, Math.floor(nodeProgress))
+        ? "#d6fa62" : "#171b14";
+      context.strokeStyle = "#d6fa62";
+      context.lineWidth = Math.max(1.5, Math.round(Math.min(width, height) * 0.0025));
+      context.beginPath();
+      context.rect(point.x - cardWidth / 2, point.y - cardHeight / 2, cardWidth, cardHeight);
+      context.fill(); context.stroke();
+      const fontSize = Math.max(14, Math.min(30, Math.round(cardHeight * (portrait ? 0.24 : 0.22))));
+      context.fillStyle = reveal >= 0.98 && index === Math.min(steps.length - 1, Math.floor(nodeProgress))
+        ? "#12170b" : "#f1f3e8";
+      context.font = "600 " + fontSize + "px system-ui, sans-serif";
+      const maxTextWidth = cardWidth * 0.82;
+      const words = step.split(/\s+/);
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        const candidate = line ? line + " " + word : word;
+        if (context.measureText(candidate).width > maxTextWidth && line) {
+          lines.push(line); line = word;
+        } else line = candidate;
+      }
+      if (line) lines.push(line);
+      const visibleLines = lines.slice(0, 3);
+      const lineHeight = fontSize * 1.18;
+      visibleLines.forEach((text, row) => context.fillText(
+        text, point.x, point.y + (row - (visibleLines.length - 1) / 2) * lineHeight, maxTextWidth
+      ));
+      context.globalAlpha = 1;
+    });
+    context.fillStyle = "#a7ad9c";
+    context.font = "500 " + Math.max(10, Math.round(Math.min(width, height) * 0.016)) + "px ui-monospace, monospace";
+    context.fillText("CAUSAL SEQUENCE · LABELS SUPPLIED BY USER", width / 2, height * (portrait ? 0.95 : 0.93));
+  }
+
+  async function renderLocalScienceDiagram(steps, title) {
+    if (!("MediaRecorder" in window) || !HTMLCanvasElement.prototype.captureStream) {
+      throw new Error("This browser cannot record a local animated diagram. Use a current Chrome or Android WebView.");
+    }
+    const dimensions = String($("preview-scale").value || "1280x720").split("x").map(Number);
+    const width = Math.max(480, Math.min(1920, dimensions[0] || 1280));
+    const height = Math.max(480, Math.min(1920, dimensions[1] || 720));
+    const target = document.createElement("canvas");
+    target.width = width; target.height = height;
+    const context = target.getContext("2d", { alpha: false });
+    if (!context) throw new Error("The browser could not create the diagram canvas.");
+    const stream = target.captureStream(30);
+    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+      .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType: mimeType } : {}),
+      videoBitsPerSecond: width >= 1280 ? 3500000 : 1800000
+    });
+    const duration = Math.max(4.2, Math.min(10, steps.length * 1.35));
+    return await new Promise((resolve, reject) => {
+      const chunks = [];
+      let raf = 0;
+      let settled = false;
+      const cleanup = () => {
+        if (raf) window.cancelAnimationFrame(raf);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      const finish = (failure) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (failure) { reject(failure); return; }
+        const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+        if (!blob.size || blob.size > 24 * 1024 * 1024) {
+          reject(new Error("The browser-rendered diagram is empty or exceeds the 24 MB Studio limit."));
+        } else {
+          resolve(new File([blob], "omnitrix-science-diagram-" + crypto.randomUUID().slice(0, 8) + ".webm", {
+            type: "video/webm", lastModified: Date.now()
+          }));
+        }
+      };
+      recorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
+      recorder.onerror = () => finish(new Error("The browser recorder failed while creating the animated diagram."));
+      recorder.onstop = () => finish(null);
+      try {
+        recorder.start(250);
+        const startAt = performance.now();
+        const tick = () => {
+          if (settled || recorder.state !== "recording") return;
+          const elapsed = (performance.now() - startAt) / 1000;
+          drawLocalScienceDiagram(context, width, height, steps, title, Math.min(1, elapsed / duration));
+          if (elapsed >= duration) recorder.stop();
+          else raf = window.requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error("The browser could not start diagram recording."));
+      }
+    });
+  }
+
+  async function buildScienceDiagramDraft() {
+    if (state.scienceDiagramBusy) return;
+    let steps;
+    try { steps = resolveScienceDiagramSteps(); }
+    catch (error) { onlineStatus(String(error.message || error), "error"); $("science-diagram-steps").focus(); return; }
+    if (state.project.timeline.length && !window.confirm("Append this science diagram to the current timeline and render the full sequence? Existing shots will be kept.")) return;
+    state.scienceDiagramBusy = true;
+    const button = $("build-science-diagram");
+    button.disabled = true;
+    const brief = String($("creative-brief").value || "").trim();
+    const title = extractBriefTitle(brief).replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 52) || "SCIENTIFIC PROCESS";
+    let output;
+    let fallbackReason = "";
+    try {
+      onlineStatus("Validating the step sequence. Trying the bounded Manim renderer first when the authenticated service is available…", "");
+      try {
+        output = await renderScienceDiagramWithManim(steps, title);
+      } catch (error) {
+        fallbackReason = String(error && error.message || error).slice(0, 220);
+        onlineStatus("Manim was unavailable or failed safely. Creating the same step sequence with the deterministic browser renderer instead; no paid model or external asset is used.", "");
+        output = {
+          file: await renderLocalScienceDiagram(steps, title),
+          renderer: "Browser Canvas",
+          note: "Local diagram renderer; user-supplied step wording was not fact-checked by an AI model."
+        };
+      }
+      const oldIds = new Set(state.assets.map((asset) => asset.id));
+      await importFiles([output.file]);
+      const asset = state.assets.find((item) => !oldIds.has(item.id) && item.name === output.file.name);
+      if (!asset) throw new Error("The diagram was rendered, but the browser could not import it into the local media library.");
+      const clip = createClip(asset);
+      clip.duration = Math.max(0.5, Math.min(600, Number(asset.duration) || steps.length * 1.35));
+      clip.fit = "contain"; clip.motion = "none"; clip.title = ""; clip.subtitle = "";
+      state.project.timeline.push(clip);
+      state.selectedClipId = clip.id; state.currentClipId = clip.id;
+      state.playhead = Math.max(0, totalDuration() - clip.duration);
+      renderTimeline(); renderInspector(); renderGraphicLayers(); updateStats(); drawFrame();
+      state.lastAutoDraftClipIds = [clip.id];
+      await saveProject(false);
+      onlineStatus("The diagram is on the editable timeline. Verifying the actual generated video before delivering it…", "");
+      const actualDuration = Number(asset.duration) || Math.max(4.2, steps.length * 1.35);
+      let inspection;
+      try {
+        inspection = await inspectRenderedVideo(output.file, actualDuration, [], []);
+      } catch (error) {
+        throw new Error("The diagram was added to the timeline, but playback verification failed; it was not marked ready for export. " + String(error.message || error));
+      }
+      const delivery = await deliverRenderedVideo(output.file, output.file.name);
+      const rendererLabel = output.renderer === "Manim" ? "Manim MP4" : "local browser WebM";
+      onlineStatus(
+        rendererLabel + " was rendered, reopened and decoded, then " + delivery + ". " +
+        inspection.sampledFrames + " output frames passed technical checks. " +
+        (inspection.warnings.length ? "QA warnings: " + inspection.warnings.join("; ") + ". " : "") +
+        (fallbackReason ? "Manim fallback reason: " + fallbackReason + " " : "") +
+        output.note + " This does not verify scientific correctness or guarantee zero visual defects. The editable diagram is also on the timeline; use RENDER VIDEO to export the full project.",
+        inspection.warnings.length ? "error" : "success"
+      );
+    } catch (error) {
+      onlineStatus("Science diagram was not marked complete: " + String(error.message || error), "error");
+    } finally {
+      state.scienceDiagramBusy = false;
+      button.disabled = false;
+    }
+  }
+
   function bindUi() {
     $("media-input").addEventListener("change", async (event) => {
       await importFiles(event.target.files);
@@ -3208,6 +3552,7 @@
       try { await buildDraftFromBrief(); }
       finally { state.autoRenderOnAssembly = false; }
     });
+    $("build-science-diagram").addEventListener("click", buildScienceDiagramDraft);
     $("paid-video-consent").addEventListener("change", () => {
       $("generate-ai-video").disabled = !$("paid-video-consent").checked || state.aiVideoBusy;
     });

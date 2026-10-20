@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import mimetypes
 import os
 import stat
@@ -39,6 +40,7 @@ from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
+from core.creative_production import CreativeProductionManifest, ProductionContractError
 from core.creative_assets import CreativeAssetError, download_creative_asset, generate_creative_image, search_creative_assets
 from core.creative_video import CreativeVideoError, creative_video_job_status, start_creative_video_job
 
@@ -389,6 +391,52 @@ class PublicChatRateLimitError(RuntimeError):
     """The anonymous mobile chat endpoint has reached a conservative request limit."""
 
 
+
+def _validate_manim_render_arguments(arguments: Any) -> None:
+    """Validate structured diagram inputs before any render process/job is started."""
+    if not isinstance(arguments, dict):
+        raise ValueError("Manim render arguments must be a JSON object.")
+    allowed = {"title", "nodes", "arrows", "quality"}
+    if set(arguments) - allowed:
+        raise ValueError("Unsupported Manim render fields were supplied.")
+    title = arguments.get("title")
+    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 100:
+        raise ValueError("title must be non-empty text up to 100 characters.")
+    if any(ord(char) < 32 for char in title):
+        raise ValueError("title contains unsupported control characters.")
+    nodes = arguments.get("nodes")
+    if not isinstance(nodes, list) or not 1 <= len(nodes) <= 8:
+        raise ValueError("nodes must contain between 1 and 8 structured nodes.")
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict) or set(node) != {"label", "x", "y"}:
+            raise ValueError(f"Node {index + 1} must contain only label, x and y.")
+        label = node.get("label")
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 72:
+            raise ValueError(f"Node {index + 1} label must be non-empty text up to 72 characters.")
+        if any(ord(char) < 32 for char in label):
+            raise ValueError(f"Node {index + 1} label contains unsupported control characters.")
+        for axis, low, high in (("x", -5.5, 5.5), ("y", -2.8, 2.8)):
+            coordinate = node.get(axis)
+            if isinstance(coordinate, bool) or not isinstance(coordinate, (int, float)):
+                raise ValueError(f"Node {index + 1} {axis} coordinate must be a finite number.")
+            if not math.isfinite(float(coordinate)) or not low <= coordinate <= high:
+                raise ValueError(f"Node {index + 1} {axis} coordinate is outside the safe diagram bounds.")
+    arrows = arguments.get("arrows", [])
+    if not isinstance(arrows, list) or len(arrows) > 12:
+        raise ValueError("arrows must be a list of at most 12 index pairs.")
+    for pair in arrows:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("Each arrow must be a pair of node indices.")
+        start, end = pair
+        if any(isinstance(index, bool) or not isinstance(index, int) for index in (start, end)):
+            raise ValueError("Arrow indices must be integers.")
+        if start == end or not (0 <= start < len(nodes) and 0 <= end < len(nodes)):
+            raise ValueError("Arrow indices must refer to two different existing nodes.")
+    quality = arguments.get("quality", "low")
+    if quality not in {"low", "medium"}:
+        raise ValueError("quality must be low or medium.")
+
+
 class StudioRuntime:
     """Own the configured orchestrator, per-browser conversations, and evidence."""
 
@@ -440,6 +488,11 @@ class StudioRuntime:
         self.creative_analysis_lock = threading.Lock()
         self.creative_jobs_lock = threading.RLock()
         self.creative_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        # Manim renders are bounded, authenticated background jobs. The free web
+        # service allows one render at a time and keeps only a small in-memory queue.
+        self.manim_jobs_lock = threading.RLock()
+        self.manim_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self.manim_render_lock = threading.Lock()
         self.active_chats = 0
         self.active_chats_lock = threading.Lock()
         # The public mobile activity endpoint is scoped to this opaque session ID.
@@ -565,6 +618,176 @@ class StudioRuntime:
                 "finished_at": record.get("finished_at"),
                 "result": record.get("result"),
             }
+
+    def start_manim_render(self, payload: Any) -> dict[str, Any]:
+        """Queue a consented structured diagram render and track it in the shared manifest."""
+        if not isinstance(payload, dict) or payload.get("consent") is not True:
+            raise ValueError("Explicit consent is required before starting a Manim render.")
+        allowed = {"consent", "title", "nodes", "arrows", "quality"}
+        if set(payload) - allowed:
+            raise ValueError("Unsupported Manim render fields were supplied.")
+        # Validate before allocating a job or starting a worker.
+        tool = self.omnitrix.tool_registry.get("manim_scientific_diagram")
+        if tool is None:
+            raise RuntimeError("Manim renderer is not registered in this runtime.")
+        arguments = {key: value for key, value in payload.items() if key != "consent"}
+        _validate_manim_render_arguments(arguments)
+        # Probe availability only after side-effect-free validation. Never run an
+        # actual render synchronously merely to validate its arguments.
+        if not shutil.which("manim"):
+            validation = tool.execute(**arguments)
+            if validation.metadata and validation.metadata.get("available") is False:
+                raise RuntimeError(validation.error or "Manim is unavailable on this host.")
+            if not validation.success:
+                raise ValueError(validation.error or "The Manim render request is invalid.")
+            raise RuntimeError("Manim availability changed during validation; retry the request.")
+        now = utc_now()
+        job_id = secrets.token_hex(16)
+        objective = str(arguments.get("title", "Scientific diagram render"))[:100]
+        manifest = CreativeProductionManifest(job_id, objective)
+        manifest.add_task(
+            "render-diagram", "manim_worker", "Render validated scientific diagram",
+            writes=["final_mp4"],
+        )
+        manifest.set_task_state("render-diagram", "running")
+        with self.manim_jobs_lock:
+            for key, record in list(self.manim_jobs.items()):
+                if record.get("status") not in {"queued", "processing"} and len(self.manim_jobs) >= MAX_CREATIVE_JOBS:
+                    self.manim_jobs.pop(key, None)
+            if len(self.manim_jobs) >= MAX_CREATIVE_JOBS:
+                raise RuntimeError("Manim job capacity is full; retry after a render finishes.")
+            if any(record.get("status") in {"queued", "processing"} for record in self.manim_jobs.values()):
+                raise RuntimeError("A Manim render is already running; wait for it to finish.")
+            self.manim_jobs[job_id] = {
+                "job_id": job_id, "status": "queued", "submitted_at": now,
+                "finished_at": None, "result": None, "manifest": manifest,
+            }
+        try:
+            worker = threading.Thread(
+                target=self._run_manim_render,
+                args=(job_id, arguments),
+                name="omnitrix-manim-" + job_id[:8],
+                daemon=True,
+            )
+            worker.start()
+        except Exception:
+            with self.manim_jobs_lock:
+                self.manim_jobs.pop(job_id, None)
+            raise
+        return {
+            "ok": True, "job_id": job_id, "status": "queued",
+            "submitted_at": now, "renderer": "manim",
+            "note": "Render queued. A successful process exit alone is not a quality approval; inspect the returned artifact.",
+        }
+
+    def _run_manim_render(self, job_id: str, arguments: dict[str, Any]) -> None:
+        """Execute one guarded Manim job and attach evidence to its manifest."""
+        if not self.manim_render_lock.acquire(blocking=False):
+            with self.manim_jobs_lock:
+                record = self.manim_jobs.get(job_id)
+                if record:
+                    record["status"] = "failed"
+                    record["result"] = {"ok": False, "error": "A Manim render is already active."}
+                    record["finished_at"] = utc_now()
+            return
+        try:
+            with self.manim_jobs_lock:
+                record = self.manim_jobs.get(job_id)
+                if record is None:
+                    return
+                record["status"] = "processing"
+            result = self.omnitrix.tool_registry.get("manim_scientific_diagram").execute(**arguments)
+            manifest = None
+            with self.manim_jobs_lock:
+                record = self.manim_jobs.get(job_id)
+                if record is not None:
+                    manifest = record.get("manifest")
+            if not result.success or not isinstance(result.output, dict):
+                error = result.error or "Manim did not return a verified MP4 artifact."
+                if manifest is not None:
+                    manifest.set_task_state("render-diagram", "failed", failure=error)
+                payload = {"ok": False, "status": "failed", "error": error, "metadata": result.metadata or {}}
+            else:
+                output_path = Path(str(result.output.get("artifact_path", ""))).expanduser()
+                if not output_path.is_file() or output_path.is_symlink():
+                    raise RuntimeError("The renderer's reported artifact is not a regular file.")
+                size = output_path.stat().st_size
+                if size <= 0 or size > 24 * 1024 * 1024:
+                    raise RuntimeError("The rendered MP4 exceeds the 24 MB Studio media-import limit.")
+                digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+                manifest.register_artifact(
+                    "final_mp4", kind="video/mp4", owner_task_id="render-diagram",
+                    uri=str(output_path), sha256=digest, verified=True,
+                )
+                manifest.set_task_state(
+                    "render-diagram", "succeeded",
+                    evidence=["artifact_exists", "size_bytes:" + str(size), "sha256:" + digest],
+                )
+                payload = {
+                    "ok": True, "status": "complete", "renderer": "manim",
+                    "artifact_id": "final_mp4", "artifact_url": "/api/creative/manim-jobs/" + job_id + "/artifact",
+                    "mime_type": "video/mp4", "size_bytes": size, "sha256": digest,
+                    "quality_review": "not_run",
+                    "note": "Technical artifact checks passed; scientific correctness, visual quality, and audio were not independently reviewed.",
+                    "metadata": result.metadata or {},
+                }
+        except Exception as exc:
+            LOGGER.warning("Manim job failed safely; exception_type=%s", type(exc).__name__)
+            with self.manim_jobs_lock:
+                record = self.manim_jobs.get(job_id)
+                manifest = record.get("manifest") if record else None
+            if manifest is not None:
+                try:
+                    manifest.set_task_state("render-diagram", "failed", failure="Render or artifact validation failed.")
+                except (ProductionContractError, KeyError):
+                    pass
+            payload = {"ok": False, "status": "failed", "error": "Manim render or artifact validation failed safely."}
+        finally:
+            self.manim_render_lock.release()
+        with self.manim_jobs_lock:
+            record = self.manim_jobs.get(job_id)
+            if record is not None:
+                record["status"] = payload.get("status", "failed")
+                record["result"] = payload
+                record["finished_at"] = utc_now()
+                self.manim_jobs.move_to_end(job_id)
+
+    def manim_job_status(self, job_id: str) -> dict[str, Any]:
+        """Return bounded render state without exposing the source brief or local file path."""
+        if not isinstance(job_id, str) or not re.fullmatch(r"[a-f0-9]{32}", job_id):
+            return {"ok": False, "error": "Manim job was not found."}
+        with self.manim_jobs_lock:
+            record = self.manim_jobs.get(job_id)
+            if record is None:
+                return {"ok": False, "error": "Manim job was not found or has expired."}
+            if record.get("status") in {"queued", "processing"}:
+                return {"ok": True, "job_id": job_id, "status": record["status"], "submitted_at": record["submitted_at"]}
+            return {
+                "ok": bool((record.get("result") or {}).get("ok")),
+                "job_id": job_id, "status": record.get("status"),
+                "submitted_at": record.get("submitted_at"), "finished_at": record.get("finished_at"),
+                "result": record.get("result"),
+                "manifest": record["manifest"].to_dict() if record.get("manifest") else None,
+            }
+
+    def manim_job_artifact(self, job_id: str) -> tuple[bytes, str] | None:
+        """Read only an artifact registered by a successful job in this runtime."""
+        with self.manim_jobs_lock:
+            record = self.manim_jobs.get(job_id)
+            if not record or record.get("status") != "complete":
+                return None
+            result = record.get("result") or {}
+            manifest = record.get("manifest")
+            artifact = manifest.artifacts.get("final_mp4") if manifest is not None else None
+            if not artifact or not artifact.verified or not artifact.uri:
+                return None
+            path = Path(artifact.uri)
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 24 * 1024 * 1024:
+            return None
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != artifact.sha256:
+            return None
+        return content, "omnitrix-science-diagram-" + job_id[:8] + ".mp4"
 
     def status(self) -> dict[str, Any]:
         """Expose safe runtime metadata, never credentials or absolute workspace paths."""
@@ -1630,6 +1853,20 @@ def make_handler(
                     )
                     return
                 try:
+                    if route.startswith("/api/creative/manim-jobs/"):
+                        remainder = route[len("/api/creative/manim-jobs/"):]
+                        if remainder.endswith("/artifact"):
+                            job_id = remainder[:-len("/artifact")].rstrip("/")
+                            artifact = runtime.manim_job_artifact(job_id)
+                            if artifact is None:
+                                self._send_json({"ok": False, "error": "Manim artifact is not available or failed integrity validation."}, 404)
+                            else:
+                                content, filename = artifact
+                                self._send_bytes(content, "video/mp4", filename)
+                        else:
+                            result = runtime.manim_job_status(remainder)
+                            self._send_json(result, 200 if result.get("ok") else 404)
+                        return
                     if route == "/api/creative/search":
                         raw_limit = self._first_query("limit", "10")
                         try:
@@ -1821,6 +2058,8 @@ def make_handler(
             try:
                 if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
+                elif route == "/api/creative/manim-render":
+                    self._send_json(runtime.start_manim_render(payload), 202)
                 elif route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"}:
                     self._send_json(generate_creative_image(
                         payload.get("prompt"), aspect_ratio=payload.get("aspect_ratio", "16:9")

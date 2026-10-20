@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "Omnitrix Creative Studio",
-  "status": "coordination-contract-defined-runtime-enforcement-pending",
+  "status": "science-diagram-ui-integrated-manifest-ledger-not-yet-enforced-across-all-roles",
   "source_of_truth": "one versioned production manifest per video job",
   "manifest": {
     "required_sections": [
@@ -104,9 +104,11 @@
   "current_runtime_truth": {
     "shared_manifest_enforced": false,
     "independent_specialist_llms": false,
-    "manim_adapter_integrated": false,
+    "manim_adapter_integrated": true,
     "motion_canvas_adapter_integrated": false,
     "blender_adapter_integrated": false,
-    "note": "This contract records the required design. Do not label coordination or renderer support active until a runtime path consumes and validates this manifest."
+    "note": "The core registry includes a constrained Manim diagram tool and core/creative_production.py provides a manifest ledger. Creative Studio now offers a user-supplied step sequence, calls the authenticated Manim job API when available, falls back to a deterministic browser Canvas animation, imports the result to the local media library/timeline, and performs browser decode plus sampled-frame technical checks before delivering the standalone clip. The full multi-role project workflow still does not consume one shared manifest end to end; durable jobs, independent audio/full-video critique, hosted Manim installation and a real deployed render remain unverified.",
+    "shared_manifest_module_implemented": true,
+    "manim_tool_registered": true
   }
 }
