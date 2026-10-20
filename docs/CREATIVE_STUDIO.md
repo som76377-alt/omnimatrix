@@ -1,14 +1,14 @@
 # Omnitrix Creative Studio — implementation and verification plan
 
-## Checkpoint 2 — rigged 2D character engine
+## Checkpoint 2 — existing stylised rig and strict human quality gate
 
-The local original-animation route uses a reusable deterministic vector character rig instead of the earlier hand-placed waving illustration. Named shoulder, elbow, wrist, hip, knee and ankle joints connect fixed-length limb segments. The renderer uses layered draw order, vector clothing, hair, face and hand shapes, and time-based poses for wave/greet, walk, run/jog, dance, jump/leap, nod and idle. It scales to selected output dimensions and feeds the existing WebM decode/motion QA.
+The repository contains a deterministic 2D vector character rig with named shoulder, elbow, wrist, hip, knee and ankle joints and time-based wave, walk, run, dance, jump, nod and idle poses. It draws a stylised character using procedural geometry. This is useful for experiments, but it is **not** a believable live-action human or a high-fidelity 3D character renderer.
 
-This is a stylised 2D vector rig, not photorealistic footage or a full mesh-deformation/inverse-kinematics editor. It is a reusable foundation for custom character art, more motion clips and later rig editing.
+The default prompt-to-video path now blocks human and animal subjects before rendering. It must not export this rig as a substitute when the brief asks for a person or animal. The required next implementation is a code-driven high-fidelity character/3D renderer, followed by actual rendered-frame visual review and on-device playback tests. Until that exists and passes review, the honest result is a clear limitation message rather than a crude waving figure.
 
-The pose/kinematics core lives in `webapp/rigged-character.js`, separate from the Canvas renderer so the same action sampling can be tested without a browser. It resolves the brief to a named action, samples deterministic time-based channels, interpolates authored keyframes with smoothstep easing, and builds a parent-child skeleton with fixed segment lengths. The drawing layer consumes the sampled skeleton rather than maintaining a second copy of arm/leg pose math. Action regression tests exercise deterministic samples, actual joint displacement, jump motion, and segment lengths with Node's built-in test runner.
+The pose/kinematics core lives in `webapp/rigged-character.js`, separate from the Canvas renderer so action sampling can be tested without a browser. It resolves a brief to a named action, samples deterministic time-based channels, interpolates authored keyframes with smoothstep easing, and builds a parent-child skeleton with fixed segment lengths. Kinematics tests verify deterministic samples, joint displacement, jump motion, and segment lengths. These tests establish mathematical consistency only; they do not establish realistic anatomy, good art direction, or an on-device visual pass.
 
-The rig remains stylised and intentionally local-first; it does not need model calls, generated images, external packages, or paid services. The browser recording/decoding/blank-frame checks remain the authority for whether an encoded clip is importable. The new kinematics tests do not replace an on-device visual review.
+The default prompt-to-video route is code-first and does not search/download online assets or generate still images as a substitute for motion. Encoded-file decode/blank-frame/motion checks establish technical validity, not artistic quality. Remote visual critique requires explicit per-run consent; without that critique, the render remains an unapproved technical draft.
 
 
 ## Checkpoint 3 — runtime-aware tool registry and cost policy
