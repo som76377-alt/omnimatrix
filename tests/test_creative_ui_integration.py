@@ -90,7 +90,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn('if (needsDirectAiVideo(brief))', self.studio_js)
         self.assertIn('generateDirectAiVideo(String($("creative-brief").value || "").trim())', self.studio_js)
         self.assertIn('await renderVideo()', self.studio_js)
-        self.assertIn('No web search or download will run.', self.studio_js)
+        self.assertIn("No asset search or download will run.", self.studio_js)
 
 if __name__ == "__main__":
     unittest.main()
