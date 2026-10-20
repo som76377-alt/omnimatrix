@@ -2842,7 +2842,14 @@
     $("ai-apply-plan").addEventListener("click", applyAiPlan);
     $("ai-cancel-plan").addEventListener("click", clearAiProposal);
     $("project-name").addEventListener("input", scheduleSave);
-    $("creative-brief").addEventListener("input", scheduleSave);
+    $("creative-brief").addEventListener("input", () => {
+      const link = $("google-images-reference");
+      if (link) {
+        const query = deriveAssetQuery($("creative-brief").value);
+        link.href = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query || "science motion graphics");
+      }
+      scheduleSave();
+    });
     $("toggle-play").addEventListener("click", togglePreview);
     $("render-video").addEventListener("click", renderVideo);
     $("render-video-bottom").addEventListener("click", renderVideo);
@@ -2910,6 +2917,8 @@
       if (inboundBrief) {
         $("creative-brief").value = inboundBrief;
         state.project.brief = inboundBrief;
+        const googleImagesLink = $("google-images-reference");
+        if (googleImagesLink) googleImagesLink.href = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(deriveAssetQuery(inboundBrief) || "visual references");
         $("online-asset-query").value = deriveAssetQuery(inboundBrief);
         setPreviewResolutionFromBrief(inboundBrief);
         await saveProject(false);
@@ -2917,6 +2926,10 @@
           // The full prompt is passed in same-tab session storage, not in a query string.
           window.history.replaceState(null, "", window.location.pathname);
           state.autoRenderOnAssembly = true;
+          // A direct prompt-to-video request authorizes the bounded creative
+          // workflow. Model preview analysis only runs when a provider is
+          // actually configured and reachable; status remains explicit.
+          $("auto-creative-consent").checked = true;
           await buildDraftFromBrief();
           state.autoRenderOnAssembly = false;
         }
