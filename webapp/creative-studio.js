@@ -1500,6 +1500,33 @@
     $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  async function pollAiCreativeJob(jobId, token) {
+    const maxAttempts = 240;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      const response = await fetch("./api/creative/jobs/" + encodeURIComponent(jobId), {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json", Authorization: "Bearer " + token }
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error("The creative-job status route returned unreadable JSON."); }
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || "Could not read the creative analysis job status.");
+      }
+      if (data.status === "processing") {
+        if (attempt % 5 === 0) {
+          aiSetStatus("Visual analysis is still running. The job is kept server-side so a long provider call does not block the initial request; no edits are being applied.", "");
+        }
+        continue;
+      }
+      if (data.result && typeof data.result === "object") return data.result;
+      throw new Error("The creative analysis job ended without a structured result. No edits were applied.");
+    }
+    throw new Error("Visual analysis exceeded the 6-minute polling window. Re-check provider status; no edits were applied automatically.");
+  }
+
   async function runAiDirection() {
     if (state.creativeBusy) return;
     const token = aiRuntimeToken();
@@ -1573,7 +1600,14 @@
       let data;
       try { data = await response.json(); }
       catch { throw new Error("The visual-analysis endpoint did not return readable JSON."); }
-      if (!response.ok || !data || data.ok !== true || data.status !== "complete" || !data.plan) {
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || "Visual analysis did not start. No edits were applied.");
+      }
+      if (data.status === "processing" && typeof data.job_id === "string") {
+        aiSetStatus("The server accepted the job. Waiting for the completed worker/model result…", "");
+        data = await pollAiCreativeJob(data.job_id, token);
+      }
+      if (!data || data.ok !== true || data.status !== "complete" || !data.plan) {
         const message = data && data.error ? data.error : "Visual analysis did not complete. No edits were applied.";
         const identity = data && (data.model || data.worker) ? " [" + [data.worker, data.model].filter(Boolean).join(" · ") + "]" : "";
         throw new Error(message + identity);
