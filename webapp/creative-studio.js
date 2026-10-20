@@ -573,11 +573,11 @@
     }
     label(title, margin, Math.round(height * 0.13), 28, "#f1f3e8", 650);
     const count = Math.max(1, Math.min(4, parts.length));
-    const left = width * 0.085;
-    const right = width * 0.915;
+    const nodeW = Math.min(width * 0.25, width * 0.76 / count);
+    const left = margin + nodeW / 2;
+    const right = width - margin - nodeW / 2;
     const centerY = height * 0.53;
     const gap = count > 1 ? (right - left) / (count - 1) : 0;
-    const nodeW = Math.min(width * 0.25, width * 0.76 / count);
     const nodeH = height * 0.19;
     for (let i = 0; i < count; i++) {
       const appear = Math.max(0, Math.min(1, (elapsed - i * 0.45) / 0.65));
