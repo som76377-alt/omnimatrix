@@ -15,9 +15,9 @@ The default prompt-to-video path is code-only:
 
 ## Human and animal quality gate
 
-The current local Canvas renderer produces stylised procedural graphics; it is not a photorealistic or high-fidelity human/animal renderer. Therefore a request whose main subject is a person or animal must be blocked before rendering rather than represented by crude lines, circles, or a barely recognisable waving figure. Do not call that a completed result.
+The previous Canvas renderer produces stylised procedural graphics and is not suitable for believable human or animal actions. The default prompt-to-video path now routes human subjects to the procedural Three.js renderer in `webapp/code-3d-character-renderer.js`, which constructs a 3D character with facial landmarks, clothing, articulated limbs, hands/fingers, lighting, shadows and time-based motion, then records an encoded WebM. This is a code-authored 3D character, not photorealistic footage; its rendered frames must be visually reviewed before artistic approval.
 
-The code-only route now uses a procedural Three.js 3D human renderer for human subjects, with generated mesh geometry, facial landmarks, clothing, articulated limbs, simple action animation, lighting, shadows, and WebM recording. It is a code-authored 3D character, not photorealistic footage; visual quality must be reviewed before it can be approved. Animal subjects remain blocked until an animal renderer exists. Never bypass these gates by searching for an image, generating a still image, or quietly invoking a different paid provider.
+Animal subjects remain blocked until a suitable procedural animal renderer exists. Never substitute crude lines/circles, online images, generated stills, stock footage, or an automatically invoked paid provider for a requested code-authored scene. If a renderer fails or the rendered evidence is poor, report the limitation and do not claim success.
 
 ## Truthful status and limitations
 
