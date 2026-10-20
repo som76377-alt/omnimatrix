@@ -339,23 +339,23 @@
 
   function buildVisualSearchQueries(query) {
     let value = String(query || "").trim();
-    value = value.replace(/^\\s*(?:please\\s+)?(?:create|make|generate|produce|build|find|search(?:\\s+for)?)\\s+/i, "");
-    value = value.replace(/^\\s*(?:a|an|the)?\\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated)\\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\\s+(?:(?:of|about|showing|explaining|where|in\\s+which)\\s+)?/i, "");
-    value = value.replace(/\\b(?:in\\s+)?\\d{1,3}\\s*(?:seconds?|secs?|s)\\b|\\b(?:9:16|16:9|1:1)\\b/gi, " ");
-    value = value.replace(/[^\\p{L}\\p{N}\\s'-]/gu, " ").replace(/\\s+/g, " ").trim();
+    value = value.replace(/^\s*(?:please\s+)?(?:create|make|generate|produce|build|find|search(?:\s+for)?)\s+/i, "");
+    value = value.replace(/^\s*(?:a|an|the)?\s*(?:(?:short|vertical|horizontal|cinematic|realistic|documentary|premium|beautiful|animated)\s+)*(?:video|film|clip|reel|shorts|animation|image|picture|photo|scene|shot)\s+(?:(?:of|about|showing|explaining|where|in\s+which)\s+)?/i, "");
+    value = value.replace(/\b(?:in\s+)?\d{1,3}\s*(?:seconds?|secs?|s)\b|\b(?:9:16|16:9|1:1)\b/gi, " ");
+    value = value.replace(/[^\p{L}\p{N}\s'-]/gu, " ").replace(/\s+/g, " ").trim();
     const stop = new Set(["a","an","the","of","for","in","on","with","by","to","from","and","or","but","as","at","into","onto","over","under","how","why","what","when","where","which","who","please","this","that","these","those","it","its","his","her","their","my","our","your","me","then","while","about","show","showing","explaining","explain","create","make","generate","produce","build","video","film","clip","reel","shorts","animation","image","picture","photo","scene","shot","seconds","second","secs","sec"]);
-    const clean = (text) => text.split(/\\s+/).filter((word) => word && !stop.has(word.toLowerCase())).join(" ").trim();
+    const clean = (text) => text.split(/\s+/).filter((word) => word && !stop.has(word.toLowerCase())).join(" ").trim();
     const base = clean(value) || clean(String(query || ""));
     if (!base) return [String(query || "").trim()].filter(Boolean).slice(0, 1);
     const candidates = [base];
-    const clauses = value.split(/\\s*(?:,|;|\\bthen\\b|\\bwhile\\b|\\bafter\\b|\\bbefore\\b|\\band\\b|\\bfollowed by\\b)\\s*/i)
-      .map(clean).filter((part) => part.split(/\\s+/).length >= 2);
-    const words = base.split(/\\s+/);
+    const clauses = value.split(/\s*(?:,|;|\bthen\b|\bwhile\b|\bafter\b|\bbefore\b|\band\b|\bfollowed by\b)\s*/i)
+      .map(clean).filter((part) => part.split(/\s+/).length >= 2);
+    const words = base.split(/\s+/);
     const people = new Set(["person","people","man","woman","boy","girl","child","children","worker","chef","student","teacher","doctor","scientist","character"]);
     const actions = new Set(["wave","waves","waving","greet","greets","greeting","say","says","saying","said","speak","speaks","speaking","walk","walks","walking","run","runs","running","hold","holds","holding","turn","turns","turning","pour","pours","pouring"]);
     const subject = words.find((word) => people.has(word.toLowerCase())) || "";
     for (const clause of clauses) {
-      candidates.push(subject && actions.has(clause.split(/\\s+/)[0].toLowerCase()) ? subject + " " + clause : clause);
+      candidates.push(subject && actions.has(clause.split(/\s+/)[0].toLowerCase()) ? subject + " " + clause : clause);
     }
     if (subject && words.some((word) => actions.has(word.toLowerCase()))) candidates.push(subject + " " + (words.find((word) => actions.has(word.toLowerCase())) || ""));
     if (subject && words.some((word) => ["wave","waves","waving"].includes(word.toLowerCase()))) {
@@ -368,7 +368,7 @@
     if (words.length >= 4) candidates.push(words.slice(0, 3).join(" "), words.slice(-3).join(" "));
     const seen = new Set();
     return candidates.map((candidate) => candidate.trim())
-      .filter((candidate) => candidate.length >= 3 && candidate.split(/\\s+/).length >= 2 && candidate.length <= 100)
+      .filter((candidate) => candidate.length >= 3 && candidate.split(/\s+/).length >= 2 && candidate.length <= 100)
       .filter((candidate) => {
         const key = candidate.toLowerCase();
         if (seen.has(key)) return false;
