@@ -47,7 +47,7 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn("const runPostRenderCritic = Boolean", self.studio_js)
         self.assertIn('await renderVideo({ autoCritiqueRetry: true })', self.studio_js)
         self.assertIn("A single bounded re-render will follow.", self.studio_js)
-        self.assertIn("sampled render frames", self.studio_html.lower())
+        self.assertIn("sampled frames from the rendered draft", self.studio_html.lower())
 
     def test_export_reopens_webm_and_checks_actual_decoded_frames(self):
         self.assertIn("async function inspectRenderedVideo(blob, expectedDuration, reviewClipIds, renderTimelineSnapshot)", self.studio_js)
