@@ -15,7 +15,8 @@
     currentClipId: null, error: null,
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
     creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
-    onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false
+    onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false,
+    autoFinishBusy: false, lastAutoDraftClipIds: []
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -596,6 +597,55 @@
     return text ? text.slice(0, 76).toLocaleUpperCase() : "A CLOSER LOOK";
   }
 
+  async function finishDraftAutomatically(clipIds) {
+    if (!$("auto-creative-consent").checked || state.autoFinishBusy) return;
+    const selectedIds = Array.from(new Set((clipIds || []).filter((id) =>
+      state.project.timeline.some((clip) => clip.id === id)
+    ))).slice(0, 6);
+    if (!selectedIds.length) {
+      onlineStatus("No new draft shots remain to direct. Your library is untouched.", "error");
+      return;
+    }
+    state.autoFinishBusy = true;
+    const button = $("build-from-brief");
+    button.disabled = true;
+    try {
+      $("ai-director-panel").hidden = false;
+      renderAiSelectionList();
+      const selected = new Set(selectedIds);
+      $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
+        checkbox.checked = selected.has(checkbox.value);
+      });
+      $("ai-consent").checked = true;
+      updateAiControls();
+      await loadAiModelStatus();
+      if (state.creativeStatus && state.creativeStatus.configured) {
+        onlineStatus("The visual director is examining only the selected new shots' resized thumbnails…", "");
+        await runAiDirection();
+        if (state.creativePlan && Array.isArray(state.creativePlan.operations) && state.creativePlan.operations.length) {
+          applyAiPlan();
+        }
+        if (state.creativePlanApplied) {
+          onlineStatus("Validated visual edits and graphics were applied to the new draft. Starting local WebM export; inspect it before publishing.", "success");
+        } else {
+          onlineStatus("The initial timeline is ready, but the visual director did not apply a validated proposal. " +
+            (String($("ai-status").textContent || "").trim() || "No supported changes were returned.") +
+            " Exporting the supported basic edit.", "");
+        }
+      } else {
+        onlineStatus("A basic asset-based cut is ready, but the visual model is not configured or reachable. No AI visual analysis was claimed. Exporting the basic draft.", "");
+      }
+      await saveProject(false);
+      $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      renderVideo();
+    } catch (error) {
+      onlineStatus("Automatic visual direction could not finish: " + String(error.message || error) + ". The current local timeline is preserved; inspect it and export manually if useful.", "error");
+    } finally {
+      state.autoFinishBusy = false;
+      button.disabled = false;
+    }
+  }
+
   async function buildDraftFromBrief() {
     if (state.onlineImportBusy || state.onlineSearchBusy) {
       onlineStatus("Another asset task is running. Wait for it to finish before starting a second one.", "error");
@@ -686,39 +736,20 @@
       updateStats();
       drawFrame();
       await saveProject(false);
+      state.lastAutoDraftClipIds = draftClips.map((clip) => clip.id).slice(0, 6);
       const automaticDirection = $("auto-creative-consent").checked;
       $("ai-director-panel").hidden = false;
       renderAiSelectionList();
       // Select only the newly assembled clips, never earlier project shots.
-      const draftIds = new Set(draftClips.map((clip) => clip.id));
+      const draftIds = new Set(state.lastAutoDraftClipIds);
       $("ai-selection-list").querySelectorAll("input.ai-asset-check").forEach((checkbox) => {
         checkbox.checked = draftIds.has(checkbox.value);
       });
       updateAiControls();
 
       if (automaticDirection) {
-        // The separate checkbox explicitly authorizes this one model call and local auto-apply.
-        $("ai-consent").checked = true;
-        await loadAiModelStatus();
-        if (state.creativeStatus && state.creativeStatus.configured) {
-          onlineStatus("Asset draft assembled. The visual director is now examining only the new shots' resized thumbnails…", "");
-          await runAiDirection();
-          if (state.creativePlan && Array.isArray(state.creativePlan.operations) && state.creativePlan.operations.length) {
-            applyAiPlan();
-          }
-          if (state.creativePlanApplied) {
-            onlineStatus("The visual director's validated edits were applied to this draft. Starting a local WebM export; inspect it before publishing.", "success");
-          } else {
-            onlineStatus("The basic timeline is ready, but no validated visual-director edits were applied. " +
-              (String($("ai-status").textContent || "").trim() || "Check the Director status and review the timeline.") +
-              " Starting a local WebM export of the supported draft.", "");
-          }
-        } else {
-          onlineStatus("A basic draft was assembled, but the visual model is not configured or reachable. No AI visual analysis was claimed. Starting a local WebM export of the basic draft.", "");
-        }
-        await saveProject(false);
-        $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-        renderVideo();
+        // This path requires the explicit per-run checkbox above.
+        await finishDraftAutomatically(state.lastAutoDraftClipIds);
       } else {
         onlineStatus(
           "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Asset matching used titles, descriptions and licence metadata, not a model visually judging the source results. Preview the sequence; tick the optional automatic-direction consent to have the configured vision model inspect resized thumbnails, apply supported graphic/edit suggestions and export a draft.",
@@ -2267,6 +2298,11 @@
       window.open(url, "_blank", "noopener,noreferrer");
     });
     $("build-from-brief").addEventListener("click", buildDraftFromBrief);
+    $("auto-creative-consent").addEventListener("change", () => {
+      if ($("auto-creative-consent").checked && state.lastAutoDraftClipIds.length) {
+        finishDraftAutomatically(state.lastAutoDraftClipIds);
+      }
+    });
     $("save-project").addEventListener("click", () => saveProject(true));
     $("save-brief").addEventListener("click", () => { state.project.brief = $("creative-brief").value; scheduleSave(); toast("Director's brief saved with project."); });
     $("open-ai-director").addEventListener("click", openAiDirector);
@@ -2326,6 +2362,19 @@
       state.db = await openDatabase();
       bindUi();
       await loadProject();
+      const launchParams = new URLSearchParams(window.location.search);
+      const inboundBrief = String(launchParams.get("creativeBrief") || "").slice(0, 4000).trim();
+      if (inboundBrief) {
+        $("creative-brief").value = inboundBrief;
+        state.project.brief = inboundBrief;
+        $("online-asset-query").value = deriveAssetQuery(inboundBrief);
+        await saveProject(false);
+        if (launchParams.get("autoDraft") === "1") {
+          // Strip the prompt from the address bar after accepting it into the local project.
+          window.history.replaceState(null, "", window.location.pathname);
+          await buildDraftFromBrief();
+        }
+      }
       const storedCount = state.assets.length;
       $("agent-state").textContent = "Local editing is active. AI direction uses a configured provider only after explicit consent for selected resized previews. No media is sent until you request analysis.";
       updateStorageLabel();
