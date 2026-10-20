@@ -1,5 +1,11 @@
 # Omnitrix Creative Studio — implementation and verification plan
 
+## Checkpoint 2 — rigged 2D character engine
+
+The local original-animation route uses a reusable deterministic vector character rig instead of the earlier hand-placed waving illustration. Named shoulder, elbow, wrist, hip, knee and ankle joints connect fixed-length limb segments. The renderer uses layered draw order, vector clothing, hair, face and hand shapes, and time-based poses for wave/greet, walk, run/jog, dance, jump/leap, nod and idle. It scales to selected output dimensions and feeds the existing WebM decode/motion QA.
+
+This is a stylised 2D vector rig, not photorealistic footage or a full mesh-deformation/inverse-kinematics editor. It is a reusable foundation for custom character art, more motion clips and later rig editing.
+
 ## Current milestone
 
 This is the first creative-production milestone inside Omnitrix. The editor is a separate page at `webapp/creative-studio.html`, designed for phone-first use as well as desktop.
