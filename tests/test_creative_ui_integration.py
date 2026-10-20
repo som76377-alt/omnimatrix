@@ -22,6 +22,36 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         self.assertIn('sessionStorage.getItem("omnitrix-creative-brief-pending")', self.studio_js)
         self.assertIn("await buildDraftFromBrief()", self.studio_js)
 
+    def test_prompt_to_video_is_code_only_and_never_searches_or_generates_still_images(self):
+        start = self.studio_js.index("async function buildDraftFromBrief()")
+        end = self.studio_js.index("function renderAssets()", start)
+        prompt_to_video = self.studio_js[start:end]
+        self.assertIn("await assembleOriginalGraphicFallback(brief)", prompt_to_video)
+        self.assertNotIn("searchOnlineAssets()", prompt_to_video)
+        self.assertNotIn("importOnlineAsset(", prompt_to_video)
+        self.assertNotIn("requestGeneratedImage(", prompt_to_video)
+        renderer_start = self.studio_js.index("async function assembleOriginalGraphicFallback(brief)")
+        renderer_end = self.studio_js.index("function needsDirectAiVideo(brief)", renderer_start)
+        renderer = self.studio_js[renderer_start:renderer_end]
+        self.assertIn("QUALITY GATE", renderer)
+        self.assertIn("No line-and-circle substitute was rendered or exported", renderer)
+        self.assertNotIn("requestGeneratedImage(", renderer)
+        self.assertLess(renderer.index("requiresHighFidelitySubject(brief)"), renderer.index("renderOriginalMotionClip(brief)"))
+
+    def test_code_first_video_policy_forbids_asset_search_and_low_fidelity_humans(self):
+        import json
+        agents = json.loads((ROOT / "config" / "creative-studio-agents.json").read_text(encoding="utf-8"))
+        contract = agents["execution_contract"]
+        self.assertEqual(contract["prompt_to_video_mode"], "code_only")
+        self.assertTrue(contract["prompt_to_video_must_not_search_assets"])
+        self.assertTrue(contract["prompt_to_video_must_not_generate_still_images_as_video_substitute"])
+        self.assertTrue(contract["rendered_video_visual_review_required_for_final_status"])
+        self.assertTrue(contract["block_low_fidelity_human_animal_output"])
+        policy = (ROOT / "docs" / "AUTONOMOUS_CREATIVE_WORKFLOW.md").read_text(encoding="utf-8")
+        self.assertIn("Do not search the web", policy)
+        self.assertIn("No line-and-circle substitute", policy)
+        self.assertIn("unapproved technical draft", policy)
+
     def test_online_asset_sources_are_explicit_and_license_aware(self):
         for element_id in (
             "online-asset-query", "online-asset-provider", "search-online-assets",
