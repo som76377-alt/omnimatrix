@@ -40,6 +40,7 @@ from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
 from core.creative_assets import CreativeAssetError, download_creative_asset, generate_creative_image, search_creative_assets
+from core.creative_video import CreativeVideoError, creative_video_job_status, start_creative_video_job
 
 
 from core.multimodal.journal import journal_status
@@ -75,6 +76,11 @@ def _allow_public_creative_request(client_ip: str) -> bool:
 _PUBLIC_CREATIVE_MODEL_REQUESTS: dict[str, deque[float]] = {}
 _PUBLIC_CREATIVE_MODEL_GLOBAL: deque[float] = deque()
 _PUBLIC_CREATIVE_MODEL_RATE_LOCK = threading.Lock()
+# Video generation is a paid provider action. Keep a stricter service-wide budget
+# even if a caller fabricates the client-side consent payload.
+_PUBLIC_VIDEO_REQUESTS: dict[str, deque[float]] = {}
+_PUBLIC_VIDEO_GLOBAL: deque[float] = deque()
+_PUBLIC_VIDEO_RATE_LOCK = threading.Lock()
 
 
 def _allow_public_creative_model_request(client_ip: str) -> bool:
@@ -94,6 +100,27 @@ def _allow_public_creative_model_request(client_ip: str) -> bool:
             for stale_key in list(_PUBLIC_CREATIVE_MODEL_REQUESTS)[:128]:
                 if stale_key != key:
                     _PUBLIC_CREATIVE_MODEL_REQUESTS.pop(stale_key, None)
+        return True
+
+
+def _allow_public_creative_video_request(client_ip: str) -> bool:
+    """Cap paid video generation to two requests per IP and three globally per day."""
+    now = time.monotonic()
+    key = str(client_ip or "unknown")[:120]
+    with _PUBLIC_VIDEO_RATE_LOCK:
+        bucket = _PUBLIC_VIDEO_REQUESTS.setdefault(key, deque())
+        while bucket and now - bucket[0] >= 86_400.0:
+            bucket.popleft()
+        while _PUBLIC_VIDEO_GLOBAL and now - _PUBLIC_VIDEO_GLOBAL[0] >= 86_400.0:
+            _PUBLIC_VIDEO_GLOBAL.popleft()
+        if len(bucket) >= 2 or len(_PUBLIC_VIDEO_GLOBAL) >= 3:
+            return False
+        bucket.append(now)
+        _PUBLIC_VIDEO_GLOBAL.append(now)
+        if len(_PUBLIC_VIDEO_REQUESTS) > 1024:
+            for stale_key in list(_PUBLIC_VIDEO_REQUESTS)[:128]:
+                if stale_key != key and not _PUBLIC_VIDEO_REQUESTS[stale_key]:
+                    _PUBLIC_VIDEO_REQUESTS.pop(stale_key, None)
         return True
 
 
@@ -1523,6 +1550,13 @@ def make_handler(
                 result = runtime.creative_job_status(job_id)
                 self._send_json(result, 200 if result.get("ok") else 404)
                 return
+            if route.startswith("/api/mobile/creative/video-jobs/"):
+                job_id = route.rsplit("/", 1)[-1]
+                result = creative_video_job_status(
+                    job_id, consume_result=self._first_query("consume", "0") == "1"
+                )
+                self._send_json(result, 200 if result.get("ok") else 404)
+                return
             if route in {"/api/mobile/creative/search", "/api/mobile/creative/assets/download"}:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
@@ -1589,6 +1623,12 @@ def make_handler(
                         job_id = route.rsplit("/", 1)[-1]
                         result = runtime.creative_job_status(job_id)
                         self._send_json(result, 200 if result.get("ok") else 404)
+                    elif route.startswith("/api/creative/video-jobs/"):
+                        job_id = route.rsplit("/", 1)[-1]
+                        result = creative_video_job_status(
+                            job_id, consume_result=self._first_query("consume", "0") == "1"
+                        )
+                        self._send_json(result, 200 if result.get("ok") else 404)
                     elif route == "/api/health":
                         self._send_json(runtime.status())
                     elif route == "/api/attachments/list":
@@ -1645,6 +1685,7 @@ def make_handler(
                 "/api/mobile/attachments/delete",
                 "/api/mobile/creative/analyze",
                 "/api/mobile/creative/generate-image",
+                "/api/mobile/creative/generate-video",
             }
             if route not in public_mobile_routes and not self._authorized():
                 self._send_json(
@@ -1700,23 +1741,54 @@ def make_handler(
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
-            if route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"} and payload.get("consent") is not True:
-                self._send_json({"ok": False, "error": "Explicit consent is required before generating an image with a model."}, 400)
+            if route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"} and (
+                payload.get("consent") is not True or payload.get("paid_cost_acknowledged") is not True
+            ):
+                self._send_json({
+                    "ok": False,
+                    "error": "Explicit consent and paid-image cost acknowledgement are required before calling the image model (about US$0.04 per 1K image).",
+                }, 400)
                 return
-            if route in {"/api/mobile/creative/analyze", "/api/mobile/creative/generate-image"}:
+            if route in {"/api/creative/generate-video", "/api/mobile/creative/generate-video"} and (
+                payload.get("consent") is not True or payload.get("paid_cost_acknowledged") is not True
+            ):
+                self._send_json({
+                    "ok": False,
+                    "error": "Explicit paid-video cost acknowledgement is required. Estimated cost is about US$0.80 for an 8-second 720p video; actual duration may vary.",
+                }, 400)
+                return
+            if route in {
+                "/api/mobile/creative/analyze",
+                "/api/mobile/creative/generate-image",
+                "/api/mobile/creative/generate-video",
+            }:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
                 if payload.get("consent") is not True:
-                    self._send_json({"ok": False, "error": "Explicit consent is required before sending previews or generating an image with a model."}, 400)
+                    self._send_json({"ok": False, "error": "Explicit consent is required before sending previews or generating media with a model."}, 400)
                     return
-                if not _allow_public_creative_model_request(client_ip):
-                    self._send_json({"ok": False, "error": "AI creative work is rate-limited for this connection. Try again later.", "code": "rate_limited"}, 429)
+                limiter = _allow_public_creative_video_request if route.endswith("/generate-video") else _allow_public_creative_model_request
+                if not limiter(client_ip):
+                    message = (
+                        "The paid video-generation limit is reached for this connection or service today."
+                        if route.endswith("/generate-video")
+                        else "AI creative work is rate-limited for this connection. Try again later."
+                    )
+                    self._send_json({"ok": False, "error": message, "code": "rate_limited"}, 429)
                     return
             try:
                 if route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
                 elif route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"}:
-                    self._send_json(generate_creative_image(payload.get("prompt")))
+                    self._send_json(generate_creative_image(
+                        payload.get("prompt"), aspect_ratio=payload.get("aspect_ratio", "16:9")
+                    ))
+                elif route in {"/api/creative/generate-video", "/api/mobile/creative/generate-video"}:
+                    self._send_json(start_creative_video_job(
+                        payload.get("prompt"),
+                        aspect_ratio=payload.get("aspect_ratio", "16:9"),
+                        resolution=payload.get("resolution", "720p"),
+                    ), 202)
                 elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
                 elif route == "/api/attachments/delete":
