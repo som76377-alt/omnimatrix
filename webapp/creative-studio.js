@@ -1930,6 +1930,7 @@
     const clip = state.project.timeline.find((item) => item.id === op.clip_id);
     const name = clip ? (assetById(clip.assetId)?.name || clip.name || "Shot") : "Shot";
     switch (op.type) {
+      case "remove_clip": return name + " — remove this shot: " + op.reason + ".";
       case "set_duration": return name + " — set duration to " + op.duration_seconds + " seconds.";
       case "set_motion": return name + " — use " + op.preset + " motion.";
       case "set_fit": return name + " — frame fit: " + op.fit + ".";
@@ -2158,6 +2159,7 @@
     const allowedPosition = new Set(["bottom", "center", "top"]);
     const allowedFont = new Set(["sans", "serif", "mono"]);
     const allowedColor = /^#[0-9a-fA-F]{6}$/;
+    const removedClipIds = new Set();
     try {
       for (const op of plan.operations) {
         if (!op || typeof op !== "object") throw new Error("The proposed plan contains an invalid operation.");
@@ -2178,6 +2180,12 @@
           throw new Error("An operation no longer matches the reviewed asset selection; nothing was applied.");
         }
         switch (op.type) {
+          case "remove_clip":
+            if (typeof op.reason !== "string" || op.reason.trim().length < 12 || op.reason.length > 180) {
+              throw new Error("A removed shot requires a specific evidence-based reason; nothing was applied.");
+            }
+            removedClipIds.add(clip.id);
+            break;
           case "set_duration":
             if (typeof op.duration_seconds !== "number" || !Number.isFinite(op.duration_seconds) ||
                 op.duration_seconds < 0.5 || op.duration_seconds > 600) throw new Error("Invalid shot duration; nothing was applied.");
@@ -2244,6 +2252,16 @@
             throw new Error("This build cannot apply the proposed operation '" + String(op.type) + "'. Nothing was changed.");
         }
       }
+      if (removedClipIds.size) {
+        const survivingSelected = working.filter((clip) =>
+          state.creativeSelectedIds.includes(clip.id) && !removedClipIds.has(clip.id)
+        );
+        if (!survivingSelected.length) {
+          throw new Error("At least one selected shot must remain in the edit; nothing was applied.");
+        }
+        const retained = working.filter((clip) => !removedClipIds.has(clip.id));
+        working.splice(0, working.length, ...retained);
+      }
     } catch (error) {
       aiSetStatus(String(error.message || error), "error");
       return;
@@ -2261,8 +2279,16 @@
     scheduleSave();
     drawFrame();
     $("ai-apply-plan").disabled = true;
-    aiSetStatus("Reviewed plan applied to the local editable timeline and queued for autosave. No transition, audio track, mask, or generated asset was added.", "success");
-    $("agent-state").textContent = "AI-directed changes were applied only after your approval. The rendered result still needs a visual review.";
+    const autoAuthorized = state.autoFinishBusy;
+    aiSetStatus(
+      (autoAuthorized ? "Validated plan applied under your explicit per-run consent." : "Reviewed plan applied to the local editable timeline.") +
+      " The editable project was queued for autosave. Unsupported effects were not added.",
+      "success"
+    );
+    $("agent-state").textContent = (autoAuthorized
+      ? "The validated proposal was automatically applied under your per-run consent."
+      : "AI-directed changes were applied after your review.") +
+      " The exported result still needs a visual review.";
   }
 
   function clearAiProposal() {
