@@ -14,8 +14,7 @@
     audioSource: null, audioOutput: null, audioMonitor: null, lastFrameUi: 0,
     currentClipId: null, error: null,
     creativeStatus: null, creativePlan: null, creativeSnapshot: null,
-    creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false,
-    onlineAssetResults: [], onlineSearchBusy: false, onlineImportBusy: false
+    creativeSelectedIds: [], creativeAllowReorder: false, creativeBusy: false, creativePlanApplied: false
   };
   const canvas = $("preview-canvas");
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -106,10 +105,7 @@
       id: row.id, name: row.name, type: row.type, size: row.size,
       lastModified: row.lastModified, duration: row.duration || 0,
       width: row.width || 0, height: row.height || 0, thumb: row.thumb || null,
-      importedAt: row.importedAt, sourceProvider: row.sourceProvider || "",
-      sourcePage: row.sourcePage || "", attribution: row.attribution || "",
-      license: row.license || "", licenseUrl: row.licenseUrl || "",
-      rightsVerified: row.rightsVerified === true
+      importedAt: row.importedAt
     }));
     updateStorageLabel();
     renderAssets();
@@ -328,378 +324,6 @@
     if (failed) showMessage(failed + " file(s) could not be imported. Try a browser-supported image or video format.", true);
   }
 
-  function onlineStatus(message, kind) {
-    const target = $("online-asset-status");
-    if (!target) return;
-    target.textContent = message || "";
-    target.className = "online-asset-status" + (kind ? " " + kind : "");
-  }
-
-  function deriveAssetQuery(brief) {
-    let value = String(brief || "").trim();
-    value = value.replace(/\b(?:create|make|produce|generate|build|a|an|the|video|film|clip|short|vertical|horizontal|cinematic|premium|realistic|documentary|reel|shorts|explaining|explain|showing|show|about|for|with|please|use|style|duration|seconds?|secs?|\d{1,3}|9:16|16:9)\b/gi, " ");
-    value = value.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
-    return value.slice(0, 180) || String(brief || "").trim().slice(0, 180);
-  }
-
-  function safePreviewUrl(item) {
-    try {
-      const parsed = new URL(String(item.preview_url || ""));
-      const allowed = item.provider === "commons"
-        ? new Set(["upload.wikimedia.org"])
-        : item.provider === "pexels" ? new Set(["images.pexels.com"]) : new Set();
-      return parsed.protocol === "https:" && allowed.has(parsed.hostname.toLowerCase()) ? parsed.href : "";
-    } catch { return ""; }
-  }
-
-  function supportedOnlineAsset(item) {
-    const mime = String(item.mime_type || "").toLowerCase();
-    return Boolean(item && ["commons", "pexels"].includes(item.provider) &&
-      (["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) &&
-      /^https:\/\//i.test(String(item.asset_url || "")) &&
-      (item.rights_verified === true));
-  }
-
-  function renderOnlineResults(response) {
-    const target = $("online-asset-results");
-    target.replaceChildren();
-    const items = response && Array.isArray(response.items) ? response.items : [];
-    if (response && response.provider === "pinterest" && response.search_url) {
-      const note = document.createElement("div");
-      note.className = "empty-state";
-      const heading = document.createElement("strong");
-      heading.textContent = "Pinterest reference search";
-      const copy = document.createElement("span");
-      copy.textContent = "Open Pinterest to browse inspiration. Pins are not copied automatically because source rights and platform permissions must be respected.";
-      const link = document.createElement("a");
-      link.href = response.search_url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "OPEN PINTEREST RESULTS ↗";
-      note.append(heading, copy, link);
-      target.append(note);
-      return;
-    }
-    if (!items.length) {
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      const heading = document.createElement("strong");
-      heading.textContent = "No importable matches";
-      const copy = document.createElement("span");
-      copy.textContent = "Try a broader search or switch source. Only results with supported media formats and licence metadata can be imported automatically.";
-      empty.append(heading, copy);
-      target.append(empty);
-      return;
-    }
-    for (const item of items) {
-      const card = document.createElement("article");
-      card.className = "online-asset-card";
-      const preview = safePreviewUrl(item);
-      if (preview) {
-        const image = document.createElement("img");
-        image.loading = "lazy";
-        image.referrerPolicy = "no-referrer";
-        image.src = preview;
-        image.alt = "";
-        image.addEventListener("error", () => { image.hidden = true; }, { once: true });
-        card.append(image);
-      }
-      const body = document.createElement("div");
-      body.className = "online-asset-card-body";
-      const title = document.createElement("div");
-      title.className = "online-asset-title";
-      title.textContent = item.title || "Untitled asset";
-      const meta = document.createElement("div");
-      meta.className = "online-asset-meta";
-      meta.textContent = [String(item.kind || "media").toUpperCase(), item.attribution ? "By " + item.attribution : item.provider].filter(Boolean).join(" · ");
-      const licence = document.createElement("div");
-      licence.className = "online-asset-license";
-      licence.textContent = item.license || "Licence not identified — verify before reuse";
-      body.append(title, meta, licence);
-      if (item.description) {
-        const description = document.createElement("div");
-        description.className = "online-asset-meta";
-        description.textContent = String(item.description).slice(0, 220);
-        body.append(description);
-      }
-      const actions = document.createElement("div");
-      actions.className = "online-asset-card-actions";
-      const source = document.createElement("a");
-      source.className = "button quiet small";
-      source.href = String(item.source_page || "#");
-      source.target = "_blank";
-      source.rel = "noopener noreferrer";
-      source.textContent = "SOURCE ↗";
-      actions.append(source);
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "button primary small";
-      add.textContent = "IMPORT + ADD";
-      add.disabled = !supportedOnlineAsset(item);
-      add.title = add.disabled ? "Supported media and identifiable licence metadata are required for automatic import." : "Download a bounded copy and add it to your local timeline";
-      add.addEventListener("click", async () => {
-        add.disabled = true;
-        add.textContent = "IMPORTING…";
-        try {
-          const id = await importOnlineAsset(item, true);
-          onlineStatus("Imported " + item.title + " and added it to the local timeline. Original source and licence metadata are saved with the asset.", "success");
-          add.textContent = "ADDED";
-          add.disabled = true;
-          return id;
-        } catch (error) {
-          add.textContent = "RETRY IMPORT";
-          add.disabled = false;
-          onlineStatus(String(error.message || error), "error");
-        }
-      });
-      actions.append(add);
-      body.append(actions);
-      card.append(body);
-      target.append(card);
-    }
-  }
-
-  async function searchOnlineAssets(options) {
-    const provider = $("online-asset-provider").value || "commons";
-    const queryInput = $("online-asset-query");
-    let query = String(queryInput.value || "").trim();
-    if (!query) query = deriveAssetQuery($("creative-brief").value);
-    if (!query) {
-      onlineStatus("Enter a search phrase or describe the video in the Director's Brief.", "error");
-      return null;
-    }
-    queryInput.value = query;
-    if (state.onlineSearchBusy) return null;
-    if (provider === "pinterest") {
-      const link = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
-      renderOnlineResults({ provider: "pinterest", search_url: link, items: [] });
-      onlineStatus("Pinterest is available as a reference search. Omnitrix does not scrape or auto-import Pins.", "");
-      return { provider, query, items: [], search_url: link, manual_reference_only: true };
-    }
-    const token = aiRuntimeToken();
-    if (!token) {
-      onlineStatus("The authenticated Python-backed Studio runtime is not connected in this tab. Open the core Studio, connect its runtime, then return here.", "error");
-      return null;
-    }
-    state.onlineSearchBusy = true;
-    $("search-online-assets").disabled = true;
-    onlineStatus("Searching " + (provider === "commons" ? "Wikimedia Commons" : "Pexels") + " for “" + query + "”…", "");
-    try {
-      const params = new URLSearchParams({ q: query, provider, kind: $("online-asset-kind").value || "any", limit: "12" });
-      const response = await fetch("./api/creative/search?" + params.toString(), {
-        method: "GET", cache: "no-store",
-        headers: { Accept: "application/json", Authorization: "Bearer " + token }
-      });
-      let data;
-      try { data = await response.json(); }
-      catch { throw new Error("Asset search returned unreadable JSON."); }
-      if (!response.ok || !data || data.ok !== true) throw new Error((data && data.error) || "Online asset search failed.");
-      state.onlineAssetResults = data.items || [];
-      renderOnlineResults(data);
-      onlineStatus(
-        (data.count || state.onlineAssetResults.length) + " result(s) from " + provider + ". " +
-        (data.note || "Review each source and licence before publishing."),
-        "success"
-      );
-      return data;
-    } catch (error) {
-      onlineStatus(String(error.message || error), "error");
-      return null;
-    } finally {
-      state.onlineSearchBusy = false;
-      $("search-online-assets").disabled = false;
-    }
-  }
-
-  async function importOnlineAsset(item, addToTimeline) {
-    if (!supportedOnlineAsset(item)) throw new Error("This result has no supported media format or identifiable licence metadata; it was not imported.");
-    if (state.onlineImportBusy) throw new Error("Another online asset is still importing. Retry after it finishes.");
-    state.onlineImportBusy = true;
-    try {
-      const token = aiRuntimeToken();
-      if (!token) throw new Error("The authenticated Studio runtime is not connected.");
-      onlineStatus("Downloading a bounded copy of “" + (item.title || "asset") + "”…", "");
-      const params = new URLSearchParams({ provider: item.provider, url: item.asset_url });
-      const response = await fetch("./api/creative/assets/download?" + params.toString(), {
-        method: "GET", cache: "no-store",
-        headers: { Authorization: "Bearer " + token }
-      });
-      if (!response.ok) {
-        let failure = {};
-        try { failure = await response.json(); } catch {}
-        throw new Error(failure.error || "The source could not provide this media file.");
-      }
-      const blob = await response.blob();
-      if (!blob.size || blob.size > 24 * 1024 * 1024) throw new Error("The downloaded asset is empty or exceeds the 24 MB import limit.");
-      const mime = (blob.type || item.mime_type || "").split(";")[0].toLowerCase();
-      if (!["image/jpeg", "image/png", "image/webp", "image/avif", "video/mp4", "video/webm"].includes(mime)) {
-        throw new Error("The downloaded file has an unsupported media type: " + (mime || "unknown") + ".");
-      }
-      const extension = ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif", "video/mp4": ".mp4", "video/webm": ".webm" })[mime];
-      const base = slug(String(item.title || "online-asset")).slice(0, 75);
-      const file = new File([blob], base + extension, { type: mime, lastModified: Date.now() });
-      const metadata = await inspectFile(file);
-      if (file.type.startsWith("video/") && (!metadata.duration || !metadata.thumb)) {
-        throw new Error("The browser could not inspect this video or create its preview thumbnail. It was not added.");
-      }
-      const existing = state.assets.find((asset) => asset.sourcePage && asset.sourcePage === item.source_page && asset.sourceProvider === item.provider);
-      if (existing) {
-        if (addToTimeline) addAssetToTimeline(existing.id);
-        return existing.id;
-      }
-      const row = {
-        id: crypto.randomUUID(), name: file.name, type: metadata.type, size: file.size,
-        lastModified: file.lastModified, duration: metadata.duration || 0,
-        width: metadata.width || 0, height: metadata.height || 0, thumb: metadata.thumb || null,
-        blob: file, importedAt: new Date().toISOString(),
-        sourceProvider: item.provider, sourcePage: String(item.source_page || ""),
-        attribution: String(item.attribution || "").slice(0, 180),
-        license: String(item.license || "").slice(0, 180),
-        licenseUrl: String(item.license_url || "").slice(0, 500),
-        rightsVerified: item.rights_verified === true
-      };
-      await dbPut("assets", row);
-      state.assets.unshift({
-        id: row.id, name: row.name, type: row.type, size: row.size,
-        lastModified: row.lastModified, duration: row.duration, width: row.width, height: row.height,
-        thumb: row.thumb, importedAt: row.importedAt,
-        sourceProvider: row.sourceProvider, sourcePage: row.sourcePage, attribution: row.attribution,
-        license: row.license, licenseUrl: row.licenseUrl, rightsVerified: row.rightsVerified
-      });
-      renderAssets();
-      updateStats();
-      if (addToTimeline) addAssetToTimeline(row.id);
-      else scheduleSave();
-      return row.id;
-    } finally {
-      state.onlineImportBusy = false;
-    }
-  }
-
-  function extractBriefTitle(brief) {
-    let text = String(brief || "").trim();
-    const markers = [/(?:explaining|about|covering|showing|on the topic of)\s+(.+?)(?:[.!?]|$)/i, /(?:video|film|clip)\s+(?:about|on)\s+(.+?)(?:[.!?]|$)/i];
-    for (const pattern of markers) {
-      const match = text.match(pattern);
-      if (match && match[1]) { text = match[1]; break; }
-    }
-    text = text.replace(/^how\s+/i, "").replace(/\b(?:in|for)\s+\d+\s*(?:seconds?|secs?)\b/gi, "");
-    text = text.replace(/\b(?:vertical|horizontal|cinematic|realistic|premium|science|documentary|style|video)\b/gi, " ");
-    text = text.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
-    return text ? text.slice(0, 76).toLocaleUpperCase() : "A CLOSER LOOK";
-  }
-
-  async function buildDraftFromBrief() {
-    if (state.onlineImportBusy || state.onlineSearchBusy) {
-      onlineStatus("Another asset task is running. Wait for it to finish before starting a second one.", "error");
-      return;
-    }
-    const brief = String($("creative-brief").value || "").trim();
-    if (!brief) {
-      onlineStatus("Write your desired video in Director's Brief first, then press Auto-assemble Draft.", "error");
-      $("creative-brief").focus();
-      return;
-    }
-    const provider = $("online-asset-provider").value || "commons";
-    if (provider === "pinterest") {
-      onlineStatus("Pinterest is for inspiration links here, not reusable source media. Switch to Wikimedia Commons or configured Pexels for importable assets.", "error");
-      await searchOnlineAssets();
-      return;
-    }
-    if (state.project.timeline.length && !window.confirm("Append a new draft to your existing timeline? Existing shots will be kept.")) return;
-    $("build-from-brief").disabled = true;
-    try {
-      if (!$("online-asset-query").value.trim()) $("online-asset-query").value = deriveAssetQuery(brief);
-      let data = await searchOnlineAssets();
-      if (!data || !Array.isArray(data.items)) return;
-      let eligible = data.items.filter(supportedOnlineAsset);
-      if (!eligible.length && provider === "pexels") {
-        onlineStatus("No importable Pexels results. Check its server-side key or switch to Wikimedia Commons.", "error");
-        return;
-      }
-      if (!eligible.length && provider === "commons") {
-        onlineStatus("No results with supported formats and identifiable licences were found. Try a broader phrase; nothing was imported.", "error");
-        return;
-      }
-      const terms = deriveAssetQuery(brief).toLowerCase().split(/\s+/).filter((word) => word.length > 2);
-      const ranked = eligible.map((item, index) => {
-        const haystack = (item.title + " " + item.description).toLowerCase();
-        const score = terms.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
-        return { item, index, score };
-      }).sort((a, b) => b.score - a.score || a.index - b.index);
-      const selected = [];
-      const seen = new Set();
-      for (const row of ranked) {
-        const key = String(row.item.title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        selected.push(row.item);
-        if (selected.length >= 4) break;
-      }
-      if (!selected.length) throw new Error("No licence-identified assets passed the format and rights checks. Nothing was imported.");
-      const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
-      const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
-      const importedIds = [];
-      for (let i = 0; i < selected.length; i += 1) {
-        onlineStatus("Building draft: importing selected asset " + (i + 1) + " of " + selected.length + "…", "");
-        const id = await importOnlineAsset(selected[i], true);
-        importedIds.push(id);
-      }
-      const startIndex = state.project.timeline.length - importedIds.length;
-      const draftClips = state.project.timeline.slice(Math.max(0, startIndex));
-      const baseDuration = targetSeconds / Math.max(1, draftClips.length);
-      const title = extractBriefTitle(brief);
-      draftClips.forEach((clip, index) => {
-        const asset = assetById(clip.assetId);
-        let duration = Math.min(6, Math.max(2, baseDuration));
-        if (asset && asset.type.startsWith("video/") && Number(asset.duration) > 0) {
-          duration = Math.min(duration, Number(asset.duration));
-          clip.motion = "none";
-        } else {
-          clip.motion = index === 0 ? "slow-zoom" : "none";
-        }
-        clip.duration = Math.max(0.5, duration);
-        clip.fit = "cover";
-        clip.title = index === 0 ? title : "";
-        clip.subtitle = "";
-        clip.titlePosition = "bottom";
-        clip.titleColor = "#f1f3e8";
-        clip.titleSize = 44;
-        clip.titleFont = "sans";
-        clip.layers = Array.isArray(clip.layers) ? clip.layers : [];
-        if (index === 0) {
-          clip.layers.push({
-            id: crypto.randomUUID(), type: "rect", name: "Title rule",
-            text: "", x: 50, y: 88, width: 12, height: 1,
-            fontSize: 12, color: "#d6fa62", opacity: 0.95, font: "sans", animation: "slide-left"
-          });
-        }
-      });
-      state.selectedClipId = draftClips[0] ? draftClips[0].id : state.selectedClipId;
-      state.currentClipId = state.selectedClipId;
-      state.playhead = Math.max(0, startIndex >= 0 ? state.project.timeline.slice(0, startIndex).reduce((sum, clip) => sum + clip.duration, 0) : 0);
-      renderTimeline();
-      renderInspector();
-      renderGraphicLayers();
-      updateStats();
-      drawFrame();
-      await saveProject(false);
-      onlineStatus(
-        "Draft assembled from " + selected.length + " web result(s), target " + targetSeconds + " seconds. Selection used titles, descriptions and licence metadata—not visual-AI judgment. Preview it, then open Director + graphics engineer and approve selected-thumbnail analysis for richer visual choices.",
-        "success"
-      );
-      $("ai-director-panel").hidden = false;
-      renderAiSelectionList();
-      loadAiModelStatus();
-      $("ai-director-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (error) {
-      onlineStatus(String(error.message || error), "error");
-    } finally {
-      state.onlineImportBusy = false;
-      $("build-from-brief").disabled = false;
-    }
-  }
-
   function renderAssets() {
     const target = $("asset-grid");
     const search = $("asset-search").value.trim().toLowerCase();
@@ -757,26 +381,6 @@
       size.textContent = formatBytes(asset.size);
       meta.append(kind, size);
       info.append(name, meta);
-      if (asset.sourceProvider && asset.sourcePage) {
-        const sourceNote = document.createElement("div");
-        sourceNote.className = "asset-source-note";
-        sourceNote.textContent = (asset.sourceProvider.toUpperCase() + " · " + (asset.license || "licence unknown")).slice(0, 220);
-        if (asset.licenseUrl) {
-          const licenceLink = document.createElement("a");
-          licenceLink.href = asset.licenseUrl;
-          licenceLink.target = "_blank";
-          licenceLink.rel = "noopener noreferrer";
-          licenceLink.textContent = " Licence ↗";
-          sourceNote.append(licenceLink);
-        }
-        const sourceLink = document.createElement("a");
-        sourceLink.href = asset.sourcePage;
-        sourceLink.target = "_blank";
-        sourceLink.rel = "noopener noreferrer";
-        sourceLink.textContent = " Source ↗";
-        sourceNote.append(sourceLink);
-        info.append(sourceNote);
-      }
       const remove = document.createElement("button");
       remove.className = "asset-delete";
       remove.type = "button";
@@ -1609,16 +1213,12 @@
       },
       media: state.assets.map((asset) => ({
         id: asset.id, name: asset.name, type: asset.type, size: asset.size,
-        duration: asset.duration, width: asset.width, height: asset.height,
-        sourceProvider: asset.sourceProvider || "", sourcePage: asset.sourcePage || "",
-        attribution: asset.attribution || "", license: asset.license || "",
-        licenseUrl: asset.licenseUrl || "", rightsVerified: asset.rightsVerified === true
+        duration: asset.duration, width: asset.width, height: asset.height
       })),
       notes: [
         "This is an editable decision manifest, not a media archive.",
         "Original media remains in the browser's local IndexedDB store. Back up originals separately.",
-        "Online asset source, licence and attribution metadata are included where available; verify rights before publication.",
-        "This render path uses browser MediaRecorder. Independent music/narration tracks, true transitions, masks, post-render model critique and generated raster imagery remain unsupported."
+        "Audio tracks, transitions between shots, masks and model-generated changes are not yet part of this prototype."
       ]
     };
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
@@ -1842,7 +1442,6 @@
       case "set_title": return name + " — title: " + (op.text || "(clear title)");
       case "set_subtitle": return name + " — subtitle: " + (op.text || "(clear subtitle)");
       case "set_title_style": return name + " — title style: " + op.position + ", " + op.font + ", " + op.size + " px, " + op.color + ".";
-      case "add_graphic_layer": return name + " — add purposeful " + op.layer_type + " layer “" + (op.name || "Graphic") + (op.text ? " / " + op.text : "") + "” with " + op.animation + " motion.";
       case "reorder_timeline": return "Reorder the complete timeline: " + op.clip_ids.map((id) => {
         const row = state.project.timeline.find((item) => item.id === id);
         return row ? (assetById(row.assetId)?.name || row.name || id) : id;
@@ -2121,31 +1720,6 @@
             clip.titleSize = op.size;
             clip.titleColor = op.color;
             break;
-          case "add_graphic_layer": {
-            const allowedLayerTypes = new Set(["text", "rect", "circle"]);
-            const allowedAnimations = new Set(["none", "fade-in", "slide-up", "slide-left", "scale-in"]);
-            const numberInRange = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
-            if (!allowedLayerTypes.has(op.layer_type) || !allowedAnimations.has(op.animation) ||
-                !allowedFont.has(op.font) || typeof op.name !== "string" || op.name.length > 100 ||
-                typeof op.text !== "string" || op.text.length > 200 ||
-                (op.layer_type === "text" && !op.text.trim()) ||
-                !numberInRange(op.x, 0, 100) || !numberInRange(op.y, 0, 100) ||
-                !numberInRange(op.width, 1, 100) || !numberInRange(op.height, 1, 100) ||
-                !numberInRange(op.opacity, 0, 1) ||
-                !Number.isInteger(op.font_size) || op.font_size < 10 || op.font_size > 180 ||
-                typeof op.color !== "string" || !allowedColor.test(op.color)) {
-              throw new Error("The graphics engineer proposed an invalid native layer; nothing was applied.");
-            }
-            if (!Array.isArray(clip.layers)) clip.layers = [];
-            if (clip.layers.length >= 3) throw new Error("A shot may have no more than three added graphic layers.");
-            clip.layers.push({
-              id: crypto.randomUUID(), type: op.layer_type, name: op.name, text: op.text,
-              x: op.x, y: op.y, width: op.width, height: op.height,
-              fontSize: op.font_size, color: op.color, font: op.font,
-              opacity: op.opacity, animation: op.animation
-            });
-            break;
-          }
           default:
             throw new Error("This build cannot apply the proposed operation '" + String(op.type) + "'. Nothing was changed.");
         }
@@ -2197,17 +1771,6 @@
     dropzone.addEventListener("drop", (event) => importFiles(event.dataTransfer && event.dataTransfer.files));
     $("asset-search").addEventListener("input", renderAssets);
     $("add-all-assets").addEventListener("click", addAllAssets);
-    $("search-online-assets").addEventListener("click", () => searchOnlineAssets());
-    $("online-asset-query").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") { event.preventDefault(); searchOnlineAssets(); }
-    });
-    $("pinterest-reference").addEventListener("click", () => {
-      const query = String($("online-asset-query").value || "").trim() || deriveAssetQuery($("creative-brief").value);
-      if (!query) { onlineStatus("Enter a search phrase or write a Director's Brief first.", "error"); return; }
-      const url = "https://www.pinterest.com/search/pins/?" + new URLSearchParams({ q: query }).toString();
-      window.open(url, "_blank", "noopener,noreferrer");
-    });
-    $("build-from-brief").addEventListener("click", buildDraftFromBrief);
     $("save-project").addEventListener("click", () => saveProject(true));
     $("save-brief").addEventListener("click", () => { state.project.brief = $("creative-brief").value; scheduleSave(); toast("Director's brief saved with project."); });
     $("open-ai-director").addEventListener("click", openAiDirector);
