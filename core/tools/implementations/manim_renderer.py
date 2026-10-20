@@ -152,9 +152,9 @@ class ManimRendererTool(Tool):
                     return ToolResult(success=False, error="Manim exited successfully but no MP4 artifact was found.", metadata={"tool": self.name, "returncode": 0, "artifact_found": False})
                 destination = output_root / f"{output_name}-{os.urandom(5).hex()}.mp4"
                 shutil.copyfile(candidates[0], destination)
-                if destination.stat().st_size <= 0 or destination.stat().st_size > 100 * 1024 * 1024:
+                if destination.stat().st_size <= 0 or destination.stat().st_size > 24 * 1024 * 1024:
                     destination.unlink(missing_ok=True)
-                    return ToolResult(success=False, error="Rendered artifact failed size validation.", metadata={"tool": self.name, "artifact_found": False})
+                    return ToolResult(success=False, error="Rendered artifact failed the 24 MB Studio import limit.", metadata={"tool": self.name, "artifact_found": False})
                 return ToolResult(
                     success=True,
                     output={"artifact_path": str(destination), "format": "mp4", "bytes": destination.stat().st_size},
