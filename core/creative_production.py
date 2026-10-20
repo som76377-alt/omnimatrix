@@ -135,9 +135,23 @@ class CreativeProductionManifest:
                 raise ProductionContractError("Unknown task.")
             if state not in self.VALID_STATES:
                 raise ProductionContractError("Unsupported task state.")
+            allowed = {
+                "pending": {"ready", "blocked", "failed"},
+                "ready": {"running", "blocked", "failed"},
+                "running": {"succeeded", "failed", "blocked"},
+                "failed": {"ready", "blocked"},
+                "blocked": {"ready", "failed"},
+                "succeeded": set(),
+            }
+            if state != task.status and state not in allowed[task.status]:
+                raise ProductionContractError(f"Invalid task transition: {task.status} -> {state}.")
             if state == "running" and any(self.tasks[dep].status != "succeeded" for dep in task.depends_on):
                 raise ProductionContractError("A task cannot run until every dependency succeeds.")
             if state == "succeeded":
+                if any(self.tasks[dep].status != "succeeded" for dep in task.depends_on):
+                    raise ProductionContractError("A task cannot succeed until every dependency succeeds.")
+                if task.status != "running":
+                    raise ProductionContractError("A task must be running before it can succeed.")
                 missing = [artifact_id for artifact_id in task.writes if not self.artifacts[artifact_id].uri]
                 if missing:
                     raise ProductionContractError("A task cannot succeed without a URI for each output artifact.")
