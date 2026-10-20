@@ -466,7 +466,10 @@
     }
     const before = new Set(state.assets.map((asset) => asset.name));
     await importFiles(files);
-    const generated = state.assets.filter((asset) => files.some((file) => file.name === asset.name) && !before.has(asset.name));
+    const generatedByName = new Map(state.assets
+      .filter((asset) => !before.has(asset.name))
+      .map((asset) => [asset.name, asset]));
+    const generated = files.map((file) => generatedByName.get(file.name)).filter(Boolean);
     if (generated.length !== files.length) throw new Error("Original graphics were created, but not all scenes could be added to the media library.");
     const secondsMatch = brief.match(/\b(\d{1,3})\s*(?:-| )?\s*(?:seconds?|secs?)\b/i);
     const targetSeconds = Math.min(45, Math.max(4, secondsMatch ? Number(secondsMatch[1]) : 12));
