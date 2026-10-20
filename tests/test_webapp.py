@@ -100,7 +100,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
         self.assertIn('if (!$("ai-consent").checked)', self.creative_js)
         self.assertIn("consent_clip_ids", self.creative_js)
-        self.assertNotIn("fetch("https://", self.creative_js)
+        self.assertNotIn('fetch("https://', self.creative_js)
 
     def test_dashboard_reads_real_public_repository_api(self):
         self.assertIn('const GITHUB_API = "https://api.github.com/repos/" + OWNER + "/" + REPO;', self.js)
@@ -224,7 +224,7 @@ class WebConsoleTests(unittest.TestCase):
         self.assertIn('fetch("./api/creative/analyze"', self.creative_js)
         self.assertIn("aiTimelineSignature() !== state.creativeSnapshot", self.creative_js)
         self.assertIn("Nothing has been edited yet.", self.creative_js)
-        self.assertIn("Only selected resized previews", self.creative_html)
+        self.assertIn("resized JPEG thumbnails and limited clip metadata", self.creative_html)
 
     def test_creative_api_is_authenticated_bounded_and_uses_shared_worker(self):
         server = (ROOT / "interfaces/web/server.py").read_text(encoding="utf-8")
