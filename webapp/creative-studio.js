@@ -1755,8 +1755,8 @@
   }
 
   async function critiqueRenderedDraft(inspection, renderSignature) {
-    if (!$("auto-creative-consent").checked || !state.autoFinishBusy) {
-      return { attempted: false, changed: false, message: "No post-render model critique was authorized." };
+    if (!$("auto-creative-consent").checked) {
+      return { attempted: false, changed: false, message: "Post-render model critique consent was switched off before upload." };
     }
     const token = aiRuntimeToken();
     if (!token) return { attempted: false, changed: false, message: "Runtime token unavailable; local render only." };
@@ -1856,6 +1856,7 @@
   async function renderVideo(options) {
     if (state.exporting) return;
     const autoCritiqueRetry = Boolean(options && options.autoCritiqueRetry === true);
+    const runPostRenderCritic = Boolean(!autoCritiqueRetry && state.autoFinishBusy && $("auto-creative-consent").checked);
     if (!state.project.timeline.length) { showMessage("Add at least one shot before rendering.", true); return; }
     if (!("MediaRecorder" in window) || !canvas.captureStream) {
       showMessage("This browser does not support canvas video recording. Try a current version of Chrome or Edge.", true);
@@ -1868,7 +1869,7 @@
     const renderTimelineSnapshot = state.project.timeline.map((clip) => ({
       id: clip.id, assetId: clip.assetId, duration: Number(clip.duration) || 0
     }));
-    const reviewClipIds = state.autoFinishBusy && $("auto-creative-consent").checked && !autoCritiqueRetry
+    const reviewClipIds = runPostRenderCritic
       ? state.lastAutoDraftClipIds.slice(0, 4)
       : [];
     const renderSignature = aiTimelineSignature();
@@ -1913,7 +1914,7 @@
             inspectionFailure = String(error.message || error);
           }
           let critique = { attempted: false, changed: false, message: "" };
-          if (!autoCritiqueRetry && state.autoFinishBusy && $("auto-creative-consent").checked &&
+          if (runPostRenderCritic && $("auto-creative-consent").checked &&
               inspection && inspection.ok && inspection.reviewFrames && inspection.reviewFrames.length) {
             try {
               critique = await critiqueRenderedDraft(inspection, renderSignature);
@@ -1943,7 +1944,7 @@
           setTimeout(() => URL.revokeObjectURL(url), 60000);
           let criticSuffix = "";
           if (critique.attempted) criticSuffix = " · " + critique.message;
-          else if (state.autoFinishBusy && $("auto-creative-consent").checked && !autoCritiqueRetry) {
+          else if (runPostRenderCritic && $("auto-creative-consent").checked) {
             criticSuffix = " · No verified post-render AI critique: " + (critique.message || "No rendered sample was inspected.");
           }
           if (inspection && inspection.ok) {
