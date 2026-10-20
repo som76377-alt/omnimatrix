@@ -386,3 +386,38 @@ input::placeholder,textarea::placeholder{color:#697160}
   .ai-plan-summary,.ai-director-explainer,.ai-plan-boundary{font-size:14px}
   .brief-actions{grid-column:2;justify-content:flex-start}
 }
+
+
+/* Online asset discovery: source-first, compact but readable on phones. */
+.online-assets{margin:12px;padding:13px;border:1px solid var(--line-soft);border-radius:5px;background:#11130f;display:grid;gap:10px}
+.online-assets-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.online-assets-heading h3{font-size:16px;margin:5px 0 0;color:var(--text)}
+.online-search-controls{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.online-search-controls input,.online-search-controls select{min-width:0;width:100%;min-height:42px;background:#0b0d0a;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:9px 10px;font:500 14px/1.35 var(--sans)}
+.online-asset-actions{display:flex;flex-wrap:wrap;gap:8px}
+.online-asset-note{font-size:12px;line-height:1.5;color:var(--muted);margin:0}
+.online-asset-status{font-size:13px;line-height:1.45;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.online-asset-status.error{color:#ffc2b8}
+.online-asset-status.success{color:var(--green)}
+.online-asset-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.online-asset-card{min-width:0;overflow:hidden;border:1px solid var(--line-soft);background:#0b0d0a;display:flex;flex-direction:column}
+.online-asset-card img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#171a14}
+.online-asset-card-body{padding:9px;display:grid;gap:6px;min-width:0}
+.online-asset-title{font-size:13px;line-height:1.35;font-weight:650;color:var(--text);overflow-wrap:anywhere}
+.online-asset-meta{font-size:11px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.online-asset-license{font-size:11px;line-height:1.4;color:#c8d2b7;overflow-wrap:anywhere}
+.online-asset-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.online-asset-card-actions .button{flex:1;min-width:0;white-space:normal;min-height:38px;font-size:12px}
+.asset-source-note{font-size:11px;line-height:1.35;color:var(--muted);padding:0 8px 8px;overflow-wrap:anywhere}
+.asset-source-note a{color:var(--green);text-decoration:underline}
+.graphic-layer-row .graphic-layer-select{font-size:13px;line-height:1.35}
+@media(min-width:640px){
+  .online-search-controls{grid-template-columns:minmax(0,1fr) minmax(170px,.85fr) minmax(125px,.55fr) auto}
+  .online-assets{margin:12px}
+  .online-asset-results{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:380px){
+  .online-asset-results{grid-template-columns:minmax(0,1fr)}
+  .online-search-controls .button{width:100%}
+  .online-asset-actions .button{flex:1;min-width:130px}
+}
