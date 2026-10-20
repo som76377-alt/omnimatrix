@@ -11,8 +11,11 @@ Integrated browser capabilities in this increment:
 - Add a title and subtitle to each shot with configurable position, colour, size and type style.
 - Preview the edit on a canvas and export a local WebM draft with source-video audio where the browser's MediaRecorder/Web Audio implementation supports it.
 - Save the editable decision manifest as JSON.
+- Search Wikimedia Commons using an authenticated asset-search route, display source/licence attribution, and import supported images/short clips from allowlisted HTTPS media hosts (24 MB per-file cap). Pexels is optional behind a server-side `PEXELS_API_KEY`; Pinterest is reference-search only and is not scraped or automatically downloaded.
+- Build a first-pass short timeline from a brief by matching title/description and licence metadata. This metadata-based selection is a fallback, not visual proof; an explicit per-run consent can send the new shots' resized thumbnails to the configured visual model.
+- Let the schema-validated graphics engineer propose editable native text, rectangle, circle, line and arrow layers with bounded positions, size, opacity and restrained entry motion. A separate explicit auto-finish consent can apply validated supported edits to newly created shots and start a local WebM draft export.
 
-This is a working editing foundation, not the finished elite editor. The current prototype does not yet offer independent music/narration tracks, true cross-dissolves, masks, object removal, advanced colour grading, 3D scene authoring, generative media transformations, or AI-driven visual analysis.
+This remains a first autonomous-draft milestone, not a finished professional editor. It does not yet provide true cross-dissolves, independent music/narration tracks, masks, object removal, advanced colour grading, 3D scene authoring, generated raster imagery, a multi-frame final-render critic, or an automatic render/inspect/correct loop. The visual director sees only one resized thumbnail per selected video clip, not the full clip's temporal content.
 
 ## Architecture decisions
 
@@ -20,7 +23,7 @@ This is a working editing foundation, not the finished elite editor. The current
 2. **Local-first media.** Originals stay in IndexedDB unless an explicit future feature asks to use a remote provider. The app must communicate browser storage use and never imply that IndexedDB is a permanent backup or available on another device.
 3. **Structured, reversible edits.** The timeline stores source asset IDs and edit decisions separately from the original media. Editing does not mutate the input files.
 4. **Deterministic tools before agent calls.** Media ingestion and supported timeline operations do not need a language model. This conserves model quotas and makes basic editing available even when every AI provider is offline.
-5. **Honest agent status.** The media librarian and timeline executor are local deterministic functionality. The visual analyst, creative director and visual critic are configured as roles but are not live until a real provider adapter, consent path and verification tests are integrated. The user-visible UI must not suggest that an AI model has already analysed an image when no model call occurred.
+5. **Honest agent status.** The media librarian and timeline executor are local deterministic functionality. Online discovery now has explicit provider scopes and licence metadata. The visual analyst/creative director/graphics engineer are opt-in through the authenticated Creative Studio API and require a configured provider plus per-run thumbnail consent. The finished-render visual critic is still not implemented. Never suggest that a model inspected search results, full videos or a final render unless that actually happened.
 6. **Separate render adapters.** Browser MediaRecorder is the first draft path. A native FFmpeg worker is the likely later production path for reliable codecs, separate audio tracks, transcoding and server-side renders. The worker must be authenticated, quota-aware and resumable.
 
 ## Tool/software review
@@ -55,8 +58,8 @@ This is a working editing foundation, not the finished elite editor. The current
 2. **Project packaging**: media bundle export/import with checksums, browser quota warnings, undo/redo, stable asset identities, and autosave recovery.
 3. **Multitrack editing**: independent music and narration tracks, waveform previews, volume automation, captions, trims, transitions and output presets.
 4. **True graphic/motion workspace**: editable vector layers, shapes, typography and keyframes; then a Motion Canvas adapter for precise explainer graphics.
-5. **Agent bridge**: wire the existing Omnitrix orchestrator through a new capability-limited creative API. Add explicit project permission to send selected images/frames; agents return schema-validated edit plans using real asset IDs. Never expose arbitrary shell execution.
-6. **Visual critique loop**: sample the draft's actual rendered frames, compare with the brief and references, create actionable issue reports, and apply approved local changes.
+5. **General chat/tool bridge**: expose the bounded Creative Studio workflow as a registered capability to the main Omnitrix chat/orchestrator so a chat prompt can launch it. The dedicated Creative Studio API and UI are implemented on the feature branch; generic chat does not yet trigger the full video pipeline automatically. Preserve explicit media-sharing consent and never expose arbitrary shell execution.
+6. **Visual critique loop**: sample multiple frames from source video and the actual rendered draft, compare them with the brief, identify concrete faults, and apply a small bounded number of corrections. The current director only analyses one thumbnail per selected shot and does not critique the rendered output.
 7. **Remote render jobs**: add authenticated upload/download, a queue, background FFmpeg, per-job quotas and timeout/cancellation. Consider a separate hosted worker only when a real deployment is available and verified.
 
 ## Release gate for any AI visual claim
