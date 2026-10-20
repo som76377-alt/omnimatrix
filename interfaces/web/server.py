@@ -39,6 +39,7 @@ from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
 from core.creative_director import analyze_creative_request, creative_model_status
+from core.creative_assets import CreativeAssetError, download_creative_asset, search_creative_assets
 from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
@@ -1323,7 +1324,7 @@ def make_handler(
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "connect-src 'self' https://api.github.com; "
-                "img-src 'self' data:; base-uri 'self'; form-action 'self'; "
+                "img-src 'self' data: blob: https://upload.wikimedia.org https://images.pexels.com; base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'",
             )
             self.send_header("Cache-Control", "no-store")
@@ -1339,6 +1340,19 @@ def make_handler(
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
+
+        def _send_bytes(self, data: bytes, content_type: str, filename: str, status: int = 200) -> None:
+            if len(data) > 24 * 1024 * 1024:
+                self._send_json({"ok": False, "error": "The selected asset exceeds the import limit."}, 413)
+                return
+            safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", filename)[:120] or "creative-asset"
+            self.send_response(status)
+            self._headers(content_type, api=True)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", 'attachment; filename="' + safe_name + '"')
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
 
         def _authorized(self) -> bool:
             supplied = self.headers.get("Authorization", "")
@@ -1460,7 +1474,24 @@ def make_handler(
                     )
                     return
                 try:
-                    if route == "/api/creative/status":
+                    if route == "/api/creative/search":
+                        raw_limit = self._first_query("limit", "10")
+                        try:
+                            limit = int(raw_limit)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("Asset search limit must be an integer between 1 and 12.") from exc
+                        self._send_json(search_creative_assets(
+                            self._first_query("q", ""),
+                            provider=self._first_query("provider", "commons"),
+                            kind=self._first_query("kind", "any"),
+                            limit=limit,
+                        ))
+                    elif route == "/api/creative/assets/download":
+                        provider = self._first_query("provider", "")
+                        url = self._first_query("url", "")
+                        content, content_type, filename = download_creative_asset(url, provider=provider)
+                        self._send_bytes(content, content_type, filename)
+                    elif route == "/api/creative/status":
                         self._send_json(creative_model_status())
                     elif route.startswith("/api/creative/jobs/"):
                         job_id = route.rsplit("/", 1)[-1]
