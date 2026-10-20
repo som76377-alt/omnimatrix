@@ -131,6 +131,7 @@ class TruthfulnessContractTests(unittest.TestCase):
         request = adapter.requests[-1]
         self.assertTrue(has_truthfulness_contract(request.instructions))
         self.assertIn("Return only a valid JSON object", request.instructions)
+        self.assertNotIn("OMNITRIX RESPONSE FORMATTING CONTRACT", request.instructions)
         self.assertIn("Do not assume tools, credentials, APIs", request.instructions)
         self.assertIn("verification task", request.instructions.lower())
 
