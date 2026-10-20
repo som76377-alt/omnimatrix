@@ -38,12 +38,14 @@ from core.tools.bootstrap import build_tool_registry
 from core.tools.implementations.workspace_inspect import WorkspaceInspectTool
 from core.tools.permissions import ToolPermission
 from core.multimodal.adapters import toolchain_status
+from core.creative_director import analyze_creative_request, creative_model_status
 from core.multimodal.journal import journal_status
 from core.multimodal.workflow import analyze_multiple_attachments, analyze_single_attachment
 
 
 LOGGER = logging.getLogger("omnitrix.studio")
 MAX_BODY_BYTES = 16 * 1024
+MAX_CREATIVE_BODY_BYTES = 3 * 1024 * 1024
 APK_DOWNLOAD_URL = "https://github.com/som76377-alt/omnimatrix/releases/latest/download/Omnitrix.apk"
 MAX_PUBLIC_DOWNLOAD_BYTES = 25 * 1024 * 1024
 MAX_CHAT_CHARS = 8_000
@@ -326,6 +328,7 @@ class StudioRuntime:
         self.stop_event = threading.Event()
         self.sync_lock = threading.Lock()
         self.execution_lock = threading.Lock()
+        self.creative_analysis_lock = threading.Lock()
         self.active_chats = 0
         self.active_chats_lock = threading.Lock()
         # The public mobile activity endpoint is scoped to this opaque session ID.
@@ -1252,13 +1255,13 @@ def make_handler(
             values = self._query().get(name, [])
             return values[0] if values else default
 
-        def _json_body(self) -> Any:
+        def _json_body(self, max_bytes: int = MAX_BODY_BYTES) -> Any:
             raw_length = self.headers.get("Content-Length", "0")
             try:
                 length = int(raw_length)
             except ValueError as exc:
                 raise ValueError("Invalid Content-Length.") from exc
-            if length < 0 or length > MAX_BODY_BYTES:
+            if length < 0 or length > max_bytes:
                 raise OverflowError("Request body is too large.")
             raw = self.rfile.read(length)
             try:
@@ -1356,7 +1359,9 @@ def make_handler(
                     )
                     return
                 try:
-                    if route == "/api/health":
+                    if route == "/api/creative/status":
+                        self._send_json(creative_model_status())
+                    elif route == "/api/health":
                         self._send_json(runtime.status())
                     elif route == "/api/attachments/list":
                         self._send_json(runtime.list_attachments(self._first_query("session_id", "")))
@@ -1456,7 +1461,9 @@ def make_handler(
                     self._send_json({"ok": False, "error": "Attachment upload failed safely."}, 500)
                 return
             try:
-                payload = self._json_body()
+                payload = self._json_body(
+                    MAX_CREATIVE_BODY_BYTES if route == "/api/creative/analyze" else MAX_BODY_BYTES
+                )
             except OverflowError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 413)
                 return
@@ -1464,7 +1471,14 @@ def make_handler(
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
             try:
-                if route == "/api/chat":
+                if route == "/api/creative/analyze":
+                    if not runtime.creative_analysis_lock.acquire(blocking=False):
+                        raise RuntimeError("Creative analysis is already running; retry this request.")
+                    try:
+                        self._send_json(analyze_creative_request(payload))
+                    finally:
+                        runtime.creative_analysis_lock.release()
+                elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
                 elif route == "/api/attachments/delete":
                     self._send_json(runtime.delete_attachment(payload))
