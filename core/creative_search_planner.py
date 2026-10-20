@@ -95,15 +95,18 @@ def build_search_query_variants(query: Any, *, limit: int = MAX_QUERY_VARIANTS) 
                 part = subject + " " + part
         candidates.append(part)
 
-    if len(words) >= 4:
-        candidates.append(" ".join(words[:3]))
-        candidates.append(" ".join(words[-3:]))
+    # Put semantic human-action variants before generic n-grams. Otherwise a
+    # short six-query budget can be consumed by low-value adjacent word pairs.
     if subject and action:
         candidates.append(f"{subject} {action}")
     if subject and any(token.casefold() in {"wave", "waves", "waving"} for token in words):
         candidates.extend(["person waving", f"{subject} waving", "hand waving greeting"])
     if subject and any(token.casefold() in {"hi", "hello", "greeting", "greetings"} for token in words):
         candidates.extend([f"{subject} greeting", "person saying hello", "person greeting"])
+
+    if len(words) >= 4:
+        candidates.append(" ".join(words[:3]))
+        candidates.append(" ".join(words[-3:]))
 
     # Adjacent keyword pairs help surface the main object/process when a brief is
     # too long for asset metadata, without degenerating to one-word searches.
