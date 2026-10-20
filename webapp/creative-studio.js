@@ -1412,11 +1412,6 @@
       label.append(checkbox, image, details);
       target.append(label);
     }
-    const count = document.createElement("p");
-    count.className = "ai-muted";
-    count.id = "ai-selection-count";
-    count.textContent = "0 of up to 6 shots selected";
-    target.append(count);
     updateAiControls();
   }
 
