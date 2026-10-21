@@ -142,6 +142,9 @@ def _apply_gateway_policy(
                 enabled_rows += 1
 
         if enabled_rows == 0:
+            # Persist the safe empty allowlist before failing, rather than rolling
+            # back the disable-all step in the exception handler.
+            conn.commit()
             raise RuntimeError("No configured free-quota routes exist in the gateway model catalog.")
         unexpected = conn.execute(
             "SELECT COUNT(*) FROM models WHERE enabled = 1 AND NOT (" +
