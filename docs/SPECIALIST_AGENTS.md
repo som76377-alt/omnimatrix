@@ -52,7 +52,7 @@ Provider descriptions and list prices are not a benchmark. Model IDs, rate limit
 
 ## Execution behavior in version 1
 
-Seven role policies are now registered: intent engineer, reasoning, coding, subject solver, research, computation, and critic. These are configurable roles; they do not imply seven separate model weights or seven independent providers.
+Eight role policies are now registered: intent engineer, orchestrator, reasoning, coding, subject solver, research, computation, and critic. These are configurable roles; they do not imply seven separate model weights or seven independent providers.
 
 1. **Route** with deterministic, testable rules: explicit numeric expression requests to computation; source-retrieval requests to research; subject-science requests to the subject solver; software/repository work to coding; general requests to reasoning. Hybrid work attaches research or coding as a supporting instruction when it adds a distinct lens.
 The provider adapter currently exposes registered model tools; it does **not** yet provide a native web-search or general Python/SymPy/SciPy tool. Therefore:
@@ -80,11 +80,12 @@ Track **accuracy, verifiable pass rate, latency, input/output tokens, cost per a
 
 ## Implementation map
 
-- `core/agents/registry.py` — validates configurable specialist definitions.
+- `core/agents/registry.py` — validates configurable specialist definitions, including the dedicated orchestrator role.
+- `core/policy/agent_boundaries.py` — assigns narrow role/tool allowlists, support handoff contracts and the coordinator's output constraints.
 - `core/agents/router.py` — routes roles and composes instructions.
 - `core/models/providers/openrouter.py` — opt-in Chat Completions adapter with tool-call normalization and no automatic retries.
 - `config/agents.json` — role definitions, preferences, intent and critic policies.
-- `core/orchestrator/omnitrix.py` — bounded no-tool intent/critic stages under the existing budget and journal contracts.
+- `core/orchestrator/omnitrix.py` — bounded no-tool orchestrator, intent, support-specialist and critic stages under the existing budget/journal contracts; validates coordinator work packages before dispatch.
 - `tests/test_agents.py` and `tests/test_agent_pipeline.py` — deterministic routing/schema and scripted-call regression tests.
 
 Current limitation: **the provider registry only supports Google and the offline demo implementation.** Anthropic/OpenAI adapters, independent model access, live model benchmarking, tool-based symbolic/numeric calculation, and a separate task-decomposition worker are follow-up increments—not done merely by adding this role configuration.
