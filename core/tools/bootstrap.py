@@ -17,6 +17,7 @@ def build_tool_registry(
     enable_cline: bool = False,
 ) -> ToolRegistry:
     """Build the default registry; workspace access still requires explicit permission."""
+    allowed_path_tuple = tuple(allowed_paths) if allowed_paths is not None else None
     registry = ToolRegistry()
     registry.register(CalculatorTool())
     # The renderer accepts structured diagram data only; it never executes model-written code.
@@ -25,8 +26,8 @@ def build_tool_registry(
     if enable_cline:
         if workspace_root is None:
             raise ValueError("Cline coding requires an explicit workspace_root.")
-        registry.register(ClineCodingTool(workspace_root, allowed_paths=tuple(allowed_paths) if allowed_paths is not None else None))
-    if workspace_root is not None or allowed_paths is not None or supports_secure_workspace_inspection():
-        registry.register(WorkspaceInspectTool(workspace_root, allowed_paths=allowed_paths))
+        registry.register(ClineCodingTool(workspace_root, allowed_paths=allowed_path_tuple))
+    if workspace_root is not None or allowed_path_tuple is not None or supports_secure_workspace_inspection():
+        registry.register(WorkspaceInspectTool(workspace_root, allowed_paths=allowed_path_tuple))
 
     return registry
