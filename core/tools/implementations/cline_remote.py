@@ -85,6 +85,7 @@ def execute_remote(*, task: str, mode: str, context: str = "",
         "scope_json": json.dumps((files_in_scope or [])[:50], ensure_ascii=False),
         "mode": mode,
         "base_ref": os.environ.get("CLINE_REMOTE_BASE_REF", "main").strip() or "main",
+        "timeout_seconds": str(min(max(int(timeout_seconds), 30), 900)),
     }
     if sum(len(str(v)) for v in inputs.values()) > _MAX_INPUT:
         return ToolResult(success=False, error="Remote Cline handoff is too large; reduce context/findings and retry.", metadata={"tool": "cline.coding", "backend": "github_actions"})
@@ -93,7 +94,7 @@ def execute_remote(*, task: str, mode: str, context: str = "",
 
     # GitHub may respond before the new run appears in list results. Correlate using
     # the workflow run-name, not simply the newest run, to avoid cross-request races.
-    deadline = time.monotonic() + min(max(timeout_seconds, 30), 900) + 360
+    deadline = time.monotonic() + min(max(int(timeout_seconds), 30), 900) + 360
     run_data = None
     while time.monotonic() < deadline:
         data, _ = _api(token, f"/repos/{_REPO}/actions/workflows/{_WORKFLOW}/runs?event=workflow_dispatch&per_page=30", timeout=20)
