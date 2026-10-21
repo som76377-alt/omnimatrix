@@ -61,7 +61,7 @@ jobs:
           branch="cline/omnitrix-${REQUEST_ID}"
           git config user.name "Omnitrix Cline Worker"
           git config user.email "omnitrix-cline-worker@users.noreply.github.com"
-          git add -A
+          git add -A -- . ':(exclude)cline-result.json' ':(exclude)cline.patch'
           git commit -m "Cline implementation for Omnitrix request ${REQUEST_ID}"
           auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git -c "http.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"
