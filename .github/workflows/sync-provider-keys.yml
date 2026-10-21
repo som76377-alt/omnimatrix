@@ -103,6 +103,7 @@ jobs:
           OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
         run: |
           set -euo pipefail
           if [[ -z "$RENDER_API_KEY" || -z "$RENDER_SERVICE_ID" ]]; then
@@ -127,6 +128,7 @@ jobs:
           sync_one OPENROUTER_API_KEY_1 "$OPENROUTER_API_KEY_1"
           sync_one GROQ_API_KEY "$GROQ_API_KEY"
           sync_one GROQ_API_KEY_1 "$GROQ_API_KEY_1"
+          sync_one GROQ_FREE_QUOTA_CONFIRMED "${GROQ_FREE_QUOTA_CONFIRMED:-false}"
 
       - name: Trigger Render deployment to load the updated environment
         id: deploy
@@ -153,6 +155,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
         run: |
           set -euo pipefail
           status=""
@@ -178,5 +181,5 @@ jobs:
           jq -e --argjson expected "$expected_ready" '.gemini_key_detected == true and .openrouter_key_detected == true and .all_six_key_slots_detected == true and .configured_model_route_count == 6 and .ready_model_route_count == $expected and ([.configured_model_routes[].model] | unique | length == 6)' \
             <<< "$health" >/dev/null
           echo "PASS: all six key slots are visible and six distinct model profiles are registered; ready inference routes=$expected_ready."
-          jq -r '.configured_model_routes[] | "ROUTE: (.profile) | (.provider) | (.model) | (.status) | roles=(.preferred_by_roles|join(","))"' <<< "$health"
+          jq -r '.configured_model_routes[] | "ROUTE: \(.profile) | \(.provider) | \(.model) | \(.status) | roles=\(.preferred_by_roles|join(","))"' <<< "$health"
           echo "Note: key visibility and adapter readiness do not prove that inference has succeeded; provider response metadata is the execution evidence."
