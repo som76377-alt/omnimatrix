@@ -2407,9 +2407,12 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
     )
     cline_omnitrix = None
     cline_api_enabled = os.getenv("OMNITRIX_ENABLE_CLINE_API", "").strip().lower() == "true"
-    if cline_api_enabled and shutil.which("cline") and os.getenv("OPENROUTER_API_KEY"):
+    remote_cline_enabled = os.getenv("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions"
+    local_cline_ready = bool(shutil.which("cline") and os.getenv("OPENROUTER_API_KEY"))
+    if cline_api_enabled and (remote_cline_enabled or local_cline_ready):
         # Keep Cline out of the unauthenticated public mobile chat runtime.
-        # Its separate orchestrator is reachable only through token-protected /api routes.
+        # Remote mode delegates execution to a disposable GitHub-hosted runner;
+        # its separate orchestrator remains reachable only through token-protected /api routes.
         cline_allowed_paths = ("core", "tests", "interfaces", "scripts", "config", "webapp", "docs")
         cline_registry = build_tool_registry(
             root, allowed_paths=cline_allowed_paths, enable_cline=True
