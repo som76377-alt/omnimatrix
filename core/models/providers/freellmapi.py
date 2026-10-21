@@ -4,7 +4,8 @@ from __future__ import annotations
 import os
 from urllib.parse import urlsplit
 
-from core.models.base import ModelResponseError
+from core.models.base import ModelRequestError, ModelResponseError
+from core.models.messages import ModelRequest
 from core.models.providers.openrouter import OpenRouterAdapter
 
 
@@ -83,7 +84,7 @@ class FreeLLMAPIAdapter(OpenRouterAdapter):
         """Allow only the configured alias and the explicitly allowlisted routed IDs."""
         return isinstance(model_id, str) and model_id in self._allowed_model_ids()
 
-    def generate(self, request):
+    def generate(self, request: ModelRequest):
         response = super().generate(request)
         if response.model_identity_source == "provider_response":
             if response.model not in self._allowed_model_ids():
