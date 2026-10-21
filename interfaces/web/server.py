@@ -837,6 +837,11 @@ class StudioRuntime:
                     "permission_granted": self.omnitrix.tool_permission.allows(
                         tool.capabilities
                     ),
+                    **(
+                        {"runtime_status": tool.runtime_status()}
+                        if callable(getattr(tool, "runtime_status", None))
+                        else {}
+                    ),
                 }
             )
         return {
