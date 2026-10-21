@@ -147,7 +147,8 @@ jobs:
           fi
           health=$(curl -sS --fail --retry 5 --retry-delay 3 \
             'https://omnitrix-studio.onrender.com/api/mobile/health')
-          jq -e '.gemini_key_detected == true and .openrouter_key_detected == true' \
+          jq -e '.gemini_key_detected == true and .openrouter_key_detected == true and .all_six_key_slots_detected == true and .configured_model_route_count == 6 and .ready_model_route_count == 6 and ([.configured_model_routes[].model] | unique | length == 6)' \
             <<< "$health" >/dev/null
-          echo "PASS: live Omnitrix health endpoint confirms primary Gemini and OpenRouter keys are visible."
-          echo "Note: Groq and secondary-key app support is not implied by environment presence; those require explicit provider integration."
+          echo "PASS: all six key slots are visible and all six distinct model routes have registered, ready adapters."
+          jq -r '.configured_model_routes[] | "ROUTE: (.profile) | (.provider) | (.model) | (.status) | roles=(.preferred_by_roles|join(","))"' <<< "$health"
+          echo "Note: key visibility and adapter readiness do not prove that inference has succeeded; provider response metadata is the execution evidence."
