@@ -305,7 +305,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
         self.assertEqual(baseline["metadata"]["api_key_env"], "GEMINI_API_KEY")
-        self.assertEqual(baseline["metadata"]["standard_fallback_model"], "groq-gpt-oss-20b")
+        self.assertEqual(baseline["metadata"]["standard_fallback_model"], "gemini-flash-lite")
 
         lite = models["gemini-flash-lite"]
         self.assertEqual(lite["model_id"], "gemini-3.5-flash-lite")
