@@ -3,7 +3,7 @@
     {
       "name": "omnitrix-primary",
       "provider": "google",
-      "model_id": "gemini-3.7-flash",
+      "model_id": "gemini-3.6-flash",
       "capabilities": [
         "reasoning",
         "coding",
@@ -22,7 +22,7 @@
         "max_retries": 1,
         "standard_fallback_model": "groq-gpt-oss-20b",
         "data_policy": "Use only under active free quota. Do not claim browsing unless an actual retrieval tool ran.",
-        "profile_note": "Primary general reasoning and coding route; uses the stable Gemini 3.7 Flash endpoint after repeated Gemini 3.8 Flash inference timeouts."
+        "profile_note": "Primary general reasoning and coding route; uses the stable Gemini 3.7 Flash endpoint after repeated Gemini 3.7 Flash high-demand responses and 3.8 timeouts."
       }
     },
     {
