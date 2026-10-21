@@ -79,7 +79,7 @@ jobs:
             --header 'Accept: application/json' \
             --header 'Content-Type: application/json' \
             --data '{"clearCache":"do_not_clear"}')
-          deploy_id=$(jq -er '.id' <<< "$response")
+          deploy_id=$(jq -er 'if type == "array" then (.[0].id // .[0].deploy.id) else (.id // .deploy.id) end' <<< "$response")
           echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
           echo "Render deployment requested."
 
