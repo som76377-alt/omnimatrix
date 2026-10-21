@@ -77,6 +77,17 @@ class ClineCodingTool(Tool):
             "Use only for coding tasks; independently review its output before reporting success."
         )
 
+    def runtime_status(self) -> dict[str, object]:
+        """Return safe operational facts without exposing executable paths or credentials."""
+        executable_found = bool(self._executable and Path(self._executable).is_file())
+        return {
+            "registered": True,
+            "executable_found": executable_found,
+            "authentication": "not_verified",
+            "authentication_note": "Cline provider authentication is not tested by the status endpoint.",
+            "ready_to_attempt": executable_found,
+        }
+
     @property
     def capabilities(self) -> frozenset[str]:
         return frozenset({"coding.execute"})
