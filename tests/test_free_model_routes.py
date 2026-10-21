@@ -76,10 +76,16 @@ class FreeModelRouteConfigurationTests(unittest.TestCase):
                      "subject_solver", "research", "computation", "critic"):
             self.assertIn(role, contract)
 
-    def test_free_quota_profiles_never_declare_positive_estimated_cost(self):
+    def test_only_explicitly_free_routes_are_zero_cost_and_groq_is_gated(self):
         for model in self.registry.list_enabled():
-            self.assertEqual(model.metadata.get("estimated_cost_usd"), 0, model.name)
-            self.assertTrue(model.metadata.get("agent_approved_cost"), model.name)
+            if model.provider == "groq":
+                self.assertEqual(model.metadata.get("cost_class"), "provider_billed_usage")
+                self.assertGreater(model.metadata.get("estimated_cost_usd", 0), 0)
+                self.assertTrue(model.metadata.get("requires_explicit_free_quota_confirmation"))
+                self.assertFalse(model.metadata.get("agent_approved_cost"))
+            else:
+                self.assertEqual(model.metadata.get("estimated_cost_usd"), 0, model.name)
+                self.assertTrue(model.metadata.get("agent_approved_cost"), model.name)
 
 
 if __name__ == "__main__":
