@@ -20,7 +20,7 @@
         "api_key_env": "GEMINI_API_KEY",
         "timeout_seconds": 60,
         "max_retries": 1,
-        "standard_fallback_model": "gemini-flash-lite",
+        "standard_fallback_model": "groq-gpt-oss-20b",
         "data_policy": "Use only under active free quota. Do not claim browsing unless an actual retrieval tool ran.",
         "profile_note": "Primary general reasoning and coding route; successful inference must be confirmed by provider response."
       }
