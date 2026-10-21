@@ -414,7 +414,6 @@ class Omnitrix:
         )
         selected_model = self.router.select(requirements)
 
-        active_agent_role = agent_plan.primary.role if agent_plan is not None else None
         _log_safely(
             logging.INFO,
             "model_selected",
@@ -1275,7 +1274,7 @@ class Omnitrix:
         budget_guard: BudgetGuard,
     ) -> str:
         """Run a bounded no-tools specialist call with the usual budget/journal fences."""
-        scoped_instructions = instructions + "\\n\\n" + stage_boundary_contract(stage)
+        scoped_instructions = instructions + "\n\n" + stage_boundary_contract(stage)
         request = ModelRequest(
             messages=messages,
             tools=(),
@@ -1421,6 +1420,7 @@ class Omnitrix:
                     # role's specialist preferences.
                     prefer_fallback=agent_plan.complexity == "standard",
                 )
+        active_agent_role = agent_plan.primary.role if agent_plan is not None else None
         _log_safely(
             logging.INFO,
             "model_selected",
@@ -1928,7 +1928,7 @@ class Omnitrix:
                     + (assistant_message,)
                     + tuple(tool_messages)
                 ),
-                tools=self._get_authorized_model_tools(allowed_tool_scopes),
+                tools=self._get_authorized_model_tools(allowed_tool_scopes, agent_role=active_agent_role),
                 continuation=response.continuation,
                 instructions=request.instructions,
             )
