@@ -213,6 +213,14 @@ def _start_gateway(env: dict[str, str]) -> tuple[subprocess.Popen[bytes], int] |
         print("Gateway disabled: no configured free-quota model routes are eligible.", flush=True)
         return None
     sidecar_env = env.copy()
+    allowed_ids = {"auto:balanced"}
+    for platform, model_id, _key_env, _label in routes:
+        allowed_ids.add(model_id)
+        allowed_ids.add(f"{platform}/{model_id}")
+    # Pass exact identity allowlist to Omnitrix as well. A gateway response that
+    # claims a model outside this set is rejected rather than trusted.
+    env["FREELLMAPI_ALLOWED_MODEL_IDS"] = ",".join(sorted(allowed_ids))
+    env.setdefault("FREELLMAPI_BASE_URL", f"http://127.0.0.1:{GATEWAY_PORT}/v1")
     sidecar_env.update({
         "NODE_ENV": "production",
         "HOST": "127.0.0.1",
@@ -220,8 +228,8 @@ def _start_gateway(env: dict[str, str]) -> tuple[subprocess.Popen[bytes], int] |
         "ENCRYPTION_KEY": encryption_key,
         "FREEAPI_DB_PATH": str(GATEWAY_DB),
         "FREEAPI_CONFIG_JSON": json.dumps(config, separators=(",", ":"), ensure_ascii=False),
-        # Pin both the upstream source code and the catalogue used by the allowlist.
-        # The catalogue may still be initialized from the source's baked snapshot.
+        # Keep the catalogue static for this pinned experiment. The SQLite
+        # allowlist is reapplied from declarative startup config on every boot.
         "CATALOG_SYNC_DISABLED": "1",
         "FREELLMAPI_UPDATE_CHECK": "off",
     })
