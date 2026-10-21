@@ -450,6 +450,16 @@ class StudioServerTests(unittest.TestCase):
                         "203.0.113.10",
                     )
 
+    def test_cline_admin_route_requires_runtime_token(self):
+        status, body = self.request(
+            "/api/admin/cline/chat",
+            method="POST",
+            body={"task": "Implement a focused parser regression test"},
+            authorized=False,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["code"], "unauthorized")
+
     def test_api_rejects_missing_or_wrong_token(self):
         status, body = self.request("/api/health", authorized=False)
         self.assertEqual(status, 401)
