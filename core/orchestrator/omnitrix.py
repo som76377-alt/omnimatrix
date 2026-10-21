@@ -1269,8 +1269,17 @@ class Omnitrix:
         cline_available: bool,
     ) -> dict[str, object] | None:
         """Validate a coordinator's bounded assignment plan before using it."""
+        if not isinstance(raw, str):
+            return None
+        candidate_json = raw.strip()
+        # Some models wrap JSON in Markdown fences despite the JSON-only instruction.
+        # Strip only a complete outer fence; keep the schema strict otherwise.
+        if candidate_json.startswith("```") and candidate_json.endswith("```"):
+            fence_lines = candidate_json.splitlines()
+            if len(fence_lines) >= 3 and fence_lines[0].startswith("```") and fence_lines[-1].strip() == "```":
+                candidate_json = "\n".join(fence_lines[1:-1]).strip()
         try:
-            payload = json.loads(raw)
+            payload = json.loads(candidate_json)
         except (json.JSONDecodeError, TypeError):
             return None
         expected_keys = {
@@ -1314,11 +1323,15 @@ class Omnitrix:
             if not isinstance(dependencies, list) or len(dependencies) > len(required_roles):
                 return None
             if (
-                any(not isinstance(dep, str) or dep not in seen for dep in dependencies)
-                or len(dependencies) != len(set(dependencies))
+                any(
+                    not isinstance(dep, str) or dep not in required_roles or dep == role
+                    for dep in dependencies
+                )
+                or (
+                    all(isinstance(dep, str) for dep in dependencies)
+                    and len(dependencies) != len(set(dependencies))
+                )
             ):
-                # Dependencies must refer to an earlier work package; forward
-                # references and cycles are rejected before any specialist runs.
                 return None
             seen.add(role)
             ordered_roles.append(role)
@@ -1333,8 +1346,26 @@ class Omnitrix:
             return None
 
         integration_order = payload["integration_order"]
-        if integration_order != ordered_roles:
+        if (
+            not isinstance(integration_order, list)
+            or len(integration_order) != len(required_roles)
+            or any(not isinstance(role, str) for role in integration_order)
+            or set(integration_order) != set(required_roles)
+            or len(integration_order) != len(set(integration_order))
+        ):
             return None
+        packages_by_role = {str(package["role"]): package for package in validated_packages}
+        ordered_packages: list[dict[str, object]] = []
+        completed_roles: set[str] = set()
+        for role in integration_order:
+            package = packages_by_role[role]
+            dependencies = package["depends_on"]
+            if any(dependency not in completed_roles for dependency in dependencies):
+                # Dependencies must precede their consumer in the integration order.
+                return None
+            ordered_packages.append(package)
+            completed_roles.add(role)
+        validated_packages = ordered_packages
         final_criteria = payload["final_acceptance_criteria"]
         if (
             not isinstance(final_criteria, list) or not 1 <= len(final_criteria) <= 12
@@ -1345,33 +1376,33 @@ class Omnitrix:
         handoff = payload["cline_handoff"]
         if not isinstance(handoff, dict) or set(handoff) != {"task", "acceptance_criteria", "files_in_scope"}:
             return None
-        cline_task = handoff["task"]
-        cline_criteria = handoff["acceptance_criteria"]
-        file_scope = handoff["files_in_scope"]
-        if not isinstance(cline_task, str) or len(cline_task) > 3000:
-            return None
-        if (
-            not isinstance(cline_criteria, list) or len(cline_criteria) > 10
-            or any(not isinstance(item, str) or not item.strip() or len(item) > 600 for item in cline_criteria)
-        ):
-            return None
-        if (
-            not isinstance(file_scope, list) or len(file_scope) > 25
-            or any(
-                not isinstance(item, str) or not item.strip() or len(item) > 300
-                or Path(item).is_absolute() or ".." in Path(item).parts
-                or "\\" in item
-                for item in file_scope
-            )
-        ):
-            return None
-        if primary_role == "coding" and cline_available:
-            if len(cline_task.strip()) < 10 or not cline_criteria:
+        if primary_role != "coding" or not cline_available:
+            # Tool permissions are authoritative. A model-generated handoff cannot
+            # grant itself execution rights; discard it when Cline is not exposed.
+            cline_task = ""
+            cline_criteria = []
+            file_scope = []
+        else:
+            cline_task = handoff["task"]
+            cline_criteria = handoff["acceptance_criteria"]
+            file_scope = handoff["files_in_scope"]
+            if not isinstance(cline_task, str) or not 10 <= len(cline_task.strip()) <= 3000:
                 return None
-        elif cline_task.strip() or cline_criteria or file_scope:
-            # A coordinator cannot pre-authorize a coding worker that the current
-            # lead role or runtime permissions do not actually expose.
-            return None
+            if (
+                not isinstance(cline_criteria, list) or not 1 <= len(cline_criteria) <= 10
+                or any(not isinstance(item, str) or not item.strip() or len(item) > 600 for item in cline_criteria)
+            ):
+                return None
+            if (
+                not isinstance(file_scope, list) or len(file_scope) > 25
+                or any(
+                    not isinstance(item, str) or not item.strip() or len(item) > 300
+                    or Path(item).is_absolute() or ".." in Path(item).parts
+                    or "\\" in item
+                    for item in file_scope
+                )
+            ):
+                return None
 
         return {
             "objective_summary": summary.strip(),
