@@ -869,6 +869,98 @@ private class RuntimeClient(context: Context) {
         return if (!useHostedBackend && ready()) base else discoverHostedBase()
     }
 
+    suspend fun startManimRender(payload: JSONObject): JSONObject {
+        return if (!useHostedBackend && ready()) {
+            requestPrivate("POST", "/api/creative/manim-render", payload)
+        } else {
+            requestPublic("POST", discoverHostedBase() + "/api/mobile/creative/manim-render", payload)
+        }
+    }
+
+    suspend fun manimJobStatus(jobId: String): JSONObject {
+        if (!jobId.matches(Regex("[a-f0-9]{32}"))) throw IOException("The render job ID is invalid.")
+        return if (!useHostedBackend && ready()) {
+            requestPrivate("GET", "/api/creative/manim-jobs/" + jobId, null)
+        } else {
+            requestPublic("GET", discoverHostedBase() + "/api/mobile/creative/manim-jobs/" + jobId, null)
+        }
+    }
+
+    suspend fun downloadManimArtifact(jobId: String): File = withContext(Dispatchers.IO) {
+        if (!jobId.matches(Regex("[a-f0-9]{32}"))) throw IOException("The render job ID is invalid.")
+        val hosted = useHostedBackend || !ready()
+        val address = if (hosted) {
+            discoverHostedBase() + "/api/mobile/creative/manim-jobs/" + jobId + "/artifact"
+        } else {
+            base + "/api/creative/manim-jobs/" + jobId + "/artifact"
+        }
+        val connection = URL(address).openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 20000
+        connection.readTimeout = 120000
+        connection.useCaches = false
+        connection.setRequestProperty("Accept", "video/mp4")
+        connection.setRequestProperty("User-Agent", "Omnitrix-Android")
+        if (!hosted) {
+            connection.setRequestProperty(
+                "Authorization",
+                "Bearer " + RuntimeInputValidation.validateRuntimeToken(token)
+            )
+        }
+        val directory = File(appContext.cacheDir, "rendered-videos")
+        if (!directory.exists() && !directory.mkdirs()) {
+            connection.disconnect()
+            throw IOException("Android could not create its rendered-video cache.")
+        }
+        val output = File(directory, "omnitrix-science-" + jobId.take(8) + ".mp4")
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val detail = (connection.errorStream ?: connection.inputStream)
+                    ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val message = try { JSONObject(detail).optString("error", "") } catch (_: Exception) { "" }
+                throw IOException(if (message.isNotBlank()) message else "The MP4 download returned HTTP " + code + ".")
+            }
+            val contentType = connection.contentType.orEmpty()
+            if (!contentType.contains("video/mp4", ignoreCase = true) &&
+                !contentType.contains("application/octet-stream", ignoreCase = true)
+            ) {
+                throw IOException("The render service did not return an MP4 file.")
+            }
+            val announcedLength = connection.contentLengthLong
+            if (announcedLength > 24L * 1024L * 1024L) {
+                throw IOException("The rendered MP4 exceeds the 24 MB mobile limit.")
+            }
+            var written = 0L
+            connection.inputStream.use { input ->
+                FileOutputStream(output).use { sink ->
+                    val buffer = ByteArray(32 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        written += count
+                        if (written > 24L * 1024L * 1024L) {
+                            throw IOException("The rendered MP4 exceeded the 24 MB mobile limit.")
+                        }
+                        sink.write(buffer, 0, count)
+                    }
+                }
+            }
+            if (written < 2048L) throw IOException("The rendered MP4 is empty or incomplete.")
+            val header = ByteArray(12)
+            val headerBytes = output.inputStream().use { it.read(header) }
+            if (headerBytes < 8 || String(header, 4, 4, StandardCharsets.US_ASCII) != "ftyp") {
+                throw IOException("The downloaded file does not have a valid MP4 container signature.")
+            }
+            output
+        } catch (error: Exception) {
+            output.delete()
+            throw error
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun activity(sessionId: String): JSONObject {
         if (!useHostedBackend && ready()) {
             val health = requestPrivate("GET", "/api/health", null)
@@ -1421,7 +1513,7 @@ private fun OmnitrixApp() {
                     {"title":"short title","nodes":["stage 1","stage 2"],"arrows":[[0,1]]}
                     Rules: 2 to 8 nodes, each label concise and accurate (max 72 characters), title max 100 characters, arrows are integer index pairs between different existing nodes. Use causal stages, not decorative filler or unsupported claims. Keep science correct. The result is an animated diagram, not narration, photorealistic footage, or a fully edited multi-scene film.
                     User's original brief:
-                    \${prompt.take(3000)}
+                    ${prompt.take(3000)}
                 """.trimIndent()
                 val planResponse = runtime.sendChat(
                     JSONObject().put("session_id", sessionId).put("message", planningPrompt)
@@ -1479,7 +1571,7 @@ private fun OmnitrixApp() {
                 }
 
                 updateVideoMessage(
-                    "Plan validated: \${labels.size} labels and \${arrows.length()} arrows. Starting code rendering; this path does not call paid video generation.",
+                    "Plan validated: ${labels.size} labels and ${arrows.length()} arrows. Starting code rendering; this path does not call paid video generation.",
                     "CODE VIDEO · PLAN VALIDATED"
                 )
                 val accepted = runtime.startManimRender(
@@ -1510,7 +1602,7 @@ private fun OmnitrixApp() {
                             break
                         }
                         else -> updateVideoMessage(
-                            "The renderer is \${status.optString("status", "working")}. Waiting for a real completed artifact; no fake progress percentage is shown.",
+                            "The renderer is ${status.optString("status", "working")}. Waiting for a real completed artifact; no fake progress percentage is shown.",
                             "CODE VIDEO · RENDERING"
                         )
                     }
@@ -1525,12 +1617,12 @@ private fun OmnitrixApp() {
                 val mp4 = runtime.downloadManimArtifact(jobId)
                 updateVideoMessage(
                     "**Code-rendered video is ready.** The server's artifact integrity check and the MP4 container check passed. This draft is an animated scientific diagram, not a fully edited multi-scene film with narration. Independent visual and scientific review has not been run.",
-                    "CODE VIDEO · MP4 VERIFIED · \${mp4.length() / 1024} KB",
+                    "CODE VIDEO · MP4 VERIFIED · ${mp4.length() / 1024} KB",
                     mp4
                 )
             } catch (e: Exception) {
                 updateVideoMessage(
-                    "Video creation failed before a playable MP4 was attached: \${e.message ?: "unknown error"}. The request stayed in chat; no Studio transfer occurred.",
+                    "Video creation failed before a playable MP4 was attached: ${e.message ?: "unknown error"}. The request stayed in chat; no Studio transfer occurred.",
                     "CODE VIDEO · FAILED"
                 )
             } finally {
