@@ -231,3 +231,8 @@ The Python CLI and token-protected Codespaces Studio can optionally delegate imp
 
 Read docs/CLINE_CODING_AGENT.md for setup, limits, and security boundaries. This adapter is an integration, not model training, and Cline's changes still require independent review and passing tests.
 
+
+
+## Specialist boundaries and design quality
+
+The current role boundaries, Cline's executor role, role-scoped tool access, cross-specialist handoffs, design anti-slop requirements and definition-of-done gates are documented in [docs/AGENT_OPERATING_CONTRACT.md](docs/AGENT_OPERATING_CONTRACT.md). That contract also distinguishes configured role policies from genuinely separate models and explicitly notes unavailable live retrieval tools.
