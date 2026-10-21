@@ -19,7 +19,7 @@ from core.persistence.model_state import (
 )
 from core.persistence.sqlite_journal import SQLiteJournal
 from core.models.adapters import AdapterRegistry
-from core.models.base import ModelAdapter
+from core.models.base import ModelAdapter, ModelResponseError
 from core.models.loader import ModelConfigLoader
 from core.models.messages import (
     MessageRole,
@@ -2045,6 +2045,8 @@ class Omnitrix:
             model_started_at = time.perf_counter()
             try:
                 response = adapter.generate(request)
+                if not response.tool_calls and not response.content.strip():
+                    raise ModelResponseError("Provider returned an empty final answer.")
             except Exception as exc:
                 # One bounded cross-provider fallback keeps transient provider
                 # failures from turning a chat turn into a hard failure. A
@@ -2063,18 +2065,30 @@ class Omnitrix:
                         fallback_model = self._configured_standard_fallback(
                             default_model, task.requirements.capabilities
                         )
-                    if fallback_model is None:
-                        if default_model.name != selected_model.name:
-                            fallback_model = default_model
-                        elif agent_plan is not None:
-                            candidate = self._select_agent_model(
-                                agent_plan.primary,
-                                default_model,
-                                required_capabilities=task.requirements.capabilities,
-                                prefer_fallback=False,
-                            )
-                            if candidate.name != selected_model.name:
-                                fallback_model = candidate
+                    if fallback_model is None and agent_plan is not None:
+                        # Prefer a route not already consumed by the coordinated
+                        # specialist stages. Reusing a failed or already-used profile
+                        # would make a "fallback" merely repeat the same dependency.
+                        excluded_for_fallback = frozenset(
+                            set(used_specialist_models) | {selected_model.name}
+                        )
+                        candidate = self._select_agent_model(
+                            agent_plan.primary,
+                            default_model,
+                            required_capabilities=task.requirements.capabilities,
+                            prefer_fallback=False,
+                            prefer_independent_provider=True,
+                            exclude_model_names=excluded_for_fallback,
+                        )
+                        if (
+                            candidate.name != selected_model.name
+                            and candidate.name not in excluded_for_fallback
+                        ):
+                            fallback_model = candidate
+                    if fallback_model is None and default_model.name != selected_model.name:
+                        # Keep a default route as the last-resort fallback only
+                        # when no unused eligible profile exists.
+                        fallback_model = default_model
 
                 if fallback_model is None:
                     raise
