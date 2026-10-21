@@ -51,6 +51,7 @@ class GroqAdapter(OpenRouterAdapter):
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Omnitrix/1.0",
             },
             method="POST",
         )
