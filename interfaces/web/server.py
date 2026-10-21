@@ -640,12 +640,9 @@ class StudioRuntime:
         # Probe availability only after side-effect-free validation. Never run an
         # actual render synchronously merely to validate its arguments.
         if not shutil.which("manim"):
-            validation = tool.execute(**arguments)
-            if validation.metadata and validation.metadata.get("available") is False:
-                raise RuntimeError(validation.error or "Manim is unavailable on this host.")
-            if not validation.success:
-                raise ValueError(validation.error or "The Manim render request is invalid.")
-            raise RuntimeError("Manim availability changed during validation; retry the request.")
+            fallback_available = getattr(tool, "fallback_available", None)
+            if not callable(fallback_available) or not fallback_available():
+                raise RuntimeError("Manim is unavailable and the bundled Pillow/imageio-ffmpeg renderer dependencies are missing.")
         now = utc_now()
         job_id = secrets.token_hex(16)
         objective = str(arguments.get("title", "Scientific diagram render"))[:100]
