@@ -65,6 +65,45 @@ ROLE_BOUNDARIES: Final[dict[str, str]] = {
     ),
 }
 
+
+SUPPORT_ASSIGNMENTS: Final[dict[str, str]] = {
+    "reasoning": (
+        "Return only the highest-impact logical constraints, trade-offs, failure modes, and a "
+        "counterexample/check that could falsify the proposed approach. Do not produce the final deliverable."
+    ),
+    "coding": (
+        "As a supporting stage, map likely implementation surfaces, existing interfaces, risks, and test targets "
+        "from information actually provided. Do not edit files or claim repository inspection in this analysis-only stage. "
+        "The coding lead owns the implementation decision; Cline executes a bounded patch only when authorized."
+    ),
+    "subject_solver": (
+        "Return the domain model needed by the lead: causal sequence, assumptions, equations/definitions, units, "
+        "physical or logical constraints, edge cases, and claims that must remain correct. Do not produce unrelated code or the whole final artifact."
+    ),
+    "research": (
+        "Return an evidence ledger: each material claim, actual source and date if supplied, what it supports, and unresolved gaps. "
+        "If no real retrieval results or source material are available, explicitly return BLOCKED: no verifiable sources available; "
+        "never fill the gap with invented citations or pretend to browse."
+    ),
+    "computation": (
+        "Return only the assigned calculation: inputs, supported method/formula, result, units, precision, and a sanity check. "
+        "Identify unsupported symbolic/numeric operations rather than approximating them silently."
+    ),
+}
+
+def support_assignment_contract(role: str, lead_role: str) -> str:
+    """Describe the bounded output a support role must hand to the lead."""
+    assignment = SUPPORT_ASSIGNMENTS.get(
+        role,
+        "Return only concise, evidence-labelled findings that support the lead's decision; do not solve the entire user task."
+    )
+    return (
+        f"LEAD ROLE: {lead_role}. Your bounded work package is: {assignment} "
+        "The lead will integrate your result with other specialist findings and the original user brief. "
+        "Make outputs easy to merge: label facts, assumptions, risks, unresolved questions, and any relevant interface or dependency. "
+        "Do not repeat another role's output or invent unavailable capabilities."
+    )
+
 def allowed_tools_for_role(role: str) -> frozenset[str]:
     """Return the explicit allowlist; unknown roles receive no tools."""
     return ROLE_TOOL_ALLOWLIST.get(role, frozenset())
