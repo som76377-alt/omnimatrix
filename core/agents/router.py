@@ -201,7 +201,11 @@ class AgentRouter:
 
         # For hybrid science/software tasks, keep the main solver authoritative
         # and add only the specialist lens that contributes a distinct check.
-        if subject and coding and primary.role != "coding" and not any(
+        if subject and coding and primary.role == "coding" and not any(
+            agent.role == "subject_solver" for agent in support
+        ):
+            support.append(self.registry.get("subject_solver"))
+        elif subject and coding and primary.role != "coding" and not any(
             agent.role == "coding" for agent in support
         ):
             support.append(self.registry.get("coding"))
