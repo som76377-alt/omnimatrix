@@ -466,7 +466,7 @@ class StudioServerTests(unittest.TestCase):
             {item["role"] for item in body["agents"]},
             {
                 "reasoning", "coding", "subject_solver", "research",
-                "computation", "critic", "intent_engineer",
+                "computation", "critic", "intent_engineer", "orchestrator",
             },
         )
         self.assertIn("openrouter_key_detected", body)
