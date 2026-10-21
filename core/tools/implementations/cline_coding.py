@@ -49,7 +49,8 @@ class ClineCodingTool(Tool):
             raise ValueError("Cline workspace root must be an existing directory.")
         self._root = root
         self._executable = executable or shutil.which("cline")
-        self._config_dir = Path(config_dir).expanduser().resolve() if config_dir else None
+        config_value = config_dir or os.environ.get("CLINE_CONFIG_DIR")
+        self._config_dir = Path(config_value).expanduser().resolve() if config_value else None
         self._allowed_paths: tuple[tuple[str, ...], ...] | None = None
         if allowed_paths is not None:
             prefixes = []
@@ -184,26 +185,36 @@ class ClineCodingTool(Tool):
                 return ToolResult(success=True, output=output or "Cline produced no file changes.",
                                   metadata={"tool": self.name, "mode": mode,
                                             "changed_files": [], "changes_applied": False})
-            applied: list[str] = []
+            validated_changes: list[tuple[Path, Path]] = []
             for relative in changed:
                 source, destination = workspace / relative, self._root / relative
                 if _denied(relative) or not self._is_allowed(relative) or source.is_symlink() or not source.is_file():
                     raise RuntimeError(f"Refusing unsafe changed path: {relative.as_posix()}")
                 if source.stat().st_size > _MAX_FILE_BYTES:
                     raise RuntimeError(f"Refusing oversized changed file: {relative.as_posix()}")
+                if destination.is_symlink():
+                    raise RuntimeError(f"Refusing to overwrite a symlink: {relative.as_posix()}")
                 self._ensure_confined(destination)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
-                applied.append(relative.as_posix())
-            removed: list[str] = []
+                validated_changes.append((source, destination))
+            validated_deletions: list[Path] = []
             for relative in deleted:
                 destination = self._root / relative
-                if _denied(relative) or not self._is_allowed(relative):
-                    raise RuntimeError(f"Refusing deletion of protected or out-of-scope path: {relative.as_posix()}")
+                if _denied(relative) or not self._is_allowed(relative) or destination.is_symlink():
+                    raise RuntimeError(f"Refusing deletion of protected, symlink, or out-of-scope path: {relative.as_posix()}")
                 self._ensure_confined(destination)
-                if destination.is_file() and not destination.is_symlink():
+                validated_deletions.append(destination)
+
+            # Validate every path before mutating the original workspace.
+            applied: list[str] = []
+            for source, destination in validated_changes:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+                applied.append(source.relative_to(workspace).as_posix())
+            removed: list[str] = []
+            for destination in validated_deletions:
+                if destination.is_file():
                     destination.unlink()
-                    removed.append(relative.as_posix())
+                    removed.append(destination.relative_to(self._root).as_posix())
             return ToolResult(success=True, output=output or "Cline completed the implementation.",
                               metadata={"tool": self.name, "mode": mode, "changes_applied": True,
                                         "changed_files": applied, "deleted_files": removed,
