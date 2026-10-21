@@ -19,7 +19,7 @@ class AgentRegistryTests(unittest.TestCase):
             {agent.role for agent in registry.list_enabled()},
             {
                 "reasoning", "coding", "subject_solver", "research",
-                "computation", "critic", "intent_engineer", "orchestrator",
+                "computation", "critic", "intent_engineer", "orchestrator", "orchestrator",
             },
         )
 
