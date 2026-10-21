@@ -14,7 +14,13 @@ services:
       - key: OMNITRIX_PUBLIC_CHAT_ENABLED
         value: "true"
       - key: OMNITRIX_ENABLE_CLINE_API
-        value: "false"
+        value: "true"
+      - key: CLINE_EXECUTION_BACKEND
+        value: github_actions
+      - key: CLINE_REMOTE_BASE_REF
+        value: main
+      - key: OMNITRIX_GITHUB_ACTIONS_TOKEN
+        sync: false
       - key: CLINE_PROVIDER
         value: openrouter
       - key: CLINE_MODEL
