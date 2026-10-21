@@ -215,17 +215,31 @@ class ClineCodingTool(Tool):
                    "IMPLEMENT: edit the code, run relevant tests, and report changed files, tests, unresolved issues, and handoff assumptions.\n\n")
                 + "\n\n".join(handoff_sections)
             )
+            provider = os.environ.get("CLINE_PROVIDER", "openrouter").strip()
+            model_id = os.environ.get("CLINE_MODEL", "openrouter/free").strip()
+            api_key_env = os.environ.get("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY").strip()
+            api_key = os.environ.get(api_key_env, "")
+            if provider == "openrouter" and not api_key:
+                return ToolResult(
+                    success=False,
+                    error=f"Cline provider key is missing from {api_key_env}; no changes were applied.",
+                    metadata={"tool": self.name, "mode": mode, "changes_applied": False},
+                )
             command = [
-                self._executable, "--json", "--cwd", str(workspace),
-                "--timeout", str(timeout),
+                self._executable, "--provider", provider, "--model", model_id,
+                "--cwd", str(workspace), "--timeout", str(timeout),
             ]
+            # Cline CLI v3 accepts provider credentials explicitly. The key is
+            # passed only to the child process and is never copied into its env.
+            if api_key:
+                command.extend(["--key", api_key])
             if self._config_dir:
-                command.extend(["--config", str(self._config_dir)])
+                command.extend(["--data-dir", str(self._config_dir)])
             if mode == "plan":
                 command.extend(["--plan", "--auto-approve", "false"])
             else:
                 command.extend(["--auto-approve", "true"])
-            command.append(prompt)
+            command.extend(["--json", prompt])
 
             env = {
                 "PATH": os.environ.get("PATH", ""),
