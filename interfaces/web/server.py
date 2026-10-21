@@ -1137,6 +1137,17 @@ class StudioRuntime:
                 "preferred_by_roles": preferred_by_roles,
             })
         ready_model_route_count = sum(1 for route in configured_model_routes if route["ready"])
+        cline_tool = (
+            self.cline_omnitrix.tool_registry.get("cline.coding")
+            if self.cline_omnitrix is not None
+            and self.cline_omnitrix.tool_registry.has("cline.coding")
+            else None
+        )
+        cline_runtime_status = (
+            cline_tool.runtime_status()
+            if cline_tool is not None and callable(getattr(cline_tool, "runtime_status", None))
+            else {"registered": False, "executable_found": False, "ready_to_attempt": False}
+        )
 
         available = self.public_chat_enabled and bool(available_models)
         if not self.public_chat_enabled:
@@ -1178,6 +1189,9 @@ class StudioRuntime:
             "configured_model_route_count": len(configured_model_routes),
             "ready_model_route_count": ready_model_route_count,
             "route_readiness_note": "Ready means the configured adapter sees its key. It does not prove a successful model inference; use execution trace/provider response metadata for that.",
+            "cline_worker_enabled": self.cline_omnitrix is not None,
+            "cline_cli_ready": bool(cline_runtime_status.get("executable_found") and cline_runtime_status.get("ready_to_attempt")),
+            "cline_provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
             "reasoning_specialist_available": reasoning_specialist_available,
             "preferred_reasoning_model": (
                 reasoning_model.model_id or reasoning_model.name
