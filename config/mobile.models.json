@@ -8,67 +8,146 @@
         "reasoning",
         "coding",
         "research",
-        "browser",
-        "testing"
+        "testing",
+        "browser"
       ],
-      "context_window": 32000,
+      "context_window": 1000000,
       "enabled": true,
       "metadata": {
         "cost_class": "user_provided_free_quota",
         "estimated_cost_usd": 0,
         "agent_approved_cost": true,
-        "timeout_seconds": 15,
-        "max_retries": 0,
-        "standard_fallback_model": "omnitrix-fast-fallback"
-      }
-    },
-    {
-      "name": "reasoning-nemotron-super-free",
-      "provider": "openrouter",
-      "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
-      "capabilities": [
-        "reasoning",
-        "coding"
-      ],
-      "context_window": 262144,
-      "enabled": true,
-      "metadata": {
-        "cost_class": "free",
-        "estimated_cost_usd": 0,
-        "agent_approved_cost": true,
-        "api_key_env": "OPENROUTER_API_KEY",
-        "max_output_tokens": 8192,
+        "api_key_env": "GEMINI_API_KEY",
         "timeout_seconds": 60,
-        "candidate_ids": [
-          "nvidia/nemotron-3-super-120b-a12b:free"
-        ],
-        "data_policy": "no_confidential_or_personal_data",
-        "profile_note": "Zero-price specialist candidate for genuinely complex work. Standard conversation and straightforward tasks prefer the budget-eligible primary model; specialist routing is based on task complexity, not exam labels. Only routes when OPENROUTER_API_KEY is configured and runtime budget permits. Free-route availability/terms may change; do not send confidential, personal, or sensitive content. High reasoning effort is requested only when this specialist profile is selected; reasoning text is excluded from application responses.",
-        "reasoning_effort": "high",
-        "exclude_reasoning": true
+        "max_retries": 1,
+        "standard_fallback_model": "gemini-flash-lite",
+        "data_policy": "Use only under active free quota. Do not claim browsing unless an actual retrieval tool ran.",
+        "profile_note": "Primary general reasoning and coding route; successful inference must be confirmed by provider response."
       }
     },
     {
-      "name": "omnitrix-fast-fallback",
-      "provider": "openrouter",
-      "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "name": "gemini-flash-lite",
+      "provider": "google",
+      "model_id": "gemini-3.5-flash-lite",
       "capabilities": [
         "reasoning",
-        "coding"
+        "coding",
+        "research",
+        "testing"
       ],
-      "context_window": 262144,
+      "context_window": 1000000,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "user_provided_free_quota",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "GEMINI_API_KEY_1",
+        "timeout_seconds": 30,
+        "max_retries": 1,
+        "data_policy": "Use only under active free quota.",
+        "profile_note": "Fast lightweight preflight and fallback model, routed through the secondary Gemini key."
+      }
+    },
+    {
+      "name": "coding-minimax-m31-free",
+      "provider": "openrouter",
+      "model_id": "minimax/minimax-m3.1-flash:free",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "testing"
+      ],
+      "context_window": 1000000,
       "enabled": true,
       "metadata": {
         "cost_class": "free",
         "estimated_cost_usd": 0,
         "agent_approved_cost": true,
         "api_key_env": "OPENROUTER_API_KEY",
-        "max_output_tokens": 2048,
-        "timeout_seconds": 30,
-        "reasoning_effort": "low",
-        "exclude_reasoning": true,
+        "timeout_seconds": 75,
+        "max_output_tokens": 8192,
         "data_policy": "no_confidential_or_personal_data",
-        "profile_note": "Latency-bounded fallback for standard tasks only when the primary model times out or fails. Uses lower reasoning effort and a limited output budget for quick recovery; do not use as the primary model for complex tasks."
+        "candidate_ids": [
+          "minimax/minimax-m3.1-flash:free"
+        ],
+        "profile_note": "Explicit zero-price OpenRouter model; rate-limited free capacity may change."
+      }
+    },
+    {
+      "name": "orchestrator-nemotron-ultra-free",
+      "provider": "openrouter",
+      "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "testing"
+      ],
+      "context_window": 1000000,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "free",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "OPENROUTER_API_KEY_1",
+        "timeout_seconds": 75,
+        "max_output_tokens": 8192,
+        "data_policy": "no_confidential_or_personal_data",
+        "candidate_ids": [
+          "nvidia/nemotron-3-ultra-550b-a55b:free"
+        ],
+        "profile_note": "Explicit zero-price orchestration/reasoning model; do not send confidential or personal data to free inference endpoints."
+      }
+    },
+    {
+      "name": "groq-gpt-oss-120b",
+      "provider": "groq",
+      "model_id": "openai/gpt-oss-120b",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "testing"
+      ],
+      "context_window": 131072,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "user_provided_free_quota",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "GROQ_API_KEY",
+        "timeout_seconds": 60,
+        "max_output_tokens": 8192,
+        "candidate_ids": [
+          "openai/gpt-oss-120b"
+        ],
+        "profile_note": "Use strictly within Groq Free Plan limits; do not switch to paid/on-demand usage automatically."
+      }
+    },
+    {
+      "name": "groq-gpt-oss-20b",
+      "provider": "groq",
+      "model_id": "openai/gpt-oss-20b",
+      "capabilities": [
+        "reasoning",
+        "coding",
+        "research",
+        "testing"
+      ],
+      "context_window": 131072,
+      "enabled": true,
+      "metadata": {
+        "cost_class": "user_provided_free_quota",
+        "estimated_cost_usd": 0,
+        "agent_approved_cost": true,
+        "api_key_env": "GROQ_API_KEY_1",
+        "timeout_seconds": 45,
+        "max_output_tokens": 4096,
+        "candidate_ids": [
+          "openai/gpt-oss-20b"
+        ],
+        "profile_note": "Fast calculation/review support within Groq Free Plan limits only."
       }
     }
   ]
