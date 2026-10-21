@@ -1,0 +1,69 @@
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+from core.tools.implementations.cline_coding import ClineCodingTool
+
+
+class ClineCodingToolTests(unittest.TestCase):
+    def test_missing_cli_reports_actionable_unavailable_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = ClineCodingTool(directory, executable=None)
+            tool._executable = None
+            result = tool.execute(task="Fix the parser and add tests", mode="implement")
+        self.assertFalse(result.success)
+        self.assertIn("not installed", result.error)
+        self.assertFalse(result.metadata["available"])
+
+    def test_rejects_invalid_mode_and_timeout_before_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = ClineCodingTool(directory, executable="/fake/cline")
+            bad_mode = tool.execute(task="Fix the parser and add tests", mode="deploy")
+            bad_timeout = tool.execute(task="Fix the parser and add tests", mode="implement",
+                                       timeout_seconds=99999)
+        self.assertFalse(bad_mode.success)
+        self.assertFalse(bad_timeout.success)
+
+    def test_fake_cline_edits_isolated_copy_and_changes_are_applied(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            root.mkdir()
+            source = root / "sample.py"
+            source.write_text("before = True\n", encoding="utf-8")
+            fake_cline = Path(directory) / "fake-cline"
+            fake_cline.write_text(
+                "#!/usr/bin/env python3\n"
+                "from pathlib import Path\n"
+                "Path('sample.py').write_text('after = True\\n', encoding='utf-8')\n"
+                "print('{\\\"type\\\":\\\"run_result\\\",\\\"text\\\":\\\"implemented and tested\\\"}')\n",
+                encoding="utf-8",
+            )
+            fake_cline.chmod(0o755)
+            tool = ClineCodingTool(root, executable=str(fake_cline))
+            result = tool.execute(task="Update sample.py and report what changed",
+                                  mode="implement", timeout_seconds=30)
+            self.assertTrue(result.success, result.error)
+            self.assertEqual(source.read_text(encoding="utf-8"), "after = True\n")
+            self.assertTrue(result.metadata["changes_applied"])
+            self.assertEqual(result.metadata["changed_files"], ["sample.py"])
+            self.assertIn("not an OS-level sandbox", result.metadata["warning"])
+
+    def test_secret_files_are_not_copied_to_task_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            root.mkdir()
+            (root / "safe.py").write_text("print('safe')\n", encoding="utf-8")
+            (root / ".env").write_text("SECRET=value\n", encoding="utf-8")
+            (root / "api_key.txt").write_text("SECRET=value\n", encoding="utf-8")
+            tool = ClineCodingTool(root, executable="/fake/cline")
+            with tempfile.TemporaryDirectory() as copied:
+                count = tool._copy_workspace(Path(copied))
+                self.assertTrue((Path(copied) / "safe.py").exists())
+                self.assertFalse((Path(copied) / ".env").exists())
+                self.assertFalse((Path(copied) / "api_key.txt").exists())
+                self.assertGreater(count, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
