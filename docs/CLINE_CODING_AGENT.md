@@ -2,7 +2,7 @@
 
 ## What is integrated
 
-Omnitrix has an optional cline.coding tool. When enabled in the Python CLI or private Codespaces Studio, the lead specialist can delegate a specific implementation task to the real Cline CLI. The handoff supports the shared objective/context, findings from other specialists, acceptance criteria, and target paths. On complex hybrid tasks, Omnitrix now runs bounded no-tools calls for supporting specialists first and injects their findings into the lead specialist's context. The lead model can then pass the relevant findings to Cline, which inspects the workspace, implements, runs relevant tests, and reports results. Omnitrix receives structured metadata about changed files and whether changes were applied.
+Omnitrix has an optional cline.coding tool. When enabled in the Python CLI or token-protected Codespaces Studio, the lead specialist can delegate a specific implementation task to the real Cline CLI. The handoff supports the shared objective/context, findings from other specialists, acceptance criteria, and target paths. On complex hybrid tasks, Omnitrix now runs bounded no-tools calls for supporting specialists first and injects their findings into the lead specialist's context. The lead model can then pass the relevant findings to Cline, which inspects the workspace, implements, runs relevant tests, and reports results. Omnitrix receives structured metadata about changed files and whether changes were applied.
 
 This is an adapter, not model training. Cline uses the provider/model configured in its own CLI profile; adding Cline does not automatically grant a free model or improve every response.
 
@@ -23,9 +23,9 @@ Cline can also run in plan mode (read-only) before implement mode. Implementatio
 
 ## Security boundary and deployment status
 
-**This is not an OS-level sandbox.** A coding agent can execute commands; a disposable copy limits what gets copied back but does not guarantee the child process cannot access other files or the network. Enable this only in a trusted, private development environment where you are comfortable with the permissions of the account running Omnitrix. Do not enable it on a public multi-user Render service or expose it to anonymous chat.
+**This is not an OS-level sandbox.** A coding agent can execute commands; a disposable copy limits what gets copied back but does not guarantee the child process cannot access other files or the network. Enable this only in a trusted development environment where you are comfortable with the permissions of the account running Omnitrix. The current Codespaces configuration forwards port 8000 with public visibility but requires a bearer token on API routes; therefore, treat that token like a password and never share it, commit it, or paste it into public issues/logs. Do not expose the token to other users or enable this tool on a public multi-user Render service or anonymous chat. Because this adapter is not an OS-level sandbox, do not run it on a workspace containing secrets or untrusted code you cannot afford to expose.
 
-The hosted Render service does not install or enable Cline automatically. It needs the CLI installed and authenticated in the process environment, and an explicit private-runtime integration before it can be safely enabled there. The normal public chat deployment remains unchanged by this feature.
+The hosted Render service does not install or enable Cline automatically. It needs the CLI installed and authenticated in the process environment, plus a separately reviewed runtime integration before it could be enabled there. The normal public chat deployment remains unchanged by this feature.
 
 ## Truthful reporting
 
