@@ -849,7 +849,11 @@ class StudioRuntime:
             "model": os.getenv("CLINE_MODEL", "minimax/minimax-m3.1-flash:free"),
             "provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
             **cline_runtime_status,
-            "persistence": "runtime filesystem only; no GitHub commit or pull request is created",
+            "persistence": (
+                "remote worker proposes validated changes as a reviewable pull request; never auto-merges"
+                if os.getenv("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions"
+                else "runtime filesystem only; no GitHub commit or pull request is created"
+            ),
         }
         tool_details = []
         for tool in self.omnitrix.tool_registry.list():
@@ -1190,7 +1194,9 @@ class StudioRuntime:
             "ready_model_route_count": ready_model_route_count,
             "route_readiness_note": "Ready means the configured adapter sees its key. It does not prove a successful model inference; use execution trace/provider response metadata for that.",
             "cline_worker_enabled": self.cline_omnitrix is not None,
-            "cline_cli_ready": bool(cline_runtime_status.get("executable_found") and cline_runtime_status.get("ready_to_attempt")),
+            "cline_cli_ready": bool(cline_runtime_status.get("ready_to_attempt")),
+            "cline_worker_backend": cline_runtime_status.get("backend", "local"),
+            "cline_worker_credential_configured": cline_runtime_status.get("worker_credential_configured"),
             "cline_provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
             "reasoning_specialist_available": reasoning_specialist_available,
             "preferred_reasoning_model": (
@@ -2407,9 +2413,12 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
     )
     cline_omnitrix = None
     cline_api_enabled = os.getenv("OMNITRIX_ENABLE_CLINE_API", "").strip().lower() == "true"
-    if cline_api_enabled and shutil.which("cline") and os.getenv("OPENROUTER_API_KEY"):
+    remote_cline_enabled = os.getenv("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions"
+    local_cline_ready = bool(shutil.which("cline") and os.getenv("OPENROUTER_API_KEY"))
+    if cline_api_enabled and (remote_cline_enabled or local_cline_ready):
         # Keep Cline out of the unauthenticated public mobile chat runtime.
-        # Its separate orchestrator is reachable only through token-protected /api routes.
+        # Remote mode delegates execution to a disposable GitHub-hosted runner;
+        # its separate orchestrator remains reachable only through token-protected /api routes.
         cline_allowed_paths = ("core", "tests", "interfaces", "scripts", "config", "webapp", "docs")
         cline_registry = build_tool_registry(
             root, allowed_paths=cline_allowed_paths, enable_cline=True
