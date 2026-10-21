@@ -5,22 +5,8 @@ services:
     plan: free
     branch: main
     autoDeploy: true
-    buildCommand: >-
-      pip install -r requirements.txt &&
-      mkdir -p .tools/node .tools/cline &&
-      curl -fsSL https://nodejs.org/dist/v22.18.0/node-v22.18.0-linux-x64.tar.xz
-      | tar -xJ --strip-components=1 -C .tools/node &&
-      PATH="$PWD/.tools/node/bin:$PATH"
-      npm install --global --prefix "$PWD/.tools/cline" cline
-    startCommand: >-
-      export PATH="$PWD/.tools/node/bin:$PWD/.tools/cline/bin:$PATH" &&
-      python -m interfaces.web.server
-      --host 0.0.0.0
-      --port $PORT
-      --config config/mobile.models.json
-      --workspace-root .
-      --allow-public-chat
-      --allow-free-quota
+    buildCommand: bash scripts/render_build.sh
+    startCommand: bash scripts/render_start.sh
     healthCheckPath: /api/mobile/health
     envVars:
       - key: PYTHON_VERSION
@@ -29,6 +15,10 @@ services:
         value: "true"
       - key: OMNITRIX_ENABLE_CLINE_API
         value: "true"
+      - key: CLINE_PROVIDER
+        value: openrouter
+      - key: CLINE_MODEL
+        value: minimax/minimax-m3.1-flash:free
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_API_KEY_1
