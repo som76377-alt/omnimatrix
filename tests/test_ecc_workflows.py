@@ -17,7 +17,7 @@ class ECCWorkflowContractTests(unittest.TestCase):
         self.assertIn("evidence-first engineering loop", combined)
         self.assertIn("reproduce/test", combined)
         self.assertIn("code-first media workflow", combined)
-        self.assertIn("actual-render", combined)
+        self.assertIn("actual rendering", combined)
 
     def test_security_work_is_given_a_separate_least_privilege_contract(self):
         blocks = workflow_contracts("coding", "coding", "Configure API keys and authentication")
