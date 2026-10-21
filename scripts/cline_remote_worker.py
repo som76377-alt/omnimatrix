@@ -15,6 +15,12 @@ def run(args, timeout=180):
 def main():
     p = json.loads(EVENT.read_text(encoding="utf-8"))["inputs"]
     task, context, mode, rid = str(p.get("task", "")).strip(), str(p.get("context", "")).strip(), p.get("mode"), str(p.get("request_id", ""))
+    try:
+        timeout_seconds = int(p.get("timeout_seconds", 300))
+    except (TypeError, ValueError):
+        raise SystemExit("Timeout failed validation.")
+    if not 30 <= timeout_seconds <= 900:
+        raise SystemExit("Timeout must be between 30 and 900 seconds.")
     findings, criteria, scope = (json.loads(p.get(k) or "[]") for k in ("findings_json", "criteria_json", "scope_json"))
     if not task or len(task) > 12000 or len(context) > 12000 or mode not in {"plan", "implement"}: raise SystemExit("Task/context/mode failed validation.")
     if len(findings)>12 or any(not isinstance(x,str) or len(x)>3000 for x in findings): raise SystemExit("Findings failed validation.")
@@ -30,7 +36,7 @@ def main():
     cmd += ["--json",prompt]
     safe={"PATH":os.environ.get("PATH",""),"HOME":os.environ.get("HOME","/home/runner"),"LANG":"C.UTF-8","LC_ALL":"C.UTF-8","CI":"true"}
     start=time.monotonic()
-    c=subprocess.run(cmd,cwd=ROOT,env=safe,text=True,capture_output=True,timeout=900,check=False)
+    c=subprocess.run(cmd,cwd=ROOT,env=safe,text=True,capture_output=True,timeout=timeout_seconds,check=False)
     output=((c.stdout or "")+"\nSTDERR:\n"+(c.stderr or "")[-2500:])[-20000:]
     if c.returncode:
         RESULT.write_text(json.dumps({"status":"failed","request_id":rid,"mode":mode,"error":"Cline CLI exited unsuccessfully.","output":output,"changed_files":[],"tests_passed":False},indent=2),encoding="utf-8")
