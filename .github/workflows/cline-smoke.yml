@@ -43,7 +43,7 @@ jobs:
           set +e
           cline \
             --provider groq \
-            --model openai/gpt-oss-120b \
+            --model llama-3.3-70b-versatile \
             --key "$GROQ_API_KEY" \
             --cwd "$workdir" \
             --data-dir "$datadir" \
