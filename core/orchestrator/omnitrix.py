@@ -1015,6 +1015,10 @@ class Omnitrix:
                 dict(item) for item in task.metadata.get("provider_fallbacks", [])
                 if isinstance(item, dict)
             ],
+            "tool_executions": [
+                dict(item) for item in task.metadata.get("tool_executions", [])
+                if isinstance(item, dict)
+            ],
             "coordination": {
                 "status": task.metadata.get("coordination_status", "not_needed"),
                 "coordinator_stage_ran": "orchestrator" in [
@@ -2290,14 +2294,25 @@ class Omnitrix:
                         ),
                     },
                 )
+                tool_duration = round(time.perf_counter() - tool_started_at, 6)
+                tool_events = task.metadata.setdefault("tool_executions", [])
+                if isinstance(tool_events, list):
+                    event = {
+                        "tool_name": tool_call.tool_name,
+                        "success": bool(tool_result.success),
+                        "duration_seconds": tool_duration,
+                    }
+                    if isinstance(tool_result.metadata, dict):
+                        for field in ("mode", "changes_applied", "changed_files", "exit_code", "workspace_bytes"):
+                            if field in tool_result.metadata:
+                                event[field] = tool_result.metadata[field]
+                    tool_events.append(event)
                 _log_safely(
                     logging.INFO if tool_result.success else logging.WARNING,
                     "tool_completed" if tool_result.success else "tool_failed",
                     tool_name=tool_call.tool_name,
                     success=tool_result.success,
-                    duration_seconds=round(
-                        time.perf_counter() - tool_started_at, 6
-                    ),
+                    duration_seconds=tool_duration,
                 )
 
                 tool_messages.append(
