@@ -1,8 +1,8 @@
 """Groq Chat Completions adapter.
 
-Groq speaks the OpenAI-compatible API, but its request should not inherit
-OpenRouter-specific headers or provider metadata. Keep the endpoint, response
-identity, and error classification explicitly Groq-specific.
+Groq is OpenAI-compatible, but GPT-OSS has model-specific reasoning fields:
+it does not accept reasoning_format. Never leak internal reasoning into the
+user-facing answer; consume only the final message content.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from core.models.base import (
-    ModelAdapterError,
     ModelAuthenticationError,
     ModelRequestError,
     ModelResponse,
@@ -32,8 +31,9 @@ class GroqAdapter(OpenRouterAdapter):
         return "groq"
 
     def is_available(self) -> bool:
-        # Groq's current model catalog is priced per token. Never call it as a
-        # presumed free route unless the operator explicitly confirms a free quota.
+        # Never treat a paid-by-token route as free unless the operator explicitly
+        # confirms eligibility for a free quota. This is a safety gate, not a claim
+        # that Groq is free or that a request cannot incur a charge.
         return (
             os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() == "true"
             and super().is_available()
@@ -41,11 +41,19 @@ class GroqAdapter(OpenRouterAdapter):
 
     def _build_payload(self, request: ModelRequest) -> dict:
         payload = super()._build_payload(request)
-        # Groq uses OpenAI-compatible reasoning fields, not OpenRouter's
-        # {"reasoning": {...}} extension. Keep internal reasoning hidden and low.
+        # Do not inherit OpenRouter's provider-specific reasoning object.
         payload.pop("reasoning", None)
-        payload.setdefault("reasoning_effort", "low")
-        payload.setdefault("reasoning_format", "hidden")
+        model_id = self._model_id.casefold()
+        if model_id.startswith("openai/gpt-oss-"):
+            # Groq documents that GPT-OSS does not support reasoning_format.
+            # include_reasoning=false is its supported way to omit reasoning
+            # tokens while retaining the final answer in message.content.
+            payload.pop("reasoning_format", None)
+            payload["include_reasoning"] = False
+            payload["reasoning_effort"] = "low"
+        else:
+            payload.setdefault("reasoning_effort", "low")
+            payload.setdefault("reasoning_format", "hidden")
         return payload
 
     def generate(self, request: ModelRequest) -> ModelResponse:
@@ -114,6 +122,12 @@ class GroqAdapter(OpenRouterAdapter):
             raise ModelResponseError("Groq response did not contain a message object.")
 
         content = self._extract_content(message.get("content"))
+        if not content.strip():
+            # GPT-OSS may include a separate reasoning field. It is not a user-facing
+            # answer and must never be substituted for a missing final response.
+            raise ModelResponseError(
+                "Groq returned no final answer text; reasoning content was not exposed as a substitute."
+            )
         tool_calls = self._extract_tool_calls(message.get("tool_calls", []))
         usage = data.get("usage")
         if not isinstance(usage, dict):
