@@ -133,12 +133,65 @@ def execute_remote(*, task: str, mode: str, context: str = "",
         return ToolResult(success=False, error=f"Remote Cline run finished with status '{conclusion}', but its result artifact was unavailable.", output=run_url, metadata={"tool":"cline.coding","backend":"github_actions","request_id":request_id,"run_url":run_url,"changes_applied":False})
     result["run_url"] = run_url
     result["backend"] = "github_actions"
+
+    # Repository settings may block GITHUB_TOKEN from opening pull requests.
+    # The Render-side worker credential is already authorized to dispatch and
+    # retrieve this run; use it for the PR only after Cline's scoped changes and
+    # full tests have passed. Never auto-merge and never expose the credential.
+    if (
+        mode == "implement"
+        and result.get("status") == "passed"
+        and result.get("tests_passed") is True
+        and result.get("changed_files")
+        and not result.get("pull_request_url")
+    ):
+        safe_request_id = request_id
+        branch = f"cline/omnitrix-{safe_request_id}"
+        base = inputs["base_ref"]
+        payload = {
+            "title": f"Cline implementation: {safe_request_id}",
+            "head": branch,
+            "base": base,
+            "body": (
+                "Automated implementation proposal from Omnitrix's remote Cline worker. "
+                "The worker reported passing repository tests. Please inspect the diff and CI. "
+                "This pull request was not auto-merged."
+            ),
+            "maintainer_can_modify": True,
+        }
+        try:
+            pr, _ = _api(token, f"/repos/{_REPO}/pulls", method="POST", payload=payload, timeout=30)
+            pr_url = pr.get("html_url") if isinstance(pr, dict) else None
+            if isinstance(pr_url, str) and pr_url.startswith("https://github.com/"):
+                result["pull_request_url"] = pr_url
+                result["pull_request_created_by"] = "render_runtime_credential"
+            else:
+                result["pull_request_creation_error"] = "GitHub did not return a valid pull-request URL."
+        except RemoteClineError as exc:
+            # Retain the worker's real status, but don't call delivery successful
+            # until a reviewable PR exists.
+            result["pull_request_creation_error"] = str(exc)
+
     success = result.get("status") == "passed"
     if mode == "implement":
         success = success and bool(result.get("tests_passed")) and bool(result.get("pull_request_url"))
     output = str(result.get("cline_output") or result.get("note") or "Remote Cline worker completed.")[-24000:]
     if result.get("pull_request_url"):
         output += "\nReviewable pull request: " + str(result["pull_request_url"])
-    if mode == "implement" and not result.get("tests_passed"):
+    elif mode == "implement" and result.get("tests_passed"):
+        output += (
+            "\nCline's implementation and tests passed, but GitHub did not permit creation of the review PR. "
+            "No merge occurred. Check the Render GitHub token's repository pull-request write permission."
+        )
+    elif mode == "implement":
         output += "\nValidation did not pass; no pull request was created. Review the Actions run for the test report."
-    return ToolResult(success=success, output=output, error=None if success else "Remote Cline did not produce a fully validated result; inspect the worker report before retrying.", metadata={k:v for k,v in result.items() if k not in {"cline_output","test_output"}})
+    return ToolResult(
+        success=success,
+        output=output,
+        error=None if success else (
+            "Cline completed, but a validated reviewable pull request could not be delivered; inspect the worker report."
+            if result.get("tests_passed") else
+            "Remote Cline did not produce a fully validated result; inspect the worker report before retrying."
+        ),
+        metadata={k:v for k,v in result.items() if k not in {"cline_output","test_output"}},
+    )

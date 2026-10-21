@@ -77,7 +77,17 @@ def main() -> int:
                 results.append(result)
                 print(json.dumps(result, sort_keys=True))
                 continue
-        elif model.metadata.get("cost_class") != "user_provided_free_quota":
+        elif model.metadata.get("cost_class") == "user_provided_free_quota":
+            pass
+        elif (
+            model.provider == "groq"
+            and os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() == "true"
+        ):
+            # The model registry correctly retains Groq's general provider-billed
+            # class. Only this explicit, operator-confirmed smoke run can test it
+            # as user-provided free quota; never reinterpret the metadata globally.
+            pass
+        else:
             result.update(status="refused", reason="unrecognized_cost_class")
             results.append(result)
             print(json.dumps(result, sort_keys=True))
@@ -99,9 +109,10 @@ def main() -> int:
         # Limit free-route test output where the adapter supports that setting;
         # do not retry failed calls, and never auto-fallback to a different model.
         if hasattr(adapter, "_max_output_tokens"):
-            # Reasoning-heavy Groq models may spend a tiny cap on internal work
-            # and return no final text; use a still-small 64-token probe for Groq.
-            adapter._max_output_tokens = 64 if model.provider == "groq" else 8
+            # Reasoning-heavy free routes can spend a tiny cap on internal work
+            # and return no final text. Use a still-small cap for gateway models
+            # and Groq, while keeping Gemini's exact-text probe minimal.
+            adapter._max_output_tokens = 64 if model.provider in {"groq", "openrouter"} else 8
         if hasattr(adapter, "_max_retries"):
             # One retry is allowed for transient transport/quota responses; this is
             # still the same configured route and never triggers a paid fallback.

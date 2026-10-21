@@ -8,7 +8,7 @@ from core.agents.registry import AgentRegistry
 from core.agents.router import AgentRouter
 from core.conversation import Conversation
 from core.models.adapters import AdapterRegistry
-from core.models.base import ModelAdapter, ModelResponse
+from core.models.base import ModelAdapter, ModelRequestError, ModelResponse, ModelResponseError
 from core.models.messages import ModelRequest
 from core.models.loader import ModelConfigLoader
 from core.models.providers.bootstrap import build_adapter_registry
@@ -338,6 +338,113 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertEqual(fallbacks[0]["reason_code"], "provider_error")
         self.assertEqual(fallbacks[0]["exception_type"], "RuntimeError")
 
+    def test_empty_primary_answer_uses_bounded_provider_fallback(self):
+        omnitrix, primary, specialist = self._build_two_model_omnitrix(
+            [""],
+            ["A valid fallback answer."],
+        )
+
+        result = omnitrix.chat(Conversation(), "Hello Omnitrix")
+
+        self.assertEqual(result, "A valid fallback answer.")
+        self.assertEqual(len(primary.requests), 1)
+        self.assertEqual(len(specialist.requests), 1)
+        fallbacks = omnitrix.last_execution_trace["provider_fallbacks"]
+        self.assertEqual(len(fallbacks), 1)
+        self.assertEqual(fallbacks[0]["reason_code"], "invalid_provider_response")
+        self.assertEqual(fallbacks[0]["to_provider"], "openrouter")
+
+    def test_failed_support_specialist_retries_once_on_a_different_profile(self):
+        source = AgentRegistry.load(AGENT_CONFIG)
+        agents = AgentRegistry(
+            source.list_enabled(),
+            enabled=True,
+            intent_mode="off",
+            critic_mode="always",
+        )
+        models = ModelRegistry()
+        adapters = AdapterRegistry()
+        for index in range(6):
+            name = f"free-profile-{index}"
+            models.register(ModelDefinition(
+                name=name,
+                provider="test",
+                model_id=name,
+                capabilities=frozenset({"reasoning", "coding", "research"}),
+                context_window=32000,
+                metadata={"cost_class": "free", "estimated_cost_usd": 0},
+            ))
+            adapters.register(ScriptedAdapter(
+                ["The integrated answer contains the verified causal chain."],
+                name=name,
+                provider="test",
+            ))
+        omnitrix = Omnitrix(
+            registry=models,
+            adapter_registry=adapters,
+            agent_registry=agents,
+            budget_limits=BudgetLimits(
+                max_model_calls=18,
+                max_estimated_cost_usd=0.0,
+                spend_mode="zero_cost_only",
+            ),
+        )
+        coordinator = json.dumps({
+            "objective_summary": "Produce one accurate induction-heating explainer.",
+            "work_packages": [
+                {
+                    "role": "research",
+                    "assignment": "Report evidence availability and limitations.",
+                    "expected_output": "Evidence limitation.",
+                    "acceptance_criteria": ["Do not invent retrieved sources."],
+                    "depends_on": [],
+                },
+                {
+                    "role": "subject_solver",
+                    "assignment": "Validate the physical cause-and-effect chain.",
+                    "expected_output": "Causal sequence.",
+                    "acceptance_criteria": ["Include changing field, induced currents, and resistive heating."],
+                    "depends_on": ["research"],
+                },
+            ],
+            "integration_order": ["research", "subject_solver"],
+            "final_acceptance_criteria": ["Preserve the checked causal chain."],
+            "cline_handoff": {"task": "", "acceptance_criteria": [], "files_in_scope": []},
+        })
+        stage_calls = []
+        failed_subject_profile = {"name": None}
+        responses = {
+            "orchestrator": coordinator,
+            "support_research": "No external sources were retrieved by this probe; no citation is claimed.",
+            "support_subject_solver": "A changing magnetic field induces currents in the pan; resistance heats the pan.",
+            "critic": json.dumps({"verdict": "pass", "issues": [], "corrected_answer": ""}),
+        }
+
+        def scripted_stage(*, task, stage, model, adapter, messages, instructions, budget_guard):
+            stage_calls.append((stage, model.name))
+            if stage == "support_subject_solver" and failed_subject_profile["name"] is None:
+                failed_subject_profile["name"] = model.name
+                raise ModelRequestError("simulated first specialist route failure")
+            return responses[stage]
+
+        with patch.object(omnitrix, "_run_agent_stage", side_effect=scripted_stage):
+            result = omnitrix.chat(
+                Conversation(),
+                "Research and implement a code-rendered physics animation about electromagnetic induction.",
+            )
+
+        self.assertIn("verified causal chain", result)
+        subject_profiles = [
+            name for stage, name in stage_calls if stage == "support_subject_solver"
+        ]
+        self.assertEqual(len(subject_profiles), 2)
+        self.assertNotEqual(subject_profiles[0], subject_profiles[1])
+        trace = omnitrix.last_execution_trace["coordination"]
+        self.assertEqual(trace["support_statuses"]["subject_solver"], "result_received")
+        self.assertTrue(any(
+            stage == "critic" for stage, _ in stage_calls
+        ))
+
     def test_provider_429_classifies_quota_and_rate_limit_messages_safely(self):
         self.assertEqual(
             _safe_provider_failure_reason(RuntimeError(
@@ -449,6 +556,116 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertEqual(selected.name, "coding-minimax-m31-free")
         self.assertEqual(selected.provider, "openrouter")
         self.assertEqual(selected.model_id, "minimax/minimax-m3.1-flash:free")
+
+    def test_coordinated_stages_use_distinct_profiles_until_available_pool_is_exhausted(self):
+        # All six routes are present in the test environment, and Groq's free-quota
+        # use is explicitly enabled here. This tests selection only; it sends no API calls.
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "true",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            lead = models.get("coding-minimax-m31-free")
+            used = {lead.name}
+            chosen = []
+            for role in ("intent_engineer", "orchestrator", "research", "subject_solver", "critic"):
+                selected = omnitrix._select_agent_model(
+                    agents.get(role),
+                    lead,
+                    required_capabilities=frozenset({"reasoning"}),
+                    prefer_independent_provider=role == "critic",
+                    exclude_model_names=frozenset(used),
+                )
+                chosen.append(selected)
+                used.add(selected.name)
+
+            self.assertEqual(len(used), 6, "All six profiles should be assigned before a profile is reused.")
+            self.assertEqual(
+                {model.name for model in chosen},
+                {model.name for model in models.list_enabled()} - {lead.name},
+            )
+            self.assertNotEqual(chosen[-1].provider, lead.provider)
+
+    def test_groq_profiles_remain_gated_without_explicit_free_quota_confirmation(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "false",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            selected = omnitrix._select_agent_model(
+                agents.get("research"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"reasoning"}),
+            )
+            self.assertNotIn(selected.provider, {"groq"})
+            groq = models.get("groq-gpt-oss-120b")
+            cost_class, estimate = omnitrix._effective_model_cost(groq)
+            self.assertEqual(cost_class, "provider_billed_usage")
+            self.assertEqual(estimate, 0.001)
+
+    def test_confirmed_groq_free_quota_uses_zero_cost_budget_class(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "true",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            selected = omnitrix._select_agent_model(
+                agents.get("research"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"reasoning"}),
+            )
+            self.assertEqual(selected.name, "groq-gpt-oss-120b")
+            cost_class, estimate = omnitrix._effective_model_cost(selected)
+            self.assertEqual(cost_class, "user_provided_free_quota")
+            self.assertEqual(estimate, 0.0)
 
     def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
         models = ModelRegistry()

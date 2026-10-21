@@ -120,6 +120,81 @@ class AgentBoundaryTests(unittest.TestCase):
             primary_role="reasoning", cline_available=False,
         ))
 
+    def test_unavailable_cline_handoff_is_discarded_not_authorized(self):
+        plan = {
+            "objective_summary": "Prepare a coordinated science implementation brief.",
+            "work_packages": [
+                {
+                    "role": "research",
+                    "assignment": "State source availability and evidence gaps.",
+                    "expected_output": "Evidence ledger.",
+                    "acceptance_criteria": ["No sources or citations are invented."],
+                    "depends_on": [],
+                },
+                {
+                    "role": "subject_solver",
+                    "assignment": "Validate the physical mechanism.",
+                    "expected_output": "Causal sequence.",
+                    "acceptance_criteria": ["Field, induced currents, and heating are correctly ordered."],
+                    "depends_on": ["research"],
+                },
+            ],
+            "integration_order": ["research", "subject_solver"],
+            "final_acceptance_criteria": ["Both role findings are integrated."],
+            "cline_handoff": {
+                "task": "Implement an animation anyway.",
+                "acceptance_criteria": ["Run tests."],
+                "files_in_scope": ["../must-not-escape"],
+            },
+        }
+        validated = Omnitrix._validate_coordination_plan(
+            json.dumps(plan),
+            ("research", "subject_solver"),
+            primary_role="coding",
+            cline_available=False,
+        )
+        self.assertIsNotNone(validated)
+        self.assertEqual(
+            validated["cline_handoff"],
+            {"task": "", "acceptance_criteria": [], "files_in_scope": []},
+        )
+
+    def test_coordinator_accepts_fenced_json_and_orders_packages_by_dependency_graph(self):
+        plan = {
+            "objective_summary": "Validate induction-heating explanation.",
+            "work_packages": [
+                {
+                    "role": "subject_solver",
+                    "assignment": "Validate the causal physics.",
+                    "expected_output": "Causal sequence.",
+                    "acceptance_criteria": ["Physics is accurate."],
+                    "depends_on": ["research"],
+                },
+                {
+                    "role": "research",
+                    "assignment": "Identify source availability and gaps.",
+                    "expected_output": "Evidence ledger.",
+                    "acceptance_criteria": ["No fabricated sources."],
+                    "depends_on": [],
+                },
+            ],
+            "integration_order": ["research", "subject_solver"],
+            "final_acceptance_criteria": ["Claims and physics are reconciled."],
+            "cline_handoff": {"task": "", "acceptance_criteria": [], "files_in_scope": []},
+        }
+        validated = Omnitrix._validate_coordination_plan(
+            "```json\n" + json.dumps(plan) + "\n```",
+            ("research", "subject_solver"),
+            primary_role="reasoning",
+            cline_available=False,
+        )
+        self.assertIsNotNone(validated)
+        self.assertEqual(validated["integration_order"], ["research", "subject_solver"])
+        self.assertEqual(
+            [item["role"] for item in validated["work_packages"]],
+            ["research", "subject_solver"],
+        )
+
     def test_coordinator_cannot_scope_cline_outside_workspace(self):
         plan = {
             "objective_summary": "Implement a code-rendered physics explainer.",

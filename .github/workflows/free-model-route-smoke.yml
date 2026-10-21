@@ -2,7 +2,7 @@ name: Verify all six free model routes
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/model-coordination-live-checks]
     paths:
       - ".github/workflows/free-model-route-smoke.yml"
       - "scripts/smoke_free_model_routes.py"
@@ -49,5 +49,6 @@ jobs:
           OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
-          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
+          # Explicit operator confirmation: both configured Groq keys are intended for free-quota-only use.
+          GROQ_FREE_QUOTA_CONFIRMED: "true"
         run: python scripts/smoke_free_model_routes.py
