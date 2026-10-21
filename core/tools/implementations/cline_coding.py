@@ -8,7 +8,7 @@ OS-level sandbox, so only enable it in a trusted private development runtime.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -42,13 +42,25 @@ class ClineCodingTool(Tool):
     """Run Cline on an isolated workspace copy and apply bounded successful changes."""
 
     def __init__(self, workspace_root: str | Path, *, executable: str | None = None,
-                 config_dir: str | Path | None = None) -> None:
+                 config_dir: str | Path | None = None,
+                 allowed_paths: list[str] | tuple[str, ...] | None = None) -> None:
         root = Path(workspace_root).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError("Cline workspace root must be an existing directory.")
         self._root = root
         self._executable = executable or shutil.which("cline")
         self._config_dir = Path(config_dir).expanduser().resolve() if config_dir else None
+        self._allowed_paths: tuple[tuple[str, ...], ...] | None = None
+        if allowed_paths is not None:
+            prefixes = []
+            for item in allowed_paths:
+                if not isinstance(item, str) or not item.strip():
+                    raise ValueError("Cline allowed paths must be non-empty relative paths.")
+                parsed = PurePosixPath(item.strip())
+                if parsed.is_absolute() or ".." in parsed.parts or not parsed.parts:
+                    raise ValueError("Cline allowed paths must stay inside the workspace.")
+                prefixes.append(tuple(part for part in parsed.parts if part not in {"", "."}))
+            self._allowed_paths = tuple(prefixes)
 
     @property
     def name(self) -> str:
@@ -175,7 +187,7 @@ class ClineCodingTool(Tool):
             applied: list[str] = []
             for relative in changed:
                 source, destination = workspace / relative, self._root / relative
-                if _denied(relative) or source.is_symlink() or not source.is_file():
+                if _denied(relative) or not self._is_allowed(relative) or source.is_symlink() or not source.is_file():
                     raise RuntimeError(f"Refusing unsafe changed path: {relative.as_posix()}")
                 if source.stat().st_size > _MAX_FILE_BYTES:
                     raise RuntimeError(f"Refusing oversized changed file: {relative.as_posix()}")
@@ -186,8 +198,8 @@ class ClineCodingTool(Tool):
             removed: list[str] = []
             for relative in deleted:
                 destination = self._root / relative
-                if _denied(relative):
-                    raise RuntimeError(f"Refusing deletion of protected path: {relative.as_posix()}")
+                if _denied(relative) or not self._is_allowed(relative):
+                    raise RuntimeError(f"Refusing deletion of protected or out-of-scope path: {relative.as_posix()}")
                 self._ensure_confined(destination)
                 if destination.is_file() and not destination.is_symlink():
                     destination.unlink()
@@ -246,6 +258,12 @@ class ClineCodingTool(Tool):
             else:
                 changed.append(relative)
         return sorted(set(changed)), sorted(set(deleted))
+
+    def _is_allowed(self, relative: Path) -> bool:
+        if self._allowed_paths is None:
+            return True
+        parts = relative.parts
+        return any(parts[:len(prefix)] == prefix for prefix in self._allowed_paths)
 
     def _ensure_confined(self, destination: Path) -> None:
         root = self._root
