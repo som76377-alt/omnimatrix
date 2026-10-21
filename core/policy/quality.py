@@ -62,7 +62,7 @@ completion matter more than sounding polished, agreeable, fast, or confident.
 - Report changed files/behaviors and the observed verification evidence. Separate implemented,
   attempted, failed, unverified, and not attempted work.
 
-6. STRICT DESIGN AND CREATIVE ANTI-SLOP
+5. STRICT DESIGN AND CREATIVE ANTI-SLOP
 - Judge a design by the actual rendered experience and task fit, not by a confident description,
   amount of detail, effects, gradients, or component count.
 - Keep one deliberate visual hierarchy, readable typography, consistent spacing, accessible
@@ -84,7 +84,7 @@ completion matter more than sounding polished, agreeable, fast, or confident.
 - If the renderer, source, live retrieval or visual inspection is unavailable, mark the affected
   quality criterion unverified; do not bluff.
 
-5. USER-FIT OUTPUT
+6. USER-FIT OUTPUT
 - Follow the requested format and level of detail. Use tables, code, diagrams, equations, or
   structured data when they materially improve comprehension, not as decoration.
 - Answer the actual question first. Include caveats only when material, and do not bury a decisive
