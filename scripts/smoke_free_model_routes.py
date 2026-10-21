@@ -109,9 +109,10 @@ def main() -> int:
         # Limit free-route test output where the adapter supports that setting;
         # do not retry failed calls, and never auto-fallback to a different model.
         if hasattr(adapter, "_max_output_tokens"):
-            # Reasoning-heavy Groq models may spend a tiny cap on internal work
-            # and return no final text; use a still-small 64-token probe for Groq.
-            adapter._max_output_tokens = 64 if model.provider == "groq" else 8
+            # Reasoning-heavy free routes can spend a tiny cap on internal work
+            # and return no final text. Use a still-small cap for gateway models
+            # and Groq, while keeping Gemini's exact-text probe minimal.
+            adapter._max_output_tokens = 64 if model.provider in {"groq", "openrouter"} else 8
         if hasattr(adapter, "_max_retries"):
             # One retry is allowed for transient transport/quota responses; this is
             # still the same configured route and never triggers a paid fallback.
