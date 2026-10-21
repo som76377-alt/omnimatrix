@@ -42,6 +42,17 @@ class ClineCodingToolTests(unittest.TestCase):
         self.assertIn("not installed", result.error)
         self.assertFalse(result.metadata["available"])
 
+    def test_runtime_status_does_not_claim_authentication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake_cline = Path(directory) / "cline"
+            fake_cline.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+            tool = ClineCodingTool(directory, executable=str(fake_cline))
+            status = tool.runtime_status()
+        self.assertTrue(status["registered"])
+        self.assertTrue(status["executable_found"])
+        self.assertEqual(status["authentication"], "not_verified")
+        self.assertTrue(status["ready_to_attempt"])
+
     def test_rejects_invalid_mode_and_timeout_before_launch(self):
         with tempfile.TemporaryDirectory() as directory:
             tool = ClineCodingTool(directory, executable="/fake/cline")
