@@ -31,11 +31,18 @@ class GroqAdapterTests(unittest.TestCase):
         request = ModelRequest(
             messages=(ModelMessage(role=MessageRole.USER, content="Reply ROUTE_READY."),),
         )
-        with patch.dict(os.environ, {"TEST_GROQ_KEY": "unit-test-key"}):
+        with patch.dict(os.environ, {
+            "TEST_GROQ_KEY": "unit-test-key",
+            "GROQ_FREE_QUOTA_CONFIRMED": "true",
+        }):
             with patch("core.models.providers.groq.urlopen", return_value=response) as send:
                 result = adapter.generate(request)
 
         http_request = send.call_args.args[0]
+        body = json.loads(http_request.data.decode("utf-8"))
+        self.assertEqual(body["reasoning_effort"], "low")
+        self.assertEqual(body["reasoning_format"], "hidden")
+        self.assertNotIn("reasoning", body)
         self.assertEqual(http_request.full_url, "https://api.groq.com/openai/v1/chat/completions")
         self.assertEqual(http_request.get_header("Authorization"), "Bearer unit-test-key")
         self.assertIsNone(http_request.get_header("X-title"))
@@ -51,7 +58,7 @@ class GroqAdapterTests(unittest.TestCase):
             api_key_env="OMNITRIX_TEST_MISSING_GROQ_KEY",
             timeout=1,
         )
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"GROQ_FREE_QUOTA_CONFIRMED": "true"}, clear=True):
             with patch("core.models.providers.groq.urlopen") as send:
                 with self.assertRaisesRegex(Exception, "Groq API key not found"):
                     adapter.generate(ModelRequest(
