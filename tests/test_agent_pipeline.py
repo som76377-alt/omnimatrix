@@ -430,7 +430,7 @@ class SpecialistPipelineTests(unittest.TestCase):
         with patch.object(omnitrix, "_run_agent_stage", side_effect=scripted_stage):
             result = omnitrix.chat(
                 Conversation(),
-                "Explain the physics of how an induction cooktop heats a metal pan and verify the explanation.",
+                "Research and implement a code-rendered physics animation about electromagnetic induction.",
             )
 
         self.assertIn("verified causal chain", result)
