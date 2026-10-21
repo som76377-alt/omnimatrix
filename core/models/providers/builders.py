@@ -1,6 +1,7 @@
 from core.models.base import ModelAdapter
 from core.models.providers.gemini import GeminiAdapter
 from core.models.providers.groq import GroqAdapter
+from core.models.providers.freellmapi import FreeLLMAPIAdapter
 from core.models.providers.openrouter import OpenRouterAdapter
 from core.models.registry import ModelDefinition
 
@@ -107,3 +108,35 @@ def build_groq_adapter(model: ModelDefinition) -> ModelAdapter:
         referer=None,
         title="Omnitrix",
     )
+
+def build_freellmapi_adapter(model: ModelDefinition) -> ModelAdapter:
+    """Build the optional private FreeLLMAPI gateway adapter."""
+    if model.provider != "freellmapi":
+        raise ValueError(f"Expected FreeLLMAPI provider, got: {model.provider}")
+    if not model.model_id:
+        raise ValueError(f"Model '{model.name}' requires a model_id.")
+
+    api_key_env = model.metadata.get("api_key_env", "FREELLMAPI_API_KEY")
+    base_url_env = model.metadata.get("base_url_env", "FREELLMAPI_BASE_URL")
+    if not isinstance(api_key_env, str) or not api_key_env.strip():
+        raise ValueError(f"Model '{model.name}' has an invalid api_key_env.")
+    if not isinstance(base_url_env, str) or not base_url_env.strip():
+        raise ValueError(f"Model '{model.name}' has an invalid base_url_env.")
+    max_output_tokens = model.metadata.get("max_output_tokens", 8192)
+    timeout_seconds = model.metadata.get("timeout_seconds", 75.0)
+    if isinstance(max_output_tokens, bool) or not isinstance(max_output_tokens, int) or not 1 <= max_output_tokens <= 65536:
+        raise ValueError(f"Model '{model.name}' has an invalid max_output_tokens.")
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+        raise ValueError(f"Model '{model.name}' has an invalid timeout_seconds.")
+
+    import os
+    base_url = os.getenv(base_url_env, "http://127.0.0.1:3001/v1")
+    return FreeLLMAPIAdapter(
+        name=model.name,
+        model_id=model.model_id,
+        api_key_env=api_key_env,
+        base_url=base_url,
+        max_output_tokens=max_output_tokens,
+        timeout=float(timeout_seconds),
+    )
+
