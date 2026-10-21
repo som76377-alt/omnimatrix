@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 import re
 from pathlib import Path
 import time
@@ -391,14 +392,30 @@ class Omnitrix:
             run_id, sequence + 1, "task_" + status, task_id=task_id, payload=payload
         )
 
-    def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
-        """Reserve budget before contacting a provider; unknown is never free."""
-        model = self.registry.get(model_name)
-        # "test" adapters are injected in-process by the test suite; no
-        # production adapter is registered for that provider identifier.
+    def _groq_free_quota_confirmed(self, model: ModelDefinition) -> bool:
+        """Honor Groq's no-cost routing gate only under an explicit runtime opt-in."""
+        return (
+            model.provider == "groq"
+            and self.budget_limits.spend_mode == "user_provided_free_quota"
+            and os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() == "true"
+        )
+
+    def _effective_model_cost(self, model: ModelDefinition) -> tuple[str, object]:
+        """Resolve the cost class under active, explicitly opted-in quota policy."""
         fallback_class = "demo" if model.provider in {"demo", "test"} else "unknown"
         cost_class = model.metadata.get("cost_class", fallback_class)
         estimated_cost = model.metadata.get("estimated_cost_usd")
+        if self._groq_free_quota_confirmed(model):
+            # This does not claim Groq is universally free. It records that this
+            # runtime was explicitly configured to use the account's confirmed
+            # free quota; absent that opt-in, the provider-billed metadata wins.
+            return "user_provided_free_quota", 0.0
+        return str(cost_class), estimated_cost
+
+    def _reserve_model_call(self, guard: BudgetGuard, model_name: str) -> None:
+        """Reserve budget before contacting a provider; unknown is never free."""
+        model = self.registry.get(model_name)
+        cost_class, estimated_cost = self._effective_model_cost(model)
         guard.reserve_model_call(
             cost_class=cost_class,
             estimated_cost_usd=estimated_cost,
@@ -1109,11 +1126,7 @@ class Omnitrix:
             allowed_cost_classes = None
 
         def declared_cost(model) -> tuple[str, object]:
-            cost = model.metadata.get(
-                "cost_class",
-                "demo" if model.provider in {"demo", "test"} else "unknown",
-            )
-            return cost, model.metadata.get("estimated_cost_usd")
+            return self._effective_model_cost(model)
 
         def allowed_by_runtime_budget(model) -> bool:
             cost, estimate = declared_cost(model)
@@ -1139,7 +1152,10 @@ class Omnitrix:
         eligible = []
         for model in candidates:
             candidate_cost, _ = declared_cost(model)
-            explicitly_approved = model.metadata.get("agent_approved_cost") is True
+            explicitly_approved = (
+                model.metadata.get("agent_approved_cost") is True
+                or self._groq_free_quota_confirmed(model)
+            )
             if model.name != fallback_model.name and candidate_cost != fallback_cost:
                 # Candidate metadata is not a budget override: both the explicit
                 # approval and the active runtime budget mode must allow the model.
