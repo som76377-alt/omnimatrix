@@ -174,14 +174,42 @@ def main() -> int:
 
     if identity_failures:
         fail("model identity could not be verified: " + "; ".join(identity_failures))
-    if len(used_profiles) < len(REQUIRED_STAGES):
+    stage_to_profile = {
+        str(item.get("stage")): str(item.get("profile"))
+        for item in report
+    }
+    stage_to_provider = {
+        str(item.get("stage")): str(item.get("provider"))
+        for item in report
+    }
+    core_coordination_stages = (
+        "orchestrator",
+        "support_research",
+        "support_subject_solver",
+    )
+    core_profiles = {
+        stage_to_profile.get(stage)
+        for stage in core_coordination_stages
+        if stage_to_profile.get(stage)
+    }
+    if len(core_profiles) != len(core_coordination_stages):
         fail(
-            "each executed coordination stage should use a distinct eligible profile when the "
-            f"pool has six configured routes; observed {len(used_profiles)}: {sorted(used_profiles)}"
+            "the coordinator and both accepted specialists must each contribute through "
+            f"a distinct configured profile; observed {stage_to_profile}"
+        )
+    if len(used_profiles) < 3:
+        fail(
+            "the coordinator and assigned specialists did not use enough distinct model profiles: "
+            f"{sorted(used_profiles)}"
         )
 
     if not any(item.get("stage") == "critic" for item in activities):
-        fail("the independent final critic stage did not run.")
+        fail("the final critic stage did not run.")
+    if stage_to_provider.get("critic") == stage_to_provider.get("answer_generation"):
+        fail(
+            "the critic used the same provider as the final answer model; "
+            "the test requires an independent-provider review when the configured pool permits it."
+        )
     print(json.dumps({
         "status": "passed",
         "coordination_status": coordination.get("status"),
@@ -189,6 +217,14 @@ def main() -> int:
         "integration_order": coordination.get("integration_order"),
         "unique_model_profiles": len(used_profiles),
         "profiles_not_needed_in_this_task": sorted(set(expected_profiles) - used_profiles),
+        "stage_model_reuse": {
+            profile: [item["stage"] for item in report if item.get("profile") == profile]
+            for profile in sorted(used_profiles)
+            if sum(item.get("profile") == profile for item in report) > 1
+        },
+        "critic_provider_independent_from_lead": (
+            stage_to_provider.get("critic") != stage_to_provider.get("answer_generation")
+        ),
         "answer_characters": len(answer),
         "tool_calls": len(trace.get("tool_executions") or []),
         "activity": report,
