@@ -94,7 +94,7 @@ def main() -> int:
         if hasattr(adapter, "_max_retries"):
             # One retry is allowed for transient transport/quota responses; this is
             # still the same configured route and never triggers a paid fallback.
-            adapter._max_retries = max(1, getattr(adapter, "_max_retries", 0))
+            adapter._max_retries = max(2, getattr(adapter, "_max_retries", 0))
 
         request = ModelRequest(
             messages=(ModelMessage(role=MessageRole.USER, content=prompt),),
