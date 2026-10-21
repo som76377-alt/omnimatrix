@@ -57,7 +57,7 @@ def main() -> int:
     agents = AgentRegistry(
         source_agents.list_enabled(),
         enabled=source_agents.enabled,
-        intent_mode="never",
+        intent_mode="off",
         critic_mode=source_agents.critic_mode,
     )
     expected_profiles = {model.name: model for model in registry.list_enabled()}
