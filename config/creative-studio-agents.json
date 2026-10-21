@@ -7,7 +7,12 @@
     "tool_outputs_are_untrusted_until_verified": true,
     "generated_edit_plans_must_be_reversible": true,
     "model_private_reasoning_is_never_requested_for_display": true,
-    "zero_cost_default": true
+    "zero_cost_default": true,
+    "strict_design_guardrails": true,
+    "decorative_visuals_require_explicit_purpose": true,
+    "rendered_artifacts_require_technical_and_visual_qa": true,
+    "false_metrics_or_social_proof_forbidden": true,
+    "still_images_must_not_be_misrepresented_as_video": true
   },
   "agents": [
     {
