@@ -2395,11 +2395,15 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
         if args.allow_free_quota
         else "zero_cost_only"
     )
+    # Optional deployment-specific role preferences; absent in the normal
+    # Codespaces path, where Omnitrix uses the default config/agents.json.
+    agent_config_path = os.getenv("OMNITRIX_AGENT_CONFIG", "").strip() or None
     omnitrix = Omnitrix.from_config(
         config_path,
         tool_registry=registry,
         tool_permission=ToolPermission.from_capabilities(capabilities),
         budget_limits=BudgetLimits(spend_mode=spend_mode),
+        agent_config_path=agent_config_path,
     )
     cline_omnitrix = None
     cline_api_enabled = os.getenv("OMNITRIX_ENABLE_CLINE_API", "").strip().lower() == "true"
@@ -2417,6 +2421,7 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
                 {"calculation", "workspace.read", "coding.execute"}
             ),
             budget_limits=BudgetLimits(spend_mode=spend_mode),
+            agent_config_path=agent_config_path,
         )
     return StudioRuntime(
         root=root,
