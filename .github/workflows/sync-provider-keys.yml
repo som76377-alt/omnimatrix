@@ -28,7 +28,7 @@ jobs:
           OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
-          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
+          GROQ_FREE_QUOTA_CONFIRMED: "true"
         run: |
           set -euo pipefail
           FAILED=0
@@ -101,7 +101,7 @@ jobs:
           OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
-          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
+          GROQ_FREE_QUOTA_CONFIRMED: "true"
         run: |
           set -euo pipefail
           if [[ -z "$RENDER_API_KEY" || -z "$RENDER_SERVICE_ID" ]]; then
@@ -153,7 +153,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
-          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
+          GROQ_FREE_QUOTA_CONFIRMED: "true"
         run: |
           set -euo pipefail
           status=""
