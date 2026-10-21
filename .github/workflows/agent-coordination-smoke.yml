@@ -1,0 +1,58 @@
+name: Coordinated six-model integration smoke
+
+on:
+  push:
+    branches: [fix/model-coordination-live-checks]
+    paths:
+      - ".github/workflows/agent-coordination-smoke.yml"
+      - "scripts/smoke_agent_coordination.py"
+      - "core/orchestrator/omnitrix.py"
+      - "core/agents/**"
+      - "core/models/**"
+      - "core/policy/**"
+      - "config/agents.json"
+      - "config/mobile.models.json"
+      - "tests/test_agent_pipeline.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-coordination-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  synchronized-team:
+    name: Run real coordinated specialist pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate and test role boundaries and model selection
+        run: |
+          python -m json.tool config/agents.json > /dev/null
+          python -m json.tool config/mobile.models.json > /dev/null
+          python -m compileall -q scripts/smoke_agent_coordination.py core/orchestrator core/agents
+          python -m unittest tests.test_agent_pipeline tests.test_free_model_routes -v
+
+      - name: Run a real coordinated task using all six explicitly configured routes
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+          GROQ_FREE_QUOTA_CONFIRMED: "true"
+        run: python scripts/smoke_agent_coordination.py
