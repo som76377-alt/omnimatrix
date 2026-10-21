@@ -47,19 +47,55 @@ class ClineCodingToolTests(unittest.TestCase):
             fake_cline.write_text(
                 "#!/usr/bin/env python3\n"
                 "from pathlib import Path\n"
+                "import sys\n"
+                "prompt = sys.argv[-1]\n"
+                "assert 'Shared intent, constraints, and context' in prompt\n"
+                "assert 'reasoning specialist found the edge case' in prompt\n"
+                "assert 'parser returns 400 for malformed input' in prompt\n"
+                "assert 'core/parser.py' in prompt\n"
                 "Path('sample.py').write_text('after = True\\n', encoding='utf-8')\n"
                 "print('{\\\"type\\\":\\\"run_result\\\",\\\"text\\\":\\\"implemented and tested\\\"}')\n",
                 encoding="utf-8",
             )
             fake_cline.chmod(0o755)
             tool = ClineCodingTool(root, executable=str(fake_cline))
-            result = tool.execute(task="Update sample.py and report what changed",
-                                  mode="implement", timeout_seconds=30)
+            result = tool.execute(
+                task="Update sample.py and report what changed",
+                context="Shared context from Omnitrix planning",
+                related_agent_findings=["The reasoning specialist found the edge case"],
+                acceptance_criteria=["parser returns 400 for malformed input"],
+                files_in_scope=["core/parser.py"],
+                mode="implement", timeout_seconds=30,
+            )
             self.assertTrue(result.success, result.error)
             self.assertEqual(source.read_text(encoding="utf-8"), "after = True\n")
             self.assertTrue(result.metadata["changes_applied"])
             self.assertEqual(result.metadata["changed_files"], ["sample.py"])
             self.assertIn("not an OS-level sandbox", result.metadata["warning"])
+
+    def test_workspace_allowlist_is_enforced_before_cline_sees_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            (root / "core").mkdir(parents=True)
+            (root / "private").mkdir()
+            (root / "core" / "safe.py").write_text("safe = True\\n", encoding="utf-8")
+            (root / "private" / "not_for_cline.py").write_text("private = True\\n", encoding="utf-8")
+            tool = ClineCodingTool(root, executable="/fake/cline", allowed_paths=("core",))
+            with tempfile.TemporaryDirectory() as copied:
+                tool._copy_workspace(Path(copied))
+                self.assertTrue((Path(copied) / "core" / "safe.py").exists())
+                self.assertFalse((Path(copied) / "private" / "not_for_cline.py").exists())
+
+    def test_rejects_malformed_shared_handoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = ClineCodingTool(directory, executable="/fake/cline")
+            result = tool.execute(
+                task="Update the parser and add tests",
+                related_agent_findings="this must be a list",
+                mode="plan",
+            )
+        self.assertFalse(result.success)
+        self.assertIn("related_agent_findings", result.error)
 
     def test_secret_files_are_not_copied_to_task_workspace(self):
         with tempfile.TemporaryDirectory() as directory:
