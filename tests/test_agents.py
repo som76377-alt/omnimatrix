@@ -12,14 +12,14 @@ CONFIG = ROOT / "config" / "agents.json"
 
 
 class AgentRegistryTests(unittest.TestCase):
-    def test_project_agent_config_loads_all_seven_roles(self):
+    def test_project_agent_config_loads_all_eight_roles(self):
         registry = AgentRegistry.load(CONFIG)
         self.assertTrue(registry.enabled)
         self.assertEqual(
             {agent.role for agent in registry.list_enabled()},
             {
                 "reasoning", "coding", "subject_solver", "research",
-                "computation", "critic", "intent_engineer",
+                "computation", "critic", "intent_engineer", "orchestrator",
             },
         )
 
