@@ -183,6 +183,12 @@ class AgentRouter:
         elif research:
             primary = self.registry.get("research")
             domain = "research"
+        elif coding and subject:
+            # When the requested deliverable is implementation/rendering, coding owns
+            # the artifact; the subject solver supplies the scientific/domain model.
+            primary = self.registry.get("coding")
+            domain = "hybrid_implementation"
+            support.append(self.registry.get("subject_solver"))
         elif subject:
             primary = self.registry.get("subject_solver")
             domain = "subject"
@@ -195,7 +201,9 @@ class AgentRouter:
 
         # For hybrid science/software tasks, keep the main solver authoritative
         # and add only the specialist lens that contributes a distinct check.
-        if subject and coding and not any(agent.role == "coding" for agent in support):
+        if subject and coding and primary.role != "coding" and not any(
+            agent.role == "coding" for agent in support
+        ):
             support.append(self.registry.get("coding"))
         if research and primary.role not in {"research"} and not any(
             agent.role == "research" for agent in support
@@ -259,6 +267,18 @@ class AgentRouter:
     ) -> str:
         """Compose role behavior while keeping the base policy authoritative."""
         blocks = [base_instructions]
+        blocks.append(
+            "OMNITRIX LEAD-MODEL COORDINATION DUTY: You are the lead AI for this run. "
+            "Omnitrix remains the control-plane authority for the original user objective, permissions, "
+            "budget, run state and final evidence report. Coordinate the assigned specialist roles: "
+            "give each only the bounded work belonging to its role, tell downstream workers which "
+            "accepted findings/artifacts they must consume, preserve dependency order, and reconcile "
+            "conflicts against the user's requirements rather than letting agents silently overwrite "
+            "one another. Do not redo a specialist's owned work when its verified result is available. "
+            "Select work by capability, tool availability and acceptance criteria. The lead model was "
+            "selected as the best eligible match under the current configuration, not as a proven "
+            "universally smartest model. Never claim an agent, tool or artifact ran without evidence."
+        )
         # The intent-engineer mindset always applies in the main call, even when
         # a separate preflight is skipped to preserve latency and free quota.
         blocks.append(
