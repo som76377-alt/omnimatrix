@@ -2305,8 +2305,21 @@ class Omnitrix:
                             or critic_model.provider == selected_model.provider
                             or critic_model.name in failed_model_profiles
                         ):
+                            # If there is no eligible alternate provider in the current
+                            # budget/capability pool, still run a separately configured,
+                            # non-failed critic profile. The trace explicitly records
+                            # whether its provider is truly independent; it is never
+                            # described as independent when it is not.
+                            critic_model = self._select_agent_model(
+                                agent_plan.critic,
+                                selected_model,
+                                required_capabilities=frozenset({"reasoning"}),
+                                prefer_independent_provider=True,
+                                exclude_model_names=frozenset(failed_model_profiles),
+                            )
+                        if critic_model.name in failed_model_profiles:
                             raise ModelResponseError(
-                                "No eligible independent-provider critic profile is available."
+                                "No non-failed critic profile is available."
                             )
                         critique_payload = json.dumps(
                             {
