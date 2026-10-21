@@ -92,7 +92,9 @@ def main() -> int:
         if hasattr(adapter, "_max_output_tokens"):
             adapter._max_output_tokens = 16
         if hasattr(adapter, "_max_retries"):
-            adapter._max_retries = 0
+            # One retry is allowed for transient transport/quota responses; this is
+            # still the same configured route and never triggers a paid fallback.
+            adapter._max_retries = max(1, getattr(adapter, "_max_retries", 0))
 
         request = ModelRequest(
             messages=(ModelMessage(role=MessageRole.USER, content=prompt),),
@@ -142,10 +144,23 @@ def main() -> int:
                 latency_seconds=elapsed,
             )
         except Exception as exc:
+            # Provider adapters intentionally sanitize their error messages; retain
+            # the safe status/category so auth, timeout, and request failures are
+            # distinguishable without exposing credentials or generated text.
+            safe_message = str(exc)[:240]
+            if "timed out" in safe_message.lower():
+                failure_reason = "timeout"
+            elif "authentication" in safe_message.lower() or "api key" in safe_message.lower():
+                failure_reason = "authentication_or_permission"
+            elif "429" in safe_message:
+                failure_reason = "rate_limit_or_quota"
+            else:
+                failure_reason = "provider_call_failed"
             result.update(
                 status="failed",
-                reason="provider_call_failed",
+                reason=failure_reason,
                 error_type=type(exc).__name__,
+                safe_error=safe_message,
                 latency_seconds=round(time.perf_counter() - started, 3),
             )
 
