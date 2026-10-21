@@ -30,11 +30,13 @@ jobs:
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
         run: |
           set -euo pipefail
+          FAILED=0
           check_key() {
             local name="$1" provider="$2" value="$3" model="$4" status body
             if [[ -z "$value" ]]; then
               echo "FAIL: $name is missing or empty in GitHub Actions secrets."
-              return 1
+              FAILED=1
+              return 0
             fi
             case "$provider" in
               gemini)
@@ -52,8 +54,9 @@ jobs:
                 ;;
             esac
             if [[ "$status" != "200" ]]; then
-              echo "FAIL: $name generation probe returned HTTP $status for configured provider/model. Key is not confirmed for inference."
-              return 1
+              echo "FAIL: $name generation probe returned HTTP $status for configured provider/model. Key/model route is not confirmed for inference."
+              FAILED=1
+              return 0
             fi
             echo "PASS: $name completed a minimal provider inference request (response body suppressed)."
           }
@@ -63,6 +66,10 @@ jobs:
           check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1" "nvidia/nemotron-3-ultra-550b-a55b:free"
           check_key GROQ_API_KEY groq "$GROQ_API_KEY" "openai/gpt-oss-120b"
           check_key GROQ_API_KEY_1 groq "$GROQ_API_KEY_1" "openai/gpt-oss-20b"
+          if [[ "$FAILED" -ne 0 ]]; then
+            echo "FAIL: one or more key/model combinations did not complete inference; no environment sync or deployment was performed."
+            exit 1
+          fi
 
       - name: Sync provider keys to the existing Render service without replacing other variables
         shell: bash
