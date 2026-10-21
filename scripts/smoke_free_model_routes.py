@@ -90,7 +90,9 @@ def main() -> int:
         # Limit free-route test output where the adapter supports that setting;
         # do not retry failed calls, and never auto-fallback to a different model.
         if hasattr(adapter, "_max_output_tokens"):
-            adapter._max_output_tokens = 8
+            # Reasoning-heavy Groq models may spend a tiny cap on internal work
+            # and return no final text; use a still-small 64-token probe for Groq.
+            adapter._max_output_tokens = 64 if model.provider == "groq" else 8
         if hasattr(adapter, "_max_retries"):
             # One retry is allowed for transient transport/quota responses; this is
             # still the same configured route and never triggers a paid fallback.
