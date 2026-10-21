@@ -1,3 +1,5 @@
+import os
+
 from core.models.base import ModelAdapter
 from core.models.providers.gemini import GeminiAdapter
 from core.models.providers.groq import GroqAdapter
@@ -129,7 +131,6 @@ def build_freellmapi_adapter(model: ModelDefinition) -> ModelAdapter:
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
         raise ValueError(f"Model '{model.name}' has an invalid timeout_seconds.")
 
-    import os
     base_url = os.getenv(base_url_env, "http://127.0.0.1:3001/v1")
     return FreeLLMAPIAdapter(
         name=model.name,
