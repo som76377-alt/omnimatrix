@@ -63,7 +63,7 @@ jobs:
                   -d "$body" "$endpoint" || true)
               fi
               [[ "$status" == "200" ]] && break
-              if [[ "$status" != "429" && "$status" != "500" && "$status" != "502" && "$status" != "503" && "$status" != "504" ]]; then break; fi
+              if [[ "$status" != "000" && "$status" != "429" && "$status" != "500" && "$status" != "502" && "$status" != "503" && "$status" != "504" ]]; then break; fi
               sleep "$attempt"
             done
             if [[ "$status" != "200" ]]; then
@@ -73,7 +73,7 @@ jobs:
             fi
             echo "PASS: $name completed a minimal provider inference request (response body suppressed)."
           }
-          check_key GEMINI_API_KEY gemini "$GEMINI_API_KEY" "gemini-3.8-flash"
+          check_key GEMINI_API_KEY gemini "$GEMINI_API_KEY" "gemini-3.7-flash"
           check_key GEMINI_API_KEY_1 gemini "$GEMINI_API_KEY_1" "gemini-3.5-flash-lite"
           check_key OPENROUTER_API_KEY openrouter "$OPENROUTER_API_KEY" "minimax/minimax-m3.1-flash:free"
           check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1" "nvidia/nemotron-3-ultra-550b-a55b:free"
