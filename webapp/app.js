@@ -1255,6 +1255,7 @@
     article.append(body);
     byId("chat-messages").append(article);
     byId("chat-messages").scrollTop = byId("chat-messages").scrollHeight;
+    return article;
   }
 
   function showInitialChat() {
@@ -1483,11 +1484,110 @@
     return true;
   }
 
+  async function runChatVideoCreation(prompt) {
+    const statusArticle = appendMessage("assistant",
+      "1. **Preflight** — checking paid-video availability and server configuration. No generation request has been sent yet.",
+      "VIDEO PRODUCTION · PREFLIGHT");
+    const statusBubble = statusArticle.querySelector(".message-bubble");
+    const setProgress = (message, source) => {
+      renderRichContent(statusBubble, message);
+      const sourceNode = statusArticle.querySelector(".message-source");
+      if (sourceNode) sourceNode.textContent = source;
+      byId("chat-messages").scrollTop = byId("chat-messages").scrollHeight;
+      byId("chat-thread-subtitle").textContent = message.replace(/\*\*/g, "").slice(0, 180);
+      addActivity("VIDEO", message.replace(/\*\*/g, "").slice(0, 300));
+    };
+
+    const readiness = await apiRequest("/creative/video-status");
+    if (!readiness || readiness.ok !== true) throw new Error((readiness && readiness.error) || "Video preflight failed.");
+    if (!readiness.enabled) throw new Error(readiness.message || "Paid video generation is disabled by the runtime owner. No video request was sent.");
+    if (!readiness.key_configured) throw new Error("GEMINI_API_KEY is not configured on the runtime. No video request was sent.");
+    const modelName = readiness.model || "configured video model";
+    setProgress("1. **Preflight complete** — " + modelName + " is configured. The current backend generates one AI video clip; it does not yet assemble a multi-scene edited film.", "VIDEO PRODUCTION · READY");
+
+    if (!window.confirm("Generate an actual AI video using " + modelName + "? Estimated cost is about US$0.80 for an 8-second 720p clip; actual cost may vary. This will send a paid request. Continue?")) {
+      setProgress("**Cancelled before generation.** No paid video request was sent.", "VIDEO PRODUCTION · CANCELLED");
+      return;
+    }
+
+    setProgress("2. **Generation started** — submitting the prompt to " + modelName + ". The server must confirm each job state; no percentage is invented.", "VIDEO PRODUCTION · SUBMITTING");
+    const startData = await apiRequest("/creative/generate-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consent: true,
+        paid_cost_acknowledged: true,
+        prompt: String(prompt || "").slice(0, 4000),
+        aspect_ratio: /\b(?:vertical|portrait|tiktok|reels?|shorts?|9\s*[:x/]\s*16)\b/i.test(prompt) ? "9:16" : "16:9",
+        resolution: "720p"
+      })
+    });
+    if (!startData || startData.ok !== true || !startData.job_id) {
+      throw new Error((startData && startData.error) || "The video-generation job did not start.");
+    }
+    const jobRoute = "/creative/video-jobs/" + encodeURIComponent(startData.job_id);
+    let statusData = null;
+    const deadline = Date.now() + 12 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      statusData = await apiRequest(jobRoute);
+      if (statusData.status === "failed") throw new Error(statusData.error || "The configured video model failed.");
+      if (statusData.status === "completed") break;
+      const stateLabel = statusData.status === "processing" ? "processing" : "queued";
+      setProgress("2. **Generating video** — provider job state: " + stateLabel + ". Model: " +
+        (statusData.model || startData.model || modelName) + ". This is live job status, not a fabricated progress percentage.", "VIDEO PRODUCTION · " + stateLabel.toUpperCase());
+    }
+    if (!statusData || statusData.status !== "completed") {
+      throw new Error("The video job has not completed within 12 minutes. It may still be running; check status before starting another paid request.");
+    }
+
+    setProgress("3. **Retrieving output** — the provider reported completion. Downloading the returned video bytes and validating the payload.", "VIDEO PRODUCTION · RETRIEVING");
+    const result = await apiRequest(jobRoute + "?consume=1");
+    if (!result || result.ok !== true || !result.video_base64) {
+      throw new Error((result && result.error) || "The job completed without a usable video file.");
+    }
+    const binary = atob(result.video_base64);
+    if (binary.length < 2048 || binary.length > 24 * 1024 * 1024) {
+      throw new Error("The generated video is empty or exceeds the 24 MB transfer limit.");
+    }
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const mime = ["video/mp4", "video/webm"].includes(result.mime_type) ? result.mime_type : "video/mp4";
+    const blob = new Blob([bytes], { type: mime });
+    const objectUrl = URL.createObjectURL(blob);
+
+    const finalArticle = appendMessage("assistant",
+      "**4. Video received.** The provider returned a video file and the payload passed size validation. Review the clip before publishing.",
+      "VIDEO COMPLETE · " + (result.model || statusData.model || startData.model || modelName));
+    const bubble = finalArticle.querySelector(".message-bubble");
+    const player = document.createElement("video");
+    player.className = "chat-generated-video";
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    player.setAttribute("aria-label", "AI-generated video");
+    player.src = objectUrl;
+    bubble.appendChild(player);
+    const download = document.createElement("a");
+    download.className = "chat-video-download";
+    download.href = objectUrl;
+    download.download = String(result.file_name || "omnitrix-generated-video.mp4").replace(/[\\/\\0]/g, "_");
+    download.textContent = "Save video file";
+    bubble.appendChild(download);
+    player.addEventListener("error", () => {
+      setProgress("The video bytes were returned, but this browser could not decode the media. The file link remains available for inspection.", "VIDEO COMPLETE · PLAYER WARNING");
+    }, { once: true });
+    byId("chat-thread-subtitle").textContent = "Video file received · " + Math.round(blob.size / 1024) + " KB · " + (result.model || statusData.model || modelName);
+    byId("chat-mode").textContent = "VIDEO GENERATED";
+    addActivity("VIDEO", "Received " + blob.size + " bytes from " + (result.model || statusData.model || modelName) + "; embedded player added to chat.");
+  }
+
   async function submitChat(event) {
     event.preventDefault();
     const input = byId("chat-input");
     const message = input.value.trim();
     const readyAttachments = state.attachments.filter((item) => item.attachmentId && item.status === "uploaded");
+    const videoCreationRequest = shouldLaunchCreativeStudio(message, readyAttachments.length);
     if ((!message && !readyAttachments.length) || state.busyChat) return;
     if (state.busyUploads > 0) {
       toast("Wait for all selected files to finish uploading before sending.");
@@ -1496,21 +1596,6 @@
     if (!state.connected) {
       toast("Connect the Python runtime before sending a real message.");
       openConnect();
-      return;
-    }
-    if (shouldLaunchCreativeStudio(message, readyAttachments.length)) {
-      addActivity("CREATIVE", "Opening Creative Studio to build a draft from permitted online assets.");
-      byId("chat-thread-subtitle").textContent = "CREATIVE WORKFLOW · Opening the local draft editor";
-      byId("chat-mode").textContent = "CREATIVE STUDIO";
-      try {
-        sessionStorage.setItem("omnitrix-creative-brief-pending", message);
-      } catch (_) {
-        toast("Could not safely pass the brief to Creative Studio. Nothing was submitted.");
-        return;
-      }
-      const target = new URL("./creative-studio.html", window.location.href);
-      target.searchParams.set("autoDraft", "1");
-      window.location.href = target.toString();
       return;
     }
     state.busyChat = true;
@@ -1556,6 +1641,10 @@
       }
     }, 800);
     try {
+      if (videoCreationRequest) {
+        await runChatVideoCreation(submittedText);
+        return;
+      }
       const result = await apiRequest("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
