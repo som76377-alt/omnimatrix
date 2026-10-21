@@ -504,6 +504,7 @@ class StudioRuntime:
         self.omnitrix = omnitrix
         self.cline_omnitrix = cline_omnitrix
         self.cline_execution_lock = threading.Lock()
+        self.cline_smoke_lock = threading.Lock()
         self.workspace_tool = workspace_tool
         self.access_token = access_token
         self.workspace_read_enabled = workspace_read_enabled
@@ -1335,6 +1336,58 @@ class StudioRuntime:
             }
         finally:
             self.cline_execution_lock.release()
+
+    def run_cline_smoke(self) -> dict[str, Any]:
+        """Run the fixed Cline integration test in a disposable workspace on this host."""
+        if self.cline_omnitrix is None:
+            return {
+                "ok": False,
+                "code": "cline_unavailable",
+                "error": "The authenticated Cline worker is disabled or its CLI/provider is not ready.",
+            }
+        if not self.cline_smoke_lock.acquire(blocking=False):
+            return {
+                "ok": False,
+                "code": "cline_smoke_busy",
+                "error": "A Cline smoke test is already running.",
+            }
+        try:
+            script = self.code_root / "scripts" / "test_cline_orchestrator_integration.py"
+            if not script.is_file():
+                return {
+                    "ok": False,
+                    "code": "smoke_script_missing",
+                    "error": "The bounded Cline integration test script is missing.",
+                }
+            try:
+                completed = subprocess.run(
+                    [sys.executable, str(script)],
+                    cwd=str(self.code_root),
+                    env=os.environ.copy(),
+                    capture_output=True,
+                    text=True,
+                    timeout=240,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                return {
+                    "ok": False,
+                    "code": "cline_smoke_timeout",
+                    "error": "The isolated Cline integration test exceeded 240 seconds.",
+                    "persistence": "temporary integration workspace only",
+                }
+            stdout = (completed.stdout or "")[-3000:]
+            stderr = (completed.stderr or "")[-1200:]
+            return {
+                "ok": completed.returncode == 0,
+                "exit_code": completed.returncode,
+                "stdout_tail": stdout,
+                "stderr_tail": stderr,
+                "coding_model": os.getenv("CLINE_MODEL", "minimax/minimax-m3.1-flash:free"),
+                "persistence": "temporary integration workspace only; no repository files are changed",
+            }
+        finally:
+            self.cline_smoke_lock.release()
 
     def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
         """Rate-limited public chat only; this path cannot access workspace or test APIs."""
@@ -2250,6 +2303,9 @@ def make_handler(
                 elif route == "/api/admin/cline/chat":
                     result = runtime.run_cline_chat(payload)
                     self._send_json(result, 200 if result.get("ok") else 503)
+                elif route == "/api/admin/cline/smoke":
+                    result = runtime.run_cline_smoke()
+                    self._send_json(result, 200 if result.get("ok") else 503)
                 elif route == "/api/attachments/delete":
                     self._send_json(runtime.delete_attachment(payload))
                 elif route == "/api/mobile/attachments/delete":
@@ -2533,7 +2589,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    access_token = args.access_token or secrets.token_urlsafe(32)
+    access_token = args.access_token or os.getenv("OMNITRIX_RUNTIME_TOKEN", "").strip() or secrets.token_urlsafe(32)
     try:
         runtime = build_runtime(args, access_token)
     except Exception as exc:
