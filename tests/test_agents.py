@@ -106,6 +106,16 @@ class AgentRouterTests(unittest.TestCase):
         self.assertEqual(plan.primary.role, "coding")
         self.assertIn("subject_solver", {agent.role for agent in plan.support_roles})
 
+    def test_hybrid_researched_science_implementation_assigns_both_support_roles(self):
+        plan = self.router.route(
+            "Research reliable sources and implement a code-rendered physics animation about electromagnetic induction.",
+            frozenset({"reasoning", "coding", "research"}),
+        )
+        roles = {agent.role for agent in plan.support_roles}
+        self.assertEqual(plan.primary.role, "coding")
+        self.assertIn("subject_solver", roles)
+        self.assertIn("research", roles)
+
     def test_routes_short_vague_prompt_to_reasoning_with_intent_preflight(self):
         plan = self.router.route("Make it better", frozenset({"reasoning"}))
         self.assertEqual(plan.primary.role, "reasoning")
