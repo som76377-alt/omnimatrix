@@ -108,6 +108,44 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(body["code"], "unauthorized")
 
+    @patch("interfaces.web.server._allow_public_creative_model_request", return_value=True)
+    @patch.object(StudioRuntime, "start_manim_render", return_value={
+        "ok": True, "job_id": "a" * 32, "status": "queued"
+    })
+    def test_public_mobile_chat_can_start_code_render_without_runtime_token(self, start_render, _allow):
+        payload = {
+            "consent": True,
+            "title": "Induction heating",
+            "nodes": [
+                {"label": "Alternating magnetic field", "x": -2.0, "y": 0.0},
+                {"label": "Induced currents heat pan", "x": 2.0, "y": 0.0},
+            ],
+            "arrows": [[0, 1]],
+            "quality": "low",
+        }
+        status, body = self.request(
+            "/api/mobile/creative/manim-render",
+            method="POST",
+            body=payload,
+            authorized=False,
+        )
+        self.assertEqual(status, 202, body)
+        self.assertEqual(body["job_id"], "a" * 32)
+        start_render.assert_called_once_with(payload)
+        _allow.assert_called_once()
+
+    @patch.object(StudioRuntime, "manim_job_status", return_value={
+        "ok": True, "job_id": "b" * 32, "status": "processing"
+    })
+    def test_public_mobile_chat_can_poll_code_render_without_runtime_token(self, job_status):
+        status, body = self.request(
+            "/api/mobile/creative/manim-jobs/" + ("b" * 32),
+            authorized=False,
+        )
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "processing")
+        job_status.assert_called_once_with("b" * 32)
+
     def test_static_studio_shell_is_available_without_runtime_token(self):
         with urlopen(self.base_url + "/", timeout=3) as response:
             body = response.read().decode("utf-8")
