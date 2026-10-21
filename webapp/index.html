@@ -31,7 +31,6 @@
       <button class="nav-item" data-view="status"><span class="nav-glyph">⌁</span>Tests &amp; Status <span class="nav-count" id="nav-ci-state">—</span></button>
       <button class="nav-item" data-view="capabilities"><span class="nav-glyph">⌘</span>Tools &amp; Models</button>
       <button class="nav-item" data-view="recovery"><span class="nav-glyph">⟲</span>Recovery journal</button>
-    <a class="nav-item" href="./creative-studio.html"><span class="nav-glyph">✳</span>Creative Studio <span class="nav-trail">↗</span></a>
     </nav>
     <div class="sidebar-section">
       <div class="sidebar-section-title"><span>WORKSPACE</span><button id="sidebar-refresh" title="Refresh file list" aria-label="Refresh file list">↻</button></div>
@@ -94,7 +93,7 @@
 
     <section class="view" id="view-chat">
       <div class="view-heading chat-view-heading">
-        <div><p class="eyebrow"><span class="eyebrow-dash"></span> ASSISTANT / 02</p><h1>Talk to <em>Omnitrix.</em></h1><p class="view-subtitle">Requests go through the configured Python orchestrator. Tool access is limited by the permissions granted when the server starts.</p></div>
+        <div><p class="eyebrow"><span class="eyebrow-dash"></span> ASSISTANT / 02</p><h1>Talk to <em>Omnitrix.</em></h1><p class="view-subtitle">Chat, video generation, live job status, and playable output stay in this conversation. Video generation may incur a provider charge and asks for confirmation first.</p></div>
         <div class="heading-actions"><span class="provider-chip" id="chat-provider-chip">BACKEND OFFLINE</span><button class="secondary-button" id="new-chat">NEW SESSION ↻</button></div>
       </div>
       <div class="chat-layout">
@@ -115,7 +114,7 @@
             <textarea id="chat-input" rows="2" maxlength="8000" placeholder="Connect the runtime to start a conversation…" aria-label="Message Omnitrix" disabled></textarea>
             <div class="composer-bottom"><span id="chat-char-count">0 / 8000</span><button class="send-button" type="submit" id="send-message" disabled>SEND <span>↑</span></button></div>
           </form>
-          <p class="composer-disclaimer">Files are uploaded to your connected private runtime. When you send them, they may be sent to the configured multimodal provider for analysis. There is no file-count cap; available storage, file-size limits, provider quotas, and model context still apply.</p>
+          <p class="composer-disclaimer">Files are uploaded to your connected private runtime and may be sent to the configured provider. Video generation asks for paid-cost confirmation before submission. Available storage, provider quotas, and model context still apply.</p>
         </div>
         </div>
         <aside class="chat-side">
