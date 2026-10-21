@@ -216,7 +216,7 @@ class ClineCodingTool(Tool):
                 + "\n\n".join(handoff_sections)
             )
             provider = os.environ.get("CLINE_PROVIDER", "openrouter").strip()
-            model_id = os.environ.get("CLINE_MODEL", "openrouter/free").strip()
+            model_id = os.environ.get("CLINE_MODEL", "minimax/minimax-m3.1-flash:free").strip()
             api_key_env = os.environ.get("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY").strip()
             api_key = os.environ.get(api_key_env, "")
             if provider == "openrouter" and not api_key:
@@ -227,7 +227,7 @@ class ClineCodingTool(Tool):
                 )
             command = [
                 self._executable, "--provider", provider, "--model", model_id,
-                "--cwd", str(workspace), "--timeout", str(timeout),
+                "--cwd", str(workspace),
             ]
             # Cline CLI v3 accepts provider credentials explicitly. The key is
             # passed only to the child process and is never copied into its env.
