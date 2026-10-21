@@ -283,39 +283,49 @@ class StudioServerTests(unittest.TestCase):
         self.assertEqual(body.get("code"), "paid_media_disabled")
         start.assert_not_called()
 
-    def test_hosted_mobile_model_profile_keeps_baseline_and_registers_reasoning_model(self):
+    def test_hosted_mobile_model_profile_registers_six_distinct_routes(self):
         config = json.loads((ROOT / "config" / "mobile.models.json").read_text(encoding="utf-8"))
         models = {model["name"]: model for model in config["models"]}
         self.assertEqual(
             set(models),
             {
                 "omnitrix-primary",
-                "reasoning-nemotron-super-free",
-                "omnitrix-fast-fallback",
+                "gemini-flash-lite",
+                "coding-minimax-m31-free",
+                "orchestrator-nemotron-ultra-free",
+                "groq-gpt-oss-120b",
+                "groq-gpt-oss-20b",
             },
         )
+        self.assertEqual(len({(m["provider"], m["model_id"]) for m in models.values()}), 6)
 
         baseline = models["omnitrix-primary"]
         self.assertEqual(baseline["provider"], "google")
         self.assertEqual(baseline["model_id"], "gemini-3.8-flash")
         self.assertEqual(baseline["metadata"]["cost_class"], "user_provided_free_quota")
         self.assertEqual(baseline["metadata"]["estimated_cost_usd"], 0)
-        self.assertEqual(baseline["metadata"]["timeout_seconds"], 15)
-        self.assertEqual(baseline["metadata"]["max_retries"], 0)
-        self.assertEqual(baseline["metadata"]["standard_fallback_model"], "omnitrix-fast-fallback")
+        self.assertEqual(baseline["metadata"]["api_key_env"], "GEMINI_API_KEY")
+        self.assertEqual(baseline["metadata"]["standard_fallback_model"], "groq-gpt-oss-20b")
 
-        reasoning = models["reasoning-nemotron-super-free"]
-        self.assertEqual(reasoning["provider"], "openrouter")
-        self.assertEqual(reasoning["model_id"], "nvidia/nemotron-3-super-120b-a12b:free")
-        self.assertEqual(reasoning["metadata"]["api_key_env"], "OPENROUTER_API_KEY")
-        self.assertEqual(reasoning["metadata"]["estimated_cost_usd"], 0)
+        lite = models["gemini-flash-lite"]
+        self.assertEqual(lite["model_id"], "gemini-3.5-flash-lite")
+        self.assertEqual(lite["metadata"]["api_key_env"], "GEMINI_API_KEY_1")
 
-        fast_fallback = models["omnitrix-fast-fallback"]
-        self.assertEqual(fast_fallback["provider"], "openrouter")
-        self.assertEqual(fast_fallback["model_id"], reasoning["model_id"])
-        self.assertEqual(fast_fallback["metadata"]["timeout_seconds"], 30)
-        self.assertEqual(fast_fallback["metadata"]["max_output_tokens"], 2048)
-        self.assertEqual(fast_fallback["metadata"]["reasoning_effort"], "low")
+        minimax = models["coding-minimax-m31-free"]
+        self.assertEqual(minimax["provider"], "openrouter")
+        self.assertEqual(minimax["model_id"], "minimax/minimax-m3.1-flash:free")
+        self.assertEqual(minimax["metadata"]["api_key_env"], "OPENROUTER_API_KEY")
+        self.assertEqual(minimax["metadata"]["estimated_cost_usd"], 0)
+
+        nemotron = models["orchestrator-nemotron-ultra-free"]
+        self.assertEqual(nemotron["model_id"], "nvidia/nemotron-3-ultra-550b-a55b:free")
+        self.assertEqual(nemotron["metadata"]["api_key_env"], "OPENROUTER_API_KEY_1")
+        self.assertEqual(nemotron["metadata"]["estimated_cost_usd"], 0)
+
+        groq_primary = models["groq-gpt-oss-120b"]
+        self.assertEqual(groq_primary["provider"], "groq")
+        self.assertEqual(groq_primary["metadata"]["api_key_env"], "GROQ_API_KEY")
+        self.assertEqual(models["groq-gpt-oss-20b"]["metadata"]["api_key_env"], "GROQ_API_KEY_1")
 
     def test_mobile_backend_discovery_points_to_hosted_service(self):
         manifest = json.loads((ROOT / "config" / "mobile-backend.json").read_text(encoding="utf-8"))
@@ -394,7 +404,7 @@ class StudioServerTests(unittest.TestCase):
         self.assertTrue(body["openrouter_key_detected"])
         self.assertFalse(body["gemini_key_detected"])
         self.assertEqual(body["provider"], "openrouter")
-        self.assertEqual(body["model"], "nvidia/nemotron-3-super-120b-a12b:free")
+        self.assertEqual(body["model"], "minimax/minimax-m3.1-flash:free")
         self.assertEqual(body["reasoning_route_status"], "ready")
 
     def test_public_mobile_chat_is_disabled_by_default(self):
