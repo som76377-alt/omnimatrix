@@ -2032,6 +2032,70 @@ private fun OmnitrixApp() {
 }
 
 @Composable
+private fun AppHeader(title: String, detail: String? = null, activityLabel: String? = null) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 10.dp, bottom = 12.dp)) {
+        Text("OMNITRIX", color = Green, fontSize = 14.sp, letterSpacing = .4.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
+        if (!activityLabel.isNullOrBlank()) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                activityLabel,
+                color = if (activityLabel.startsWith("THINKING") || activityLabel.startsWith("MODEL RESPONSE")) Green else Grey,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontFamily = FontFamily.SansSerif
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(title, color = White, fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, fontFamily = Pixel)
+        if (!detail.isNullOrBlank()) {
+            Spacer(Modifier.height(3.dp))
+            Text(detail, color = Grey, fontSize = 13.sp, lineHeight = 18.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Green.copy(alpha = 0.28f)))
+    }
+}
+
+
+
+internal object MarkwonMathNormalizer {
+    private val fencedCode = Regex("""(?ms)^ {0,3}(`{3,}|~{3,})[^\r\n]*\r?\n[\s\S]*?^ {0,3}\1[ \t]*(?:\r?\n|$)""")
+    private val inlineCode = Regex("""(`+)[^\r\n]*?\1""")
+    private val displayMath = Regex("""\\\[([\s\S]*?)\\\]""")
+    private val inlineMath = Regex("""\\\((.+?)\\\)""")
+
+    fun normalize(source: String): String {
+        val protectedParts = mutableListOf<Pair<String, String>>()
+
+        fun protect(value: String): String {
+            val token = "\uE000OMNITRIX_PROTECTED${protectedParts.size}\uE001"
+            val uniqueToken = token.replace("${protectedParts.size}", protectedParts.size.toString())
+            protectedParts.add(uniqueToken to value)
+            return uniqueToken
+        }
+
+        var result = fencedCode.replace(source) { protect(it.value) }
+        result = inlineCode.replace(result) { protect(it.value) }
+
+        result = displayMath.replace(result) { match ->
+            "\n\n\$\$\n" + match.groupValues[1].trim('\r', '\n') + "\n\$\$\n\n"
+        }
+        result = inlineMath.replace(result) { match ->
+            "\$" + match.groupValues[1] + "\$"
+        }
+
+        val alertMarker = Regex("""(?m)^([ \t]*>[ \t]*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(.*)$""", RegexOption.IGNORE_CASE)
+        result = alertMarker.replace(result) { match ->
+            match.groupValues[1] + "**" + match.groupValues[2].uppercase() + "**  " + match.groupValues[3]
+        }
+        protectedParts.forEach { (token, original) ->
+            result = result.replace(token, original)
+        }
+        return result
+    }
+}
+
+@Composable
 private fun MarkdownMessage(content: String) {
     val context = LocalContext.current
     val markwon = remember(context) {
