@@ -41,6 +41,7 @@ from core.policy.truthfulness import (
     require_truthfulness_contract,
     with_truthfulness_contract,
 )
+from core.policy.agent_boundaries import allowed_tools_for_role, stage_boundary_contract
 from core.policy.quality import (
     require_quality_contract,
     with_quality_contract,
@@ -413,6 +414,7 @@ class Omnitrix:
         )
         selected_model = self.router.select(requirements)
 
+        active_agent_role = agent_plan.primary.role if agent_plan is not None else None
         _log_safely(
             logging.INFO,
             "model_selected",
@@ -1273,10 +1275,11 @@ class Omnitrix:
         budget_guard: BudgetGuard,
     ) -> str:
         """Run a bounded no-tools specialist call with the usual budget/journal fences."""
+        scoped_instructions = instructions + "\\n\\n" + stage_boundary_contract(stage)
         request = ModelRequest(
             messages=messages,
             tools=(),
-            instructions=with_quality_contract(with_truthfulness_contract(instructions)),
+            instructions=with_quality_contract(with_truthfulness_contract(scoped_instructions)),
         )
         require_truthfulness_contract(request.instructions)
         require_quality_contract(request.instructions)
@@ -1556,7 +1559,7 @@ class Omnitrix:
         )
         request = ModelRequest(
             messages=messages,
-            tools=self._get_authorized_model_tools(allowed_tool_scopes),
+            tools=self._get_authorized_model_tools(allowed_tool_scopes, agent_role=active_agent_role),
             instructions=instructions,
         )
 
@@ -1865,6 +1868,7 @@ class Omnitrix:
                         ),
                         budget_guard=budget_guard,
                         allowed_tool_scopes=allowed_tool_scopes,
+                        agent_role=active_agent_role,
                     )
                 except Exception as exc:
                     _log_safely(
@@ -1930,13 +1934,23 @@ class Omnitrix:
             )
 
     def _get_authorized_model_tools(
-        self, allowed_tool_scopes: frozenset[str] | None = None
+        self,
+        allowed_tool_scopes: frozenset[str] | None = None,
+        *,
+        agent_role: str | None = None,
     ) -> tuple[ModelToolDefinition, ...]:
-        """Return tools allowed by both user permissions and any plan scope."""
+        """Return tools allowed by operator permissions, plan scope, and role scope.
 
+        When a role is active, its allowlist is an additional hard boundary.
+        Unknown roles get no tools. Without a configured role pipeline, legacy
+        caller permissions continue to apply.
+        """
+        role_allowlist = allowed_tools_for_role(agent_role) if agent_role is not None else None
         tools: list[ModelToolDefinition] = []
 
         for tool in self.tool_registry.list():
+            if role_allowlist is not None and tool.name not in role_allowlist:
+                continue
             if not self.tool_permission.allows(tool.capabilities):
                 continue
             if (
@@ -1961,8 +1975,15 @@ class Omnitrix:
         *,
         budget_guard: BudgetGuard | None = None,
         allowed_tool_scopes: frozenset[str] | None = None,
+        agent_role: str | None = None,
     ) -> ToolResult:
-        """Check plan scope and budget before any tool can cause side effects."""
+        """Check role, plan scope and budget before any tool can cause side effects."""
+        if agent_role is not None and request.tool_name not in allowed_tools_for_role(agent_role):
+            return ToolResult(
+                success=False,
+                error=f"Agent role scope denied tool: {request.tool_name}",
+                metadata={"denied_by": "agent_role_scope", "execution_outcome": "not_started"},
+            )
         if (
             allowed_tool_scopes is not None
             and request.tool_name not in allowed_tool_scopes
