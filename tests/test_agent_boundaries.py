@@ -40,6 +40,7 @@ class AgentBoundaryTests(unittest.TestCase):
 
     def test_roles_have_narrow_tool_allowlists(self):
         self.assertEqual(allowed_tools_for_role("reasoning"), frozenset())
+        self.assertEqual(allowed_tools_for_role("orchestrator"), frozenset())
         self.assertEqual(allowed_tools_for_role("research"), frozenset())
         self.assertEqual(allowed_tools_for_role("computation"), frozenset({"calculator"}))
         self.assertEqual(allowed_tools_for_role("coding"), frozenset({"cline.coding", "workspace.inspect"}))
