@@ -19,6 +19,20 @@ class ClineCodingToolTests(unittest.TestCase):
             self.assertEqual(enabled_registry.get("cline.coding").capabilities,
                              frozenset({"coding.execute"}))
 
+    def test_bootstrap_passes_runtime_allowlist_to_cline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "core").mkdir()
+            (root / "private").mkdir()
+            (root / "core" / "module.py").write_text("value = 1\\n", encoding="utf-8")
+            (root / "private" / "secret_module.py").write_text("value = 2\\n", encoding="utf-8")
+            registry = build_tool_registry(root, allowed_paths=("core",), enable_cline=True)
+            tool = registry.get("cline.coding")
+            with tempfile.TemporaryDirectory() as copied:
+                tool._copy_workspace(Path(copied))
+                self.assertTrue((Path(copied) / "core" / "module.py").exists())
+                self.assertFalse((Path(copied) / "private" / "secret_module.py").exists())
+
     def test_missing_cli_reports_actionable_unavailable_status(self):
         with tempfile.TemporaryDirectory() as directory:
             tool = ClineCodingTool(directory, executable=None)
