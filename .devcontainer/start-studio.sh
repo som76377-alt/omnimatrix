@@ -36,6 +36,7 @@ nohup bash -c '
       --workspace-root . \
       --allow-workspace-read \
       --allow-workspace-write \
+      --enable-cline-coding \
       --workspace-allow core \
       --workspace-allow interfaces \
       --workspace-allow tests \
