@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from urllib.parse import urlsplit
 
+from core.models.base import ModelResponseError
 from core.models.providers.openrouter import OpenRouterAdapter
 
 
@@ -69,3 +70,24 @@ class FreeLLMAPIAdapter(OpenRouterAdapter):
             (self._api_key or os.getenv(self._api_key_env))
             and self._freellmapi_base_url
         )
+
+    def _allowed_model_ids(self) -> set[str]:
+        ids = {self._model_id}
+        for raw in os.getenv("FREELLMAPI_ALLOWED_MODEL_IDS", "").split(","):
+            candidate = raw.strip()
+            if candidate:
+                ids.add(candidate)
+        return ids
+
+    def supports_model_id(self, model_id: str) -> bool:
+        """Allow only the configured alias and the explicitly allowlisted routed IDs."""
+        return isinstance(model_id, str) and model_id in self._allowed_model_ids()
+
+    def generate(self, request):
+        response = super().generate(request)
+        if response.model_identity_source == "provider_response":
+            if response.model not in self._allowed_model_ids():
+                raise ModelResponseError(
+                    "FreeLLMAPI returned a model identity outside Omnitrix's explicit route allowlist."
+                )
+        return response
