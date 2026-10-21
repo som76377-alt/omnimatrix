@@ -98,10 +98,8 @@ def main() -> int:
 
         request = ModelRequest(
             messages=(ModelMessage(role=MessageRole.USER, content=prompt),),
-            instructions=(
-                "This is a minimal connectivity check for the configured model route. "
-                "Answer with exactly ROUTE_READY, with no explanation and no tools."
-            ),
+            # Keep the probe body minimal and provider-neutral: one user message,
+            # no tools, no system-role requirements, and no user conversation data.
         )
         started = time.perf_counter()
         try:
