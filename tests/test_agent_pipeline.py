@@ -67,7 +67,7 @@ class SpecialistPipelineTests(unittest.TestCase):
             name="test-live-model",
             provider="test",
             model_id="test-live-model-v1",
-            capabilities=frozenset({"reasoning", "coding"}),
+            capabilities=frozenset({"reasoning", "coding", "research"}),
             context_window=32000,
             metadata={"cost_class": "demo", "estimated_cost_usd": 0},
         ))
@@ -121,57 +121,84 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertIn("untrusted", adapter.requests[1].instructions.lower())
         self.assertEqual(adapter.requests[2].tools, ())
 
-    def test_complex_hybrid_request_runs_coordinator_then_bounded_subject_handoff(self):
+    def test_complex_hybrid_request_coordinates_research_and_subject_handoffs(self):
         coordinator = json.dumps({
-            "objective_summary": "Create a code-rendered physics animation with the correct induction mechanism.",
-            "work_packages": [{
-                "role": "subject_solver",
-                "assignment": "Specify the physically correct field-to-current-to-heat sequence and any misleading simplifications to avoid.",
-                "expected_output": "A concise causal sequence, assumptions, and physics acceptance checks.",
-                "acceptance_criteria": [
-                    "Distinguish changing magnetic field, induced currents in the pan, and resistive heating.",
-                    "Do not invent component motion or arbitrary object slicing."
-                ],
-                "depends_on": [],
-            }],
-            "integration_order": ["subject_solver"],
+            "objective_summary": "Create a code-rendered physics animation with the correct induction mechanism and honest evidence boundaries.",
+            "work_packages": [
+                {
+                    "role": "research",
+                    "assignment": "Check whether verifiable source retrieval is available; if not, state the exact evidence limitation and do not invent sources.",
+                    "expected_output": "A short evidence/gap ledger.",
+                    "acceptance_criteria": [
+                        "Mark live retrieval blocked if no actual retrieval tool/results are available.",
+                        "Do not fabricate citations."
+                    ],
+                    "depends_on": [],
+                },
+                {
+                    "role": "subject_solver",
+                    "assignment": "Specify the physically correct induction chain and misleading simplifications to avoid; use the research result only to understand evidence gaps.",
+                    "expected_output": "Causal sequence, assumptions, and physics acceptance checks.",
+                    "acceptance_criteria": [
+                        "Distinguish the changing magnetic field, induced currents in the pan, and resistive heating.",
+                        "Do not invent component motion or arbitrary object slicing."
+                    ],
+                    "depends_on": ["research"],
+                },
+            ],
+            "integration_order": ["research", "subject_solver"],
             "final_acceptance_criteria": [
-                "The rendered explanation follows the verified physical sequence.",
+                "The rendered explanation follows the checked physical sequence.",
+                "Unavailable source retrieval is disclosed; no fake citations are introduced.",
                 "Only purposeful explanatory graphics are used."
             ],
             "cline_handoff": {"task": "", "acceptance_criteria": [], "files_in_scope": []},
         })
-        support_finding = (
+        research_finding = (
+            "BLOCKED: this core run exposes no native live web-search tool or retrieved source results. "
+            "Do not claim current source verification or invent citations."
+        )
+        subject_finding = (
             "Use this causal chain: alternating coil current produces a changing magnetic field; "
             "the field induces circulating currents in the conductive pan; pan resistance converts "
-            "electrical energy into heat. Do not depict the pan being sliced apart."
+            "electrical energy into heat. Avoid arbitrary object slicing."
         )
         draft = "The coil's changing current creates a changing magnetic field, inducing currents in the pan; resistance heats it."
         critique = json.dumps({"verdict": "pass", "issues": [], "corrected_answer": ""})
         omnitrix, adapter = self.build_omnitrix([
-            make_intent_brief(), coordinator, support_finding, draft, critique,
+            make_intent_brief(), coordinator, research_finding, subject_finding, draft, critique,
         ])
 
         result = omnitrix.chat(
             Conversation(),
-            "Design and implement a code-rendered physics animation about electromagnetic induction.",
+            "Research and implement a code-rendered physics animation about electromagnetic induction.",
         )
 
         self.assertIn("changing magnetic field", result)
         activity = omnitrix.last_execution_trace["activity"]
         self.assertEqual(
             [item["stage"] for item in activity],
-            ["intent_engineer", "orchestrator", "support_subject_solver", "answer_generation", "critic"],
+            ["intent_engineer", "orchestrator", "support_research", "support_subject_solver", "answer_generation", "critic"],
         )
         requests = adapter.requests
         self.assertIn("COORDINATOR-ASSIGNED WORK PACKAGE", requests[2].instructions)
-        self.assertIn("Do not depict the pan being sliced apart", requests[3].instructions)
-        self.assertIn("COORDINATOR-VALIDATED WORK MAP", requests[3].instructions)
+        self.assertIn("SHARED TEAM OWNERSHIP MAP", requests[2].instructions)
+        self.assertIn('"role": "subject_solver"', requests[2].instructions)
+        self.assertIn("COORDINATOR-ASSIGNED WORK PACKAGE", requests[3].instructions)
+        self.assertIn("SHARED TEAM OWNERSHIP MAP", requests[3].instructions)
+        self.assertIn("BLOCKED: this core run exposes no native live web-search tool", requests[3].messages[-1].content)
+        self.assertIn("COORDINATOR-VALIDATED WORK MAP", requests[4].instructions)
+        self.assertIn("BLOCKED: this core run exposes no native live web-search tool", requests[4].instructions)
         self.assertEqual(requests[1].tools, ())
         self.assertEqual(requests[2].tools, ())
-        self.assertTrue(omnitrix.last_execution_trace["coordination"]["status"] == "validated")
-        self.assertEqual(omnitrix.last_execution_trace["coordination"]["assigned_roles"], ["subject_solver"])
-
+        self.assertEqual(requests[3].tools, ())
+        trace = omnitrix.last_execution_trace["coordination"]
+        self.assertEqual(trace["status"], "validated")
+        self.assertEqual(trace["assigned_roles"], ["research", "subject_solver"])
+        self.assertEqual(trace["support_statuses"], {
+            "research": "result_received",
+            "subject_solver": "result_received",
+        })
     def test_simple_fact_skips_extra_preflight_and_critic_calls(self):
         omnitrix, adapter = self.build_omnitrix(["Water boils at about 100 °C at 1 atmosphere."])
         result = omnitrix.chat(Conversation(), "What is the boiling point of water?")
