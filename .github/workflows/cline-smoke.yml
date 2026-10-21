@@ -25,14 +25,14 @@ jobs:
           npm install --global cline
           cline --version
 
-      - name: Run Cline against an empty temporary workspace using Groq
+      - name: Run Cline against an empty temporary workspace using OpenRouter
         shell: bash
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "$GROQ_API_KEY" ]]; then
-            echo "FAIL: GROQ_API_KEY is missing."
+          if [[ -z "$OPENROUTER_API_KEY" ]]; then
+            echo "FAIL: OPENROUTER_API_KEY is missing."
             exit 1
           fi
           workdir="$RUNNER_TEMP/cline-smoke-workspace"
@@ -42,9 +42,9 @@ jobs:
           # The CLI is confined to a disposable empty directory; no repository files are checked out.
           set +e
           cline \
-            --provider groq \
-            --model llama-3.3-70b-versatile \
-            --key "$GROQ_API_KEY" \
+            --provider openrouter \
+            --model openrouter/free \
+            --key "$OPENROUTER_API_KEY" \
             --cwd "$workdir" \
             --data-dir "$datadir" \
             --auto-approve true \
@@ -68,4 +68,4 @@ jobs:
             echo "FAIL: Cline created the file, but its contents did not match the expected result."
             exit 1
           fi
-          echo "PASS: Cline CLI installed, authenticated through Groq, called a model, and completed a real file-write task in a disposable workspace."
+          echo "PASS: Cline CLI installed, authenticated through OpenRouter, called a model, and completed a real file-write task in a disposable workspace."
