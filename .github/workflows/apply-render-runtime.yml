@@ -123,8 +123,6 @@ jobs:
       
       - name: Execute a real Cline task through the live hosted Omnitrix orchestrator
         shell: bash
-        env:
-          OMNITRIX_RUNTIME_TOKEN: ${{ env.OMNITRIX_RUNTIME_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "$OMNITRIX_RUNTIME_TOKEN" ]]; then
