@@ -1,0 +1,113 @@
+name: Verify actual remote Cline worker
+
+on:
+  push:
+    branches: [fix/model-coordination-live-checks]
+    paths:
+      - ".github/workflows/cline-remote-e2e-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cline-remote-e2e-smoke
+  cancel-in-progress: false
+
+jobs:
+  dispatch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Dispatch a tightly scoped Cline implementation task and await the real worker
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const baseRef = "fix/model-coordination-live-checks";
+            const requestId = `e2e-${context.runId}-${context.runAttempt}`;
+            const startedAt = Date.now();
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: "cline-remote-worker.yml",
+              ref: baseRef,
+              inputs: {
+                request_id: requestId,
+                task: "Create one disposable smoke-test file at tests/cline_remote_worker_smoke_target.py. It must define a tiny pure-Python add_numbers(a: int, b: int) helper and unittest cases for 2 + 3 == 5 and negative inputs. Only create or edit that single in-scope test file. Do not edit application code, existing tests, workflows, dependency files, credentials, or configuration. This task exists only to verify the remote Cline execution bridge; never merge automatically.",
+                context: "This is a deliberately isolated integration probe. Respect the exact path scope and do not perform unrelated cleanup.",
+                findings_json: JSON.stringify([]),
+                criteria_json: JSON.stringify([
+                  "Only tests/cline_remote_worker_smoke_target.py is changed.",
+                  "The helper returns the correct sum for positive and negative integer inputs.",
+                  "The new unittest cases pass.",
+                  "The full repository unittest suite passes before a reviewable pull request is created."
+                ]),
+                scope_json: JSON.stringify(["tests/cline_remote_worker_smoke_target.py"]),
+                mode: "implement",
+                base_ref: baseRef,
+                timeout_seconds: "180"
+              }
+            });
+
+            let workerRun = null;
+            for (let attempt = 0; attempt < 36; attempt++) {
+              const result = await github.rest.actions.listWorkflowRuns({
+                owner, repo,
+                workflow_id: "cline-remote-worker.yml",
+                event: "workflow_dispatch",
+                branch: baseRef,
+                per_page: 30
+              });
+              const candidates = result.data.workflow_runs.filter(run =>
+                Date.parse(run.created_at) >= startedAt - 5000 &&
+                (run.display_title || "").includes(requestId)
+              );
+              if (candidates.length) {
+                workerRun = candidates[0];
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+
+            if (!workerRun) {
+              core.setFailed("Remote worker dispatch was accepted but no correlated workflow run appeared.");
+              return;
+            }
+            core.info(`Correlated remote worker run: ${workerRun.html_url}`);
+
+            let finalRun = workerRun;
+            for (let attempt = 0; attempt < 150; attempt++) {
+              const result = await github.rest.actions.getWorkflowRun({
+                owner, repo, run_id: workerRun.id
+              });
+              finalRun = result.data;
+              if (finalRun.status === "completed") break;
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+
+            if (finalRun.status !== "completed") {
+              core.setFailed(`Remote Cline worker did not finish before the smoke-test deadline: ${finalRun.html_url}`);
+              return;
+            }
+            if (finalRun.conclusion !== "success") {
+              core.setFailed(`Remote Cline worker failed with conclusion ${finalRun.conclusion}: ${finalRun.html_url}`);
+              return;
+            }
+
+            const prs = await github.rest.pulls.list({
+              owner, repo, state: "open", base: baseRef,
+              head: `${owner}:cline/omnitrix-${requestId}`,
+              per_page: 10
+            });
+            if (prs.data.length !== 1) {
+              core.setFailed(`Worker run succeeded but its reviewable smoke PR could not be located: ${finalRun.html_url}`);
+              return;
+            }
+            core.info(`Remote Cline executed, tests passed, and created a reviewable PR (not merged): ${prs.data[0].html_url}`);
+            core.setOutput("worker_run_url", finalRun.html_url);
+            core.setOutput("pull_request_url", prs.data[0].html_url);
