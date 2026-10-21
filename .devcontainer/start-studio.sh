@@ -28,7 +28,7 @@ TOKEN="$(cat "$TOKEN_FILE")"
 # configure Codespaces secrets separately or explicitly set OMNITRIX_MODEL_CONFIG.
 if [[ -n "${OMNITRIX_MODEL_CONFIG:-}" ]]; then
   MODEL_CONFIG="$OMNITRIX_MODEL_CONFIG"
-elif [[ -f config/mobile.models.json && ( -n "${GEMINI_API_KEY:-}" || -n "${OPENROUTER_API_KEY:-}" ) ]]; then
+elif [[ -f config/mobile.models.json && ( -n "${GEMINI_API_KEY:-}" || -n "${GEMINI_API_KEY_1:-}" || -n "${OPENROUTER_API_KEY:-}" || -n "${OPENROUTER_API_KEY_1:-}" || -n "${GROQ_API_KEY:-}" || -n "${GROQ_API_KEY_1:-}" ) ]]; then
   MODEL_CONFIG="config/mobile.models.json"
 else
   MODEL_CONFIG="config/demo.models.json"
