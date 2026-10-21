@@ -11,7 +11,7 @@
       "visibility": "public"
     }
   },
-  "postCreateCommand": "python -m pip install -r requirements.txt && npm install -g cline",
+  "postCreateCommand": "bash scripts/install_ecc_reference.sh && python -m pip install -r requirements.txt && npm install -g cline",
   "postStartCommand": "bash .devcontainer/start-studio.sh",
   "customizations": {
     "vscode": {
