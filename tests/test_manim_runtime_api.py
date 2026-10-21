@@ -78,7 +78,7 @@ class ManimRuntimeApiTests(unittest.TestCase):
         ))
         runtime = make_runtime(tool)
         with patch("interfaces.web.server.shutil.which", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "Manim is not installed"):
+            with self.assertRaisesRegex(RuntimeError, "renderer dependencies are missing"):
                 runtime.start_manim_render({
                     "consent": True, "title": "Test",
                     "nodes": [{"label": "A", "x": 0, "y": 0}],
