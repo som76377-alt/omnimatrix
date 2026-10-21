@@ -10,6 +10,7 @@ from core.models.providers.groq import GroqAdapter
 from core.models.providers.gemini import GeminiAdapter
 from core.models.providers.openrouter import OpenRouterAdapter
 from core.agents.registry import AgentRegistry
+from core.orchestrator.omnitrix import Omnitrix
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +65,16 @@ class FreeModelRouteConfigurationTests(unittest.TestCase):
                 all(item in known for item in agent.preferred_models),
                 f"{agent.role} references an unregistered model profile",
             )
+
+    def test_model_calls_receive_current_identity_and_all_colleagues(self):
+        omnitrix = Omnitrix.from_config(MODEL_CONFIG, agent_config_path=AGENT_CONFIG)
+        assigned = self.registry.get("coding-minimax-m31-free")
+        contract = omnitrix._team_awareness_contract("support_coding", assigned)
+        self.assertIn("OMNITRIX TEAM IDENTITY AND COLLEAGUE CONTRACT", contract)
+        self.assertIn("profile=coding-minimax-m31-free", contract)
+        for role in ("intent_engineer", "orchestrator", "reasoning", "coding",
+                     "subject_solver", "research", "computation", "critic"):
+            self.assertIn(role, contract)
 
     def test_free_quota_profiles_never_declare_positive_estimated_cost(self):
         for model in self.registry.list_enabled():
