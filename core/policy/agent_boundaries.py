@@ -10,6 +10,7 @@ from typing import Final
 
 ROLE_TOOL_ALLOWLIST: Final[dict[str, frozenset[str]]] = {
     "intent_engineer": frozenset(),
+    "orchestrator": frozenset(),
     "reasoning": frozenset(),
     "coding": frozenset({"cline.coding", "workspace.inspect"}),
     "subject_solver": frozenset({"calculator", "manim_scientific_diagram"}),
@@ -20,6 +21,13 @@ ROLE_TOOL_ALLOWLIST: Final[dict[str, frozenset[str]]] = {
 }
 
 ROLE_BOUNDARIES: Final[dict[str, str]] = {
+    "orchestrator": (
+        "OWN coordination only: preserve the user's objective, assign each registered support role one "
+        "bounded task, specify expected output and acceptance criteria, order dependencies, and explain how "
+        "accepted findings connect to the lead deliverable. Do not solve subject matter, perform research, "
+        "calculate, edit files, call tools, or claim a specialist ran. Assign only available roles/tools; "
+        "return the required validated JSON coordination plan."
+    ),
     "intent_engineer": (
         "ONLY translate the request and relevant conversation context into the required "
         "validated task brief. Do not answer the user, solve the task, research, write code, "
