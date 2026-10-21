@@ -41,20 +41,33 @@ jobs:
             case "$provider" in
               gemini)
                 body=$(jq -n --arg model "$model" '{model:$model,input:"Reply with exactly KEY_OK."}')
-                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
-                  -H "Content-Type: application/json" -H "x-goog-api-key: $value" \
-                  -d "$body" 'https://generativelanguage.googleapis.com/v1beta/interactions')
+                endpoint='https://generativelanguage.googleapis.com/v1beta/interactions'
+                header_name='x-goog-api-key'
+                header_value="$value"
                 ;;
               openrouter|groq)
                 body=$(jq -n --arg model "$model" '{model:$model,messages:[{role:"user",content:"Reply with exactly KEY_OK."}],max_tokens:8}')
                 if [[ "$provider" == "openrouter" ]]; then endpoint='https://openrouter.ai/api/v1/chat/completions'; else endpoint='https://api.groq.com/openai/v1/chat/completions'; fi
-                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
-                  -H "Content-Type: application/json" -H "Authorization: Bearer $value" \
-                  -d "$body" "$endpoint")
+                header_name='Authorization'
+                header_value="Bearer $value"
                 ;;
             esac
+            for attempt in 1 2 3; do
+              if [[ "$header_name" == "x-goog-api-key" ]]; then
+                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
+                  -H "Content-Type: application/json" -H "$header_name: $header_value" \
+                  -d "$body" "$endpoint" || true)
+              else
+                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
+                  -H "Content-Type: application/json" -H "$header_name: $header_value" \
+                  -d "$body" "$endpoint" || true)
+              fi
+              [[ "$status" == "200" ]] && break
+              if [[ "$status" != "429" && "$status" != "500" && "$status" != "502" && "$status" != "503" && "$status" != "504" ]]; then break; fi
+              sleep "$attempt"
+            done
             if [[ "$status" != "200" ]]; then
-              echo "FAIL: $name generation probe returned HTTP $status for configured provider/model. Key/model route is not confirmed for inference."
+              echo "FAIL: $name generation probe returned HTTP $status for configured provider/model after bounded transient retries. Key/model route is not confirmed for inference."
               FAILED=1
               return 0
             fi
