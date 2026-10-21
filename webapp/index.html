@@ -93,7 +93,7 @@
 
     <section class="view" id="view-chat">
       <div class="view-heading chat-view-heading">
-        <div><p class="eyebrow"><span class="eyebrow-dash"></span> ASSISTANT / 02</p><h1>Talk to <em>Omnitrix.</em></h1><p class="view-subtitle">Chat, video generation, live job status, and playable output stay in this conversation. Video generation may incur a provider charge and asks for confirmation first.</p></div>
+        <div><p class="eyebrow"><span class="eyebrow-dash"></span> ASSISTANT / 02</p><h1>Talk to <em>Omnitrix.</em></h1><p class="view-subtitle">Code-rendered video requests stay in this conversation: Omnitrix plans a structured scene sequence, submits it to the Manim renderer, shows real job status, and embeds the returned MP4. This first path creates animated diagrams, not a full narrated multi-scene film.</p></div>
         <div class="heading-actions"><span class="provider-chip" id="chat-provider-chip">BACKEND OFFLINE</span><button class="secondary-button" id="new-chat">NEW SESSION ↻</button></div>
       </div>
       <div class="chat-layout">
@@ -114,7 +114,7 @@
             <textarea id="chat-input" rows="2" maxlength="8000" placeholder="Connect the runtime to start a conversation…" aria-label="Message Omnitrix" disabled></textarea>
             <div class="composer-bottom"><span id="chat-char-count">0 / 8000</span><button class="send-button" type="submit" id="send-message" disabled>SEND <span>↑</span></button></div>
           </form>
-          <p class="composer-disclaimer">Files are uploaded to your connected private runtime and may be sent to the configured provider. Video generation asks for paid-cost confirmation before submission. Available storage, provider quotas, and model context still apply.</p>
+          <p class="composer-disclaimer">Files are uploaded to your connected private runtime and may be sent to the configured provider for analysis. Code-rendered video uses the configured chat model for planning and the local Manim renderer for the animation. Available storage, renderer availability, and model quotas still apply.</p>
         </div>
         </div>
         <aside class="chat-side">
