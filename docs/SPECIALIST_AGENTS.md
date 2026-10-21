@@ -1,7 +1,7 @@
 # Specialist agents and model candidates
 
-**Snapshot:** 18 October 2026  
-**Status:** Role routing, a Google adapter baseline, and an opt-in OpenRouter adapter are implemented on the feature branch. The free models are configured but have not yet passed Omnitrix's own live benchmarks. Anthropic/OpenAI adapters and cross-provider premium routing remain future work.
+**Snapshot:** 21 October 2026  
+**Status:** Role routing and Google, OpenRouter, and Groq provider adapters are present in the current repository. `config/mobile.models.json` defines six provider/model/key slots (two Gemini, two OpenRouter, two Groq). Configuration and adapter presence do not prove credentials, quotas, model availability, or live inference; the six-route smoke test must pass before claiming all six are operational. Groq remains explicitly gated unless a no-cost quota is confirmed. Anthropic/OpenAI direct adapters and cross-provider premium routing remain future work.
 
 ## Design rule
 
