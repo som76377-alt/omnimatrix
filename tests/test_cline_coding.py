@@ -4,9 +4,21 @@ import tempfile
 import unittest
 
 from core.tools.implementations.cline_coding import ClineCodingTool
+from core.tools.bootstrap import build_tool_registry
 
 
 class ClineCodingToolTests(unittest.TestCase):
+    def test_registry_requires_explicit_enablement_and_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            default_registry = build_tool_registry()
+            self.assertFalse(default_registry.has("cline.coding"))
+            with self.assertRaises(ValueError):
+                build_tool_registry(enable_cline=True)
+            enabled_registry = build_tool_registry(directory, enable_cline=True)
+            self.assertTrue(enabled_registry.has("cline.coding"))
+            self.assertEqual(enabled_registry.get("cline.coding").capabilities,
+                             frozenset({"coding.execute"}))
+
     def test_missing_cli_reports_actionable_unavailable_status(self):
         with tempfile.TemporaryDirectory() as directory:
             tool = ClineCodingTool(directory, executable=None)
