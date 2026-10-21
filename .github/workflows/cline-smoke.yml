@@ -25,14 +25,14 @@ jobs:
           npm install --global cline
           cline --version
 
-      - name: Run Cline against an empty temporary workspace using OpenRouter
+      - name: Run Cline against an empty temporary workspace using Groq
         shell: bash
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "$OPENROUTER_API_KEY" ]]; then
-            echo "FAIL: OPENROUTER_API_KEY is missing."
+          if [[ -z "$GROQ_API_KEY" ]]; then
+            echo "FAIL: GROQ_API_KEY is missing."
             exit 1
           fi
           workdir="$RUNNER_TEMP/cline-smoke-workspace"
@@ -49,7 +49,14 @@ jobs:
             --auto-approve true \
             --json \
             "Create exactly one file named cline-smoke.txt in the current workspace containing exactly CLINE_WORKED. Do not use network access and do not inspect or modify files outside this workspace. Finish after creating the file." \
-            > "$RUNNER_TEMP/cline-output.ndjson"
+            > "$RUNNER_TEMP/cline-output.ndjson" 2>&1
+          cline_exit=$?
+          set -e
+          if [[ "$cline_exit" -ne 0 ]]; then
+            echo "Cline returned non-zero exit status: $cline_exit"
+            tail -n 16 "$RUNNER_TEMP/cline-output.ndjson" || true
+            exit 1
+          fi
           if [[ ! -f "$workdir/cline-smoke.txt" ]]; then
             echo "FAIL: Cline CLI exited but did not create the expected file."
             echo "Last Cline output lines (secrets are not printed):"
@@ -60,4 +67,4 @@ jobs:
             echo "FAIL: Cline created the file, but its contents did not match the expected result."
             exit 1
           fi
-          echo "PASS: Cline CLI installed, authenticated through OpenRouter, called a model, and completed a real file-write task in a disposable workspace."
+          echo "PASS: Cline CLI installed, authenticated through Groq, called a model, and completed a real file-write task in a disposable workspace."
