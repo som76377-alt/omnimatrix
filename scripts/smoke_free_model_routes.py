@@ -77,7 +77,17 @@ def main() -> int:
                 results.append(result)
                 print(json.dumps(result, sort_keys=True))
                 continue
-        elif model.metadata.get("cost_class") != "user_provided_free_quota":
+        elif model.metadata.get("cost_class") == "user_provided_free_quota":
+            pass
+        elif (
+            model.provider == "groq"
+            and os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() == "true"
+        ):
+            # The model registry correctly retains Groq's general provider-billed
+            # class. Only this explicit, operator-confirmed smoke run can test it
+            # as user-provided free quota; never reinterpret the metadata globally.
+            pass
+        else:
             result.update(status="refused", reason="unrecognized_cost_class")
             results.append(result)
             print(json.dumps(result, sort_keys=True))
