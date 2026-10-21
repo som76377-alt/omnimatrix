@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -19,6 +20,24 @@ from core.orchestrator.omnitrix import Omnitrix, _safe_provider_failure_reason
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENT_CONFIG = ROOT / "config" / "agents.json"
+
+
+def agents_for_test_models(overrides):
+    """Keep tests aligned to their intentionally different model fixtures."""
+    source = AgentRegistry.load(AGENT_CONFIG)
+    definitions = [
+        replace(
+            agent,
+            preferred_models=tuple(overrides.get(agent.role, agent.preferred_models)),
+        )
+        for agent in source.list_enabled()
+    ]
+    return AgentRegistry(
+        definitions,
+        enabled=source.enabled,
+        intent_mode=source.intent_mode,
+        critic_mode=source.critic_mode,
+    )
 
 
 class ScriptedAdapter(ModelAdapter):
@@ -252,7 +271,16 @@ class SpecialistPipelineTests(unittest.TestCase):
         omnitrix = Omnitrix(
             registry=models,
             adapter_registry=adapters,
-            agent_registry=AgentRegistry.load(AGENT_CONFIG),
+            agent_registry=agents_for_test_models({
+                "intent_engineer": ["omnitrix-primary", "gemini-3.8-flash"],
+                "orchestrator": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "reasoning": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "coding": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "subject_solver": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "research": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "computation": ["reasoning-nemotron-super-free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                "critic": ["omnitrix-primary", "gemini-3.8-flash", "reasoning-nemotron-super-free"],
+            }),
             budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
         )
         return omnitrix, primary_adapter, specialist_adapter
@@ -374,7 +402,15 @@ class SpecialistPipelineTests(unittest.TestCase):
             omnitrix = Omnitrix(
                 registry=models,
                 adapter_registry=adapters,
-                agent_registry=AgentRegistry.load(AGENT_CONFIG),
+                agent_registry=agents_for_test_models({
+                    "coding": ["cohere/north-mini-code:free"],
+                    "orchestrator": ["nvidia/nemotron-3-super-120b-a12b:free"],
+                    "reasoning": ["nvidia/nemotron-3-super-120b-a12b:free"],
+                    "subject_solver": ["nvidia/nemotron-3-super-120b-a12b:free"],
+                    "research": ["nvidia/nemotron-3-super-120b-a12b:free"],
+                    "computation": ["nvidia/nemotron-3-super-120b-a12b:free"],
+                    "critic": ["cohere/north-mini-code:free", "nvidia/nemotron-3-super-120b-a12b:free"],
+                }),
                 budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
             )
 
@@ -410,9 +446,9 @@ class SpecialistPipelineTests(unittest.TestCase):
                 required_capabilities=frozenset({"reasoning"}),
             )
 
-        self.assertEqual(selected.name, "reasoning-nemotron-super-free")
+        self.assertEqual(selected.name, "coding-minimax-m31-free")
         self.assertEqual(selected.provider, "openrouter")
-        self.assertEqual(selected.model_id, "nvidia/nemotron-3-super-120b-a12b:free")
+        self.assertEqual(selected.model_id, "minimax/minimax-m3.1-flash:free")
 
     def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
         models = ModelRegistry()
