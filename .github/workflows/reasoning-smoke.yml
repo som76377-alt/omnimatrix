@@ -177,6 +177,7 @@ jobs:
       - name: Run live smoke benchmark
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           CASE_LIMIT: ${{ inputs.case_limit || '1' }}
         shell: bash
         run: |

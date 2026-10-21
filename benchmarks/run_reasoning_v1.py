@@ -54,20 +54,22 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
 
 
 def run(config_path: Path, cases_path: Path, limit: int) -> dict[str, Any]:
-    if not os.getenv("OPENROUTER_API_KEY"):
-        raise RuntimeError(
-            "OPENROUTER_API_KEY is not set in this runtime. "
-            "Configure it in the environment where this command is running; do not paste it into chat."
-        )
-
     registry = ModelConfigLoader().load(config_path)
-    model = registry.get("reasoning-nemotron-super-free")
+    model = registry.get("orchestrator-nemotron-ultra-free")
+    if model is None:
+        # Backward-compatible path for standalone benchmark configs that still use the older profile.
+        model = registry.get("reasoning-nemotron-super-free")
     if model is None or not model.enabled:
         raise RuntimeError("The configured Reasoning model is missing or disabled.")
     if model.provider != "openrouter" or not model.model_id or not model.model_id.endswith(":free"):
         raise RuntimeError("Refusing live benchmark: the selected model is not explicitly a :free OpenRouter route.")
     if model.metadata.get("estimated_cost_usd") != 0:
         raise RuntimeError("Refusing live benchmark: model profile does not declare zero estimated cost.")
+    api_key_env = model.metadata.get("api_key_env", "OPENROUTER_API_KEY")
+    if not isinstance(api_key_env, str) or not os.getenv(api_key_env):
+        raise RuntimeError(
+            f"{api_key_env} is not set in this runtime. Configure the repository Actions secret; never paste it into chat."
+        )
 
     adapters = build_adapter_registry(registry)
     adapter = adapters.get(model.name)
