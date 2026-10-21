@@ -1074,6 +1074,45 @@ class StudioRuntime:
             ),
         )
 
+        provider_keys_detected = {
+            "gemini_primary": bool(os.getenv("GEMINI_API_KEY")),
+            "gemini_secondary": bool(os.getenv("GEMINI_API_KEY_1")),
+            "openrouter_primary": bool(os.getenv("OPENROUTER_API_KEY")),
+            "openrouter_secondary": bool(os.getenv("OPENROUTER_API_KEY_1")),
+            "groq_primary": bool(os.getenv("GROQ_API_KEY")),
+            "groq_secondary": bool(os.getenv("GROQ_API_KEY_1")),
+        }
+        configured_model_routes = []
+        agent_registry = self.omnitrix.agent_registry
+        for model in configured_live_models:
+            adapter_registered = self.omnitrix.adapter_registry.has(model.name)
+            adapter = (
+                self.omnitrix.adapter_registry.get(model.name)
+                if adapter_registered else None
+            )
+            key_name = model.metadata.get(
+                "api_key_env",
+                {"google": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY", "groq": "GROQ_API_KEY"}.get(model.provider, ""),
+            )
+            route_ready = bool(adapter is not None and adapter.is_available())
+            preferred_by_roles = []
+            if agent_registry is not None:
+                for agent in agent_registry.list_enabled():
+                    if model.name in agent.preferred_models or model.model_id in agent.preferred_models:
+                        preferred_by_roles.append(agent.role)
+            configured_model_routes.append({
+                "profile": model.name,
+                "provider": model.provider,
+                "model": model.model_id or model.name,
+                "api_key_env": key_name,
+                "key_detected": bool(os.getenv(key_name)) if key_name else False,
+                "adapter_registered": adapter_registered,
+                "ready": route_ready,
+                "status": "ready" if route_ready else "provider_key_missing_or_adapter_unavailable",
+                "preferred_by_roles": preferred_by_roles,
+            })
+        ready_model_route_count = sum(1 for route in configured_model_routes if route["ready"])
+
         available = self.public_chat_enabled and bool(available_models)
         if not self.public_chat_enabled:
             reason = "public_chat_disabled"
@@ -1108,6 +1147,12 @@ class StudioRuntime:
             ],
             "gemini_key_detected": bool(os.getenv("GEMINI_API_KEY")),
             "openrouter_key_detected": bool(os.getenv("OPENROUTER_API_KEY")),
+            "provider_keys_detected": provider_keys_detected,
+            "all_six_key_slots_detected": all(provider_keys_detected.values()),
+            "configured_model_routes": configured_model_routes,
+            "configured_model_route_count": len(configured_model_routes),
+            "ready_model_route_count": ready_model_route_count,
+            "route_readiness_note": "Ready means the configured adapter sees its key. It does not prove a successful model inference; use execution trace/provider response metadata for that.",
             "reasoning_specialist_available": reasoning_specialist_available,
             "preferred_reasoning_model": (
                 reasoning_model.model_id or reasoning_model.name
