@@ -56,7 +56,16 @@ def main() -> int:
             "key_slot": key_env,
         }
 
-        if model.metadata.get("estimated_cost_usd") != 0:
+        if model.provider == "groq" and os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() != "true":
+            result.update(
+                status="skipped_requires_free_quota_confirmation",
+                reason="Groq models have per-token pricing; no inference request was sent without explicit free-quota confirmation.",
+            )
+            results.append(result)
+            print(json.dumps(result, sort_keys=True))
+            continue
+
+        if model.metadata.get("estimated_cost_usd") != 0 and model.provider != "groq":
             result.update(status="refused", reason="non_zero_estimated_cost")
             results.append(result)
             print(json.dumps(result, sort_keys=True))
@@ -169,8 +178,12 @@ def main() -> int:
 
     failed = [item for item in results if item.get("status") == "failed" or item.get("status") == "refused"]
     passed = [item for item in results if item.get("status") in {"passed", "passed_configured_identity_only"}]
+    skipped = [item for item in results if str(item.get("status", "")).startswith("skipped_")]
     if failed:
         print(f"FAIL: {len(failed)} route(s) failed or were refused; no paid fallback was attempted.")
+        return 1
+    if skipped:
+        print(f"PARTIAL: {len(passed)} routes passed; {len(skipped)} route(s) were skipped until free-quota eligibility is explicitly confirmed.")
         return 1
     print(f"PASS: all {len(passed)} configured routes returned non-empty provider responses; model identity source is recorded per route.")
     return 0
