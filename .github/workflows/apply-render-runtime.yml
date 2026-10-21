@@ -7,6 +7,8 @@ on:
       - ".github/workflows/apply-render-runtime.yml"
       - "scripts/render_build.sh"
       - "scripts/render_start.sh"
+      - "interfaces/web/server.py"
+      - "scripts/test_cline_orchestrator_integration.py"
       - "render.yaml"
   workflow_dispatch:
 
@@ -62,7 +64,18 @@ jobs:
             --header 'Accept: application/json' \
             --header 'Content-Type: application/json' \
             --data "$env_body"
-          echo "Render service build/start commands updated; protected Cline API flag set."
+          runtime_token="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          echo "::add-mask::$runtime_token"
+          printf 'OMNITRIX_RUNTIME_TOKEN=%s\n' "$runtime_token" >> "$GITHUB_ENV"
+          token_body=$(jq -n --arg value "$runtime_token" '{value: $value}')
+          curl -sS --fail --output /dev/null \
+            --request PUT \
+            --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars/OMNITRIX_RUNTIME_TOKEN" \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data "$token_body"
+          echo "Render service commands, protected Cline route, and private runtime token configured (token hidden)."
 
       - name: Wait for the auto-deployed revision and verify Cline CLI readiness
         shell: bash
@@ -106,4 +119,28 @@ jobs:
           health=$(curl -sS --fail --retry 5 --retry-delay 3 \
             'https://omnitrix-studio.onrender.com/api/mobile/health')
           jq -e '.cline_worker_enabled == true and .cline_cli_ready == true and .cline_provider_key_detected == true' <<< "$health" >/dev/null
-          echo "PASS: protected Cline worker is registered and ready to attempt. Provider inference/authentication still requires a real Cline task."
+          echo "PASS: protected Cline worker is registered and ready to attempt."
+      
+      - name: Execute a real Cline task through the live hosted Omnitrix orchestrator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$OMNITRIX_RUNTIME_TOKEN" ]]; then
+            echo "FAIL: runtime token was not carried into the smoke-test step."
+            exit 1
+          fi
+          http_status=$(curl -sS --max-time 300 -o "$RUNNER_TEMP/cline-live-smoke.json" -w '%{http_code}' \
+            --request POST \
+            --url "https://omnitrix-studio.onrender.com/api/admin/cline/smoke" \
+            --header "Authorization: Bearer $OMNITRIX_RUNTIME_TOKEN" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data '{}')
+          if [[ "$http_status" != "200" ]]; then
+            echo "FAIL: live Cline smoke endpoint returned HTTP $http_status."
+            jq '{ok, code, error, exit_code}' "$RUNNER_TEMP/cline-live-smoke.json" 2>/dev/null || true
+            exit 1
+          fi
+          jq -e '.ok == true and .exit_code == 0 and (.persistence | contains("temporary integration workspace only"))' \
+            "$RUNNER_TEMP/cline-live-smoke.json" >/dev/null
+          echo "PASS: live Render Omnitrix ran Cline through the orchestration loop; the real coding task passed in a temporary workspace and did not change repository files."
