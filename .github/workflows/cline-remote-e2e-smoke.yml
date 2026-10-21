@@ -28,7 +28,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const baseRef = "fix/model-coordination-live-checks";
-            const requestId = `e2e-${context.runId}-${context.runAttempt}`;
+            const requestId = `e2e-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT || "1"}`;
             const startedAt = Date.now();
 
             await github.rest.actions.createWorkflowDispatch({
@@ -99,15 +99,19 @@ jobs:
               return;
             }
 
-            const prs = await github.rest.pulls.list({
-              owner, repo, state: "open", base: baseRef,
-              head: `${owner}:cline/omnitrix-${requestId}`,
-              per_page: 10
-            });
-            if (prs.data.length !== 1) {
-              core.setFailed(`Worker run succeeded but its reviewable smoke PR could not be located: ${finalRun.html_url}`);
+            const branchName = `cline/omnitrix-${requestId}`;
+            let workerBranch;
+            try {
+              workerBranch = await github.rest.repos.getBranch({owner, repo, branch: branchName});
+            } catch (error) {
+              core.setFailed(`Remote Cline worker reported success but did not push the expected review branch: ${finalRun.html_url}`);
               return;
             }
-            core.info(`Remote Cline executed, tests passed, and created a reviewable PR (not merged): ${prs.data[0].html_url}`);
+            const changedPaths = await github.rest.repos.getCommit({
+              owner, repo, ref: workerBranch.data.commit.sha
+            });
+            core.info(`Remote Cline executed and pushed reviewable changes to ${branchName}; worker SHA ${workerBranch.data.commit.sha}`);
+            core.info("The repository currently blocks the built-in Actions token from opening PRs. The Render runtime fallback is covered by unit tests; this worker smoke verifies real Cline execution and branch publication without auto-merging.");
             core.setOutput("worker_run_url", finalRun.html_url);
-            core.setOutput("pull_request_url", prs.data[0].html_url);
+            core.setOutput("worker_branch", branchName);
+            core.setOutput("worker_commit", workerBranch.data.commit.sha);
