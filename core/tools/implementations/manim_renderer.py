@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from typing import Any
+import importlib.util
 
 from core.tools.base import Tool, ToolResult
 
@@ -110,11 +111,7 @@ class ManimRendererTool(Tool):
 
         executable = shutil.which("manim")
         if not executable:
-            return ToolResult(
-                success=False,
-                error="Manim is not installed in this runtime. Install the pinned Manim dependency in the worker image and restart the service.",
-                metadata={"tool": self.name, "available": False, "executed": False}
-            )
+            return self._render_fallback(title, nodes, arrows, quality)
 
         output_root = Path(os.environ.get("OMNITRIX_ARTIFACT_DIR", "/tmp/omnitrix-artifacts")).expanduser()
         try:
@@ -163,6 +160,143 @@ class ManimRendererTool(Tool):
 
         except OSError as exc:
             return ToolResult(success=False, error="Manim output storage is unavailable: " + str(exc), metadata={"tool": self.name})
+
+    @staticmethod
+    def fallback_available() -> bool:
+        """Return whether the pure-Python raster/MP4 fallback dependencies are importable."""
+        return importlib.util.find_spec("PIL") is not None and importlib.util.find_spec("imageio_ffmpeg") is not None
+
+    def _render_fallback(
+        self,
+        title: str,
+        nodes: list[dict[str, Any]],
+        arrows: list[tuple[int, int]],
+        quality: str,
+    ) -> ToolResult:
+        """Render a real MP4 using generated frames when Manim is absent."""
+        if not self.fallback_available():
+            return ToolResult(
+                success=False,
+                error="Neither Manim nor the bundled Pillow/imageio-ffmpeg fallback is available.",
+                metadata={"tool": self.name, "available": False, "executed": False},
+            )
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import imageio_ffmpeg
+
+            output_root = Path(os.environ.get("OMNITRIX_ARTIFACT_DIR", "/tmp/omnitrix-artifacts")).expanduser()
+            output_root.mkdir(parents=True, exist_ok=True)
+            portrait = len(nodes) > 1 and max(float(item["x"]) for item in nodes) - min(float(item["x"]) for item in nodes) < 0.2 and max(float(item["y"]) for item in nodes) - min(float(item["y"]) for item in nodes) > 0.5
+            width, height = (720, 1280) if portrait else (1280, 720)
+            fps = 24
+            duration = max(4.5, 1.2 + 0.55 * len(nodes) + 0.35 * len(arrows))
+            frame_count = min(216, int(duration * fps))
+            scale = 1.0 if quality == "low" else 1.15
+            box_w, box_h = ((int(560 * scale), int(108 * scale)) if portrait else (int(290 * scale), int(100 * scale)))
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            bold_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            try:
+                title_font = ImageFont.truetype(bold_path, 34 if portrait else 31)
+                label_font = ImageFont.truetype(font_path, 25 if portrait else 21)
+            except OSError:
+                title_font = ImageFont.load_default()
+                label_font = ImageFont.load_default()
+            positions = []
+            for item in nodes:
+                px = 60 + (float(item["x"]) + 5.5) / 11.0 * (width - 120)
+                py = height * 0.52 - float(item["y"]) / 2.8 * (height * 0.31)
+                positions.append((int(px), int(py)))
+            # The supplied diagram coordinates are normalized into a safe canvas.
+            if portrait:
+                ys = [p[1] for p in positions]
+                if max(ys) - min(ys) < height * 0.2:
+                    step = min(175, int(680 / max(1, len(nodes) - 1)))
+                    positions = [(width // 2, height // 2 - (len(nodes) - 1) * step // 2 + i * step) for i in range(len(nodes))]
+            else:
+                xs = [p[0] for p in positions]
+                if max(xs) - min(xs) < width * 0.25 and len(nodes) > 1:
+                    step = int((width - box_w - 100) / (len(nodes) - 1))
+                    positions = [(box_w // 2 + 50 + i * step, height // 2 + 20) for i in range(len(nodes))]
+            output_name = re.sub(r"[^a-zA-Z0-9_-]+", "-", title).strip("-")[:36] or "science-diagram"
+            destination = output_root / f"{output_name}-{os.urandom(5).hex()}.mp4"
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+            writer = imageio_ffmpeg.write_frames(
+                str(destination), (width, height), fps=fps, codec="libx264",
+                pix_fmt_in="rgb24", pix_fmt_out="yuv420p", quality=8 if quality == "low" else 9,
+                macro_block_size=2, ffmpeg_log_level="error",
+            )
+            writer.send(None)
+            try:
+                for frame_index in range(frame_count):
+                    elapsed = frame_index / fps
+                    reveal_nodes = min(len(nodes), max(0, int(elapsed / max(0.45, duration * 0.58 / len(nodes))) + 1))
+                    reveal_arrows = max(0, min(len(arrows), int((elapsed - duration * 0.62) / max(0.18, duration * 0.28 / max(1, len(arrows))) + 1)))
+                    image = Image.new("RGB", (width, height), (9, 12, 16))
+                    draw = ImageDraw.Draw(image)
+                    draw.text((width // 2, 55 if portrait else 42), title, font=title_font, fill=(235, 241, 244), anchor="mt")
+                    draw.line((width * 0.08, 112 if portrait else 96, width * 0.92, 112 if portrait else 96), fill=(57, 76, 86), width=2)
+                    for arrow_index, (start, end) in enumerate(arrows[:reveal_arrows]):
+                        if start >= reveal_nodes or end >= reveal_nodes:
+                            continue
+                        x1, y1 = positions[start]
+                        x2, y2 = positions[end]
+                        dx, dy = x2 - x1, y2 - y1
+                        length = max(1.0, (dx * dx + dy * dy) ** 0.5)
+                        ux, uy = dx / length, dy / length
+                        pad_x = box_w * 0.48
+                        pad_y = box_h * 0.48
+                        if abs(dx) > abs(dy):
+                            sx, sy = x1 + int(ux * pad_x), y1 + int(uy * min(pad_y, abs(dy) / 2))
+                            ex, ey = x2 - int(ux * pad_x), y2 - int(uy * min(pad_y, abs(dy) / 2))
+                        else:
+                            sx, sy = x1 + int(ux * min(pad_x, abs(dx) / 2)), y1 + int(uy * pad_y)
+                            ex, ey = x2 - int(ux * min(pad_x, abs(dx) / 2)), y2 - int(uy * pad_y)
+                        draw.line((sx, sy, ex, ey), fill=(73, 210, 160), width=4)
+                        head = 17
+                        left = (ex - int(head * (ux * 0.85 - uy * 0.55)), ey - int(head * (uy * 0.85 + ux * 0.55)))
+                        right = (ex - int(head * (ux * 0.85 + uy * 0.55)), ey - int(head * (uy * 0.85 - ux * 0.55)))
+                        draw.polygon([(ex, ey), left, right], fill=(73, 210, 160))
+                    for node_index, item in enumerate(nodes[:reveal_nodes]):
+                        cx, cy = positions[node_index]
+                        rect = (cx - box_w // 2, cy - box_h // 2, cx + box_w // 2, cy + box_h // 2)
+                        draw.rounded_rectangle(rect, radius=18, fill=(20, 28, 34), outline=(73, 210, 160), width=3)
+                        label = str(item["label"])
+                        max_chars = 34 if portrait else 22
+                        wrapped = []
+                        words = label.split()
+                        line = ""
+                        for word in words:
+                            candidate = (line + " " + word).strip()
+                            if len(candidate) > max_chars and line:
+                                wrapped.append(line)
+                                line = word
+                            else:
+                                line = candidate
+                        if line:
+                            wrapped.append(line)
+                        text_y = cy - int((len(wrapped) - 1) * (label_font.size * 0.62))
+                        for row_index, row in enumerate(wrapped[:3]):
+                            draw.text((cx, text_y + row_index * int(label_font.size * 1.25)), row, font=label_font, fill=(240, 245, 247), anchor="mm")
+                    footer = "OMNITRIX · CODE-RENDERED DIAGRAM"
+                    draw.text((width // 2, height - 38), footer, font=label_font, fill=(126, 147, 157), anchor="mm")
+                    writer.send(image.tobytes())
+            finally:
+                writer.close()
+            size = destination.stat().st_size if destination.exists() else 0
+            if size < 2048 or size > 24 * 1024 * 1024:
+                destination.unlink(missing_ok=True)
+                return ToolResult(success=False, error="Fallback MP4 failed the artifact size check.", metadata={"tool": self.name, "available": True, "artifact_found": False})
+            return ToolResult(
+                success=True,
+                output={"artifact_path": str(destination), "format": "mp4", "bytes": size},
+                metadata={"tool": self.name, "renderer": "python-raster-ffmpeg-fallback", "quality": quality, "node_count": len(nodes), "arrow_count": len(arrows), "verified": True, "manim_available": False},
+            )
+        except Exception as exc:
+            return ToolResult(
+                success=False,
+                error="Code-rendered fallback failed safely: " + type(exc).__name__,
+                metadata={"tool": self.name, "available": True, "executed": False},
+            )
 
     @staticmethod
     def _scene_source(title: str, nodes: list[dict[str, Any]], arrows: list[tuple[int, int]]) -> str:
