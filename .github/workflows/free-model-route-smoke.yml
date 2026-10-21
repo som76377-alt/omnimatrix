@@ -2,7 +2,7 @@ name: Verify all six free model routes
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/model-coordination-live-checks]
     paths:
       - ".github/workflows/free-model-route-smoke.yml"
       - "scripts/smoke_free_model_routes.py"
