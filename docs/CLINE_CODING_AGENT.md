@@ -35,3 +35,7 @@ The hosted Render service does not install or enable Cline automatically. It nee
 - A successful exit is not proof the code is correct. The lead coding specialist must compare changed-file/test metadata against acceptance criteria; the critic and CI/independent review remain the verification gate.
 - Supporting specialist calls run only on complex hybrid tasks; their findings are explicitly marked untrusted and must be checked against the user's request. This is coordinated specialist context, not a claim that every role runs on every chat.
 - This adapter invokes the actual Cline CLI when available; it does not train or fine-tune the model.
+
+## Hosted free-tier safety limit
+
+The hosted Render free instance has a 512 MiB memory limit. A live Cline CLI execution was attempted in a disposable workspace and Render reported that the instance was OOM-killed. The hosted Cline API is therefore disabled by default on this tier; do not re-enable it there. The real Cline-through-Omnitrix integration test passes on a GitHub Actions runner with a temporary workspace. To execute Cline on a hosted runtime, move the worker to a separate environment with sufficient memory and run the bounded integration test there before enabling the endpoint.
