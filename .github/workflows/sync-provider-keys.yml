@@ -58,15 +58,9 @@ jobs:
                 ;;
             esac
             for attempt in 1 2 3; do
-              if [[ "$header_name" == "x-goog-api-key" ]]; then
-                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
-                  -H "Content-Type: application/json" -H "$header_name: $header_value" \
-                  -d "$body" "$endpoint" || true)
-              else
-                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
-                  -H "Content-Type: application/json" -H "$header_name: $header_value" \
-                  -d "$body" "$endpoint" || true)
-              fi
+              status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
+                -H "Content-Type: application/json" -H "$header_name: $header_value" \
+                -d "$body" "$endpoint" || true)
               [[ "$status" == "200" ]] && break
               if [[ "$status" != "000" && "$status" != "429" && "$status" != "500" && "$status" != "502" && "$status" != "503" && "$status" != "504" ]]; then break; fi
               sleep "$attempt"
@@ -181,5 +175,5 @@ jobs:
           jq -e --argjson expected "$expected_ready" '.gemini_key_detected == true and .openrouter_key_detected == true and .all_six_key_slots_detected == true and .configured_model_route_count == 6 and .ready_model_route_count == $expected and ([.configured_model_routes[].model] | unique | length == 6)' \
             <<< "$health" >/dev/null
           echo "PASS: all six key slots are visible and six distinct model profiles are registered; ready inference routes=$expected_ready."
-          jq -r '.configured_model_routes[] | "ROUTE: \(.profile) | \(.provider) | \(.model) | \(.status) | roles=\(.preferred_by_roles|join(","))"' <<< "$health"
+          jq -r '.configured_model_routes[] | "ROUTE: \\(.profile) | \\(.provider) | \\(.model) | \\(.status) | roles=\\(.preferred_by_roles|join(","))"' <<< "$health"
           echo "Note: key visibility and adapter readiness do not prove that inference has succeeded; provider response metadata is the execution evidence."
