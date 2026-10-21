@@ -19,6 +19,8 @@ services:
         value: openrouter
       - key: CLINE_MODEL
         value: minimax/minimax-m3.1-flash:free
+      - key: GROQ_FREE_QUOTA_CONFIRMED
+        value: "false"
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_API_KEY_1
