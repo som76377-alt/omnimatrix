@@ -23,16 +23,28 @@ fi
 chmod 600 "$TOKEN_FILE"
 TOKEN="$(cat "$TOKEN_FILE")"
 
+# Prefer the real multi-provider profile when a runtime credential is present.
+# GitHub Actions secrets do not automatically become Codespaces environment variables;
+# configure Codespaces secrets separately or explicitly set OMNITRIX_MODEL_CONFIG.
+if [[ -n "${OMNITRIX_MODEL_CONFIG:-}" ]]; then
+  MODEL_CONFIG="$OMNITRIX_MODEL_CONFIG"
+elif [[ -f config/mobile.models.json && ( -n "${GEMINI_API_KEY:-}" || -n "${OPENROUTER_API_KEY:-}" ) ]]; then
+  MODEL_CONFIG="config/mobile.models.json"
+else
+  MODEL_CONFIG="config/demo.models.json"
+fi
+
 # This supervisor restarts the server after the safe main-branch fast-forward
 # updater exits the process. No shell text is accepted from the browser.
 nohup bash -c '
   set +e
   token="$1"
+  model_config="$2"
   while true; do
     python -m interfaces.web.server \
       --host 0.0.0.0 \
       --port 8000 \
-      --config config/demo.models.json \
+      --config "$model_config" \
       --workspace-root . \
       --allow-workspace-read \
       --allow-workspace-write \
@@ -55,12 +67,16 @@ nohup bash -c '
     fi
     sleep 2
   done
-' omnitrix-studio-supervisor "$TOKEN" </dev/null > "$LOG_FILE" 2>&1 &
+' omnitrix-studio-supervisor "$TOKEN" "$MODEL_CONFIG" </dev/null > "$LOG_FILE" 2>&1 &
 echo "$!" > "$PID_FILE"
 chmod 600 "$PID_FILE" "$LOG_FILE" 2>/dev/null || true
 
-echo "OMNITRIX STUDIO STARTING on private Codespaces port 8000."
+echo "OMNITRIX STUDIO STARTING on Codespaces port 8000."
+echo "Model profile selected: $MODEL_CONFIG"
 echo "Runtime access token (keep private; paste into the Omnitrix Android app): $TOKEN"
 echo "Server log: tail -f $LOG_FILE"
 echo "The app will fast-forward a clean checkout of main when GitHub changes arrive."
 echo "Cline CLI is installed by the devcontainer. First use: run cline auth once in the Codespaces terminal to configure its model provider."
+if [[ "$MODEL_CONFIG" == "config/demo.models.json" ]]; then
+  echo "DEMO MODE: specialist routing is simulated/offline. Add GEMINI_API_KEY or OPENROUTER_API_KEY as a Codespaces secret, or set OMNITRIX_MODEL_CONFIG, to enable real-model orchestration."
+fi
