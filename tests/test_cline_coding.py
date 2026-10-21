@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from core.tools.implementations.cline_coding import ClineCodingTool
 from core.tools.bootstrap import build_tool_registry
@@ -74,6 +75,9 @@ class ClineCodingToolTests(unittest.TestCase):
                 "from pathlib import Path\n"
                 "import sys\n"
                 "prompt = sys.argv[-1]\n"
+                "assert sys.argv[sys.argv.index('--provider') + 1] == 'openrouter'\n"
+                "assert sys.argv[sys.argv.index('--model') + 1] == 'minimax/minimax-m3.1-flash:free'\n"
+                "assert sys.argv[sys.argv.index('--key') + 1] == 'unit-test-provider-key'\n"
                 "assert 'Shared intent, constraints, and context' in prompt\n"
                 "assert 'reasoning specialist found the edge case' in prompt\n"
                 "assert 'parser returns 400 for malformed input' in prompt\n"
@@ -84,14 +88,19 @@ class ClineCodingToolTests(unittest.TestCase):
             )
             fake_cline.chmod(0o755)
             tool = ClineCodingTool(root, executable=str(fake_cline))
-            result = tool.execute(
-                task="Update sample.py and report what changed",
-                context="Shared context from Omnitrix planning",
-                related_agent_findings=["The reasoning specialist found the edge case"],
-                acceptance_criteria=["parser returns 400 for malformed input"],
-                files_in_scope=["core/parser.py"],
-                mode="implement", timeout_seconds=30,
-            )
+            with patch.dict(os.environ, {
+                "OPENROUTER_API_KEY": "unit-test-provider-key",
+                "CLINE_PROVIDER": "openrouter",
+                "CLINE_MODEL": "minimax/minimax-m3.1-flash:free",
+            }):
+                result = tool.execute(
+                    task="Update sample.py and report what changed",
+                    context="Shared context from Omnitrix planning",
+                    related_agent_findings=["The reasoning specialist found the edge case"],
+                    acceptance_criteria=["parser returns 400 for malformed input"],
+                    files_in_scope=["core/parser.py"],
+                    mode="implement", timeout_seconds=30,
+                )
             self.assertTrue(result.success, result.error)
             self.assertEqual(source.read_text(encoding="utf-8"), "after = True\n")
             self.assertTrue(result.metadata["changes_applied"])
