@@ -38,7 +38,7 @@ jobs:
   live-smoke:
     name: Call configured free Reasoning model
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -64,10 +64,28 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import time
           from urllib.request import urlopen
 
-          with urlopen(os.environ["HEALTH_URL"], timeout=20) as response:
-              health = json.loads(response.read().decode("utf-8"))
+          health = None
+          last_error = "no response"
+          # Render's free service can cold-start or briefly stall during deployment.
+          # Retry transport/JSON failures rather than failing on the first slow response.
+          for attempt in range(10):
+              try:
+                  with urlopen(os.environ["HEALTH_URL"], timeout=10) as response:
+                      candidate = json.loads(response.read().decode("utf-8"))
+                  if not isinstance(candidate, dict):
+                      raise ValueError("health payload was not a JSON object")
+                  health = candidate
+                  break
+              except Exception as exc:
+                  last_error = type(exc).__name__
+                  if attempt < 9:
+                      time.sleep(5)
+          if health is None:
+              raise SystemExit(f"FAIL: hosted health remained unreachable after retries ({last_error}).")
+
           print("Hosted chat available:", health.get("chat_available"))
           print("OpenRouter key visible to Render:", health.get("openrouter_key_detected"))
           print("Reasoning route available:", health.get("reasoning_specialist_available"))
