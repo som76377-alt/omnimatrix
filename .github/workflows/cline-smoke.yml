@@ -1,0 +1,59 @@
+name: Cline CLI operational smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cline-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install official Cline CLI
+        run: |
+          npm install --global cline
+          cline --version
+
+      - name: Run Cline against an empty temporary workspace using OpenRouter
+        shell: bash
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$OPENROUTER_API_KEY" ]]; then
+            echo "FAIL: OPENROUTER_API_KEY is missing."
+            exit 1
+          fi
+          workdir="$RUNNER_TEMP/cline-smoke-workspace"
+          datadir="$RUNNER_TEMP/cline-smoke-data"
+          mkdir -p "$workdir" "$datadir"
+          cd "$workdir"
+          # The CLI is confined to a disposable empty directory; no repository files are checked out.
+          cline \
+            --provider openrouter \
+            --model nvidia/nemotron-3-super-120b-a12b:free \
+            --key "$OPENROUTER_API_KEY" \
+            --cwd "$workdir" \
+            --data-dir "$datadir" \
+            --auto-approve true \
+            --json \
+            "Create exactly one file named cline-smoke.txt in the current workspace containing exactly CLINE_WORKED. Do not use network access and do not inspect or modify files outside this workspace. Finish after creating the file." \
+            > "$RUNNER_TEMP/cline-output.ndjson"
+          if [[ ! -f "$workdir/cline-smoke.txt" ]]; then
+            echo "FAIL: Cline CLI exited but did not create the expected file."
+            echo "Last Cline output lines (secrets are not printed):"
+            tail -n 12 "$RUNNER_TEMP/cline-output.ndjson" || true
+            exit 1
+          fi
+          if [[ "$(cat "$workdir/cline-smoke.txt")" != "CLINE_WORKED" ]]; then
+            echo "FAIL: Cline created the file, but its contents did not match the expected result."
+            exit 1
+          fi
+          echo "PASS: Cline CLI installed, authenticated through OpenRouter, called a model, and completed a real file-write task in a disposable workspace."
