@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/free-model-route-smoke.yml"
+      - "scripts/smoke_free_model_routes.py"
+      - "config/mobile.models.json"
+      - "core/models/providers/**"
   workflow_dispatch:
 
 permissions:
