@@ -274,16 +274,16 @@ class AgentRouter:
             f"ACTIVE SPECIALIST: {plan.primary.role}\n"
             f"Purpose: {plan.primary.purpose}\n"
             + plan.primary.instructions
-            + "\\n\\nSTRICT ROLE BOUNDARY: "
+            + "\n\nSTRICT ROLE BOUNDARY: "
             + ROLE_BOUNDARIES.get(plan.primary.role, "Stay within the assigned role and report blockers.")
         )
         for support_agent in plan.support_roles:
             blocks.append(
-                f"SUPPORTING SPECIALIST: {support_agent.role} (findings only; not task owner)\\n"
+                f"SUPPORTING SPECIALIST: {support_agent.role} (findings only; not task owner)\n"
                 + support_agent.instructions
-                + "\\n\\nSTRICT ROLE BOUNDARY: "
+                + "\n\nSTRICT ROLE BOUNDARY: "
                 + ROLE_BOUNDARIES.get(support_agent.role, "Return only bounded findings for your assigned lens.")
-                + "\\nDo not duplicate the lead's work or deliver the entire task. Label evidence, assumptions, and unknowns."
+                + "\nDo not duplicate the lead's work or deliver the entire task. Label evidence, assumptions, and unknowns."
             )
         if intent_brief:
             blocks.append(
