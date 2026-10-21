@@ -10,6 +10,7 @@ from typing import Any
 
 _ALLOWED_ROLES = {
     "intent_engineer",
+    "orchestrator",
     "reasoning",
     "coding",
     "subject_solver",
