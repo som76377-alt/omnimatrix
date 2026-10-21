@@ -8,6 +8,8 @@ on:
       - "scripts/smoke_free_model_routes.py"
       - "config/mobile.models.json"
       - "core/models/providers/**"
+      - "core/orchestrator/omnitrix.py"
+      - "core/tools/implementations/cline_coding.py"
   workflow_dispatch:
 
 permissions:
