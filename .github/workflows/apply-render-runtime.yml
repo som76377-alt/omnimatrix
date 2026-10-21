@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: render-runtime-config
+  group: render-runtime-config-live-smoke
   cancel-in-progress: false
 
 jobs:
