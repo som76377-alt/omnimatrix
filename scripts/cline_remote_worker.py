@@ -40,6 +40,8 @@ def main():
     changed=[]
     for line in status.stdout.splitlines():
         raw=line[3:] if len(line)>3 else ""
+        if raw in {"cline-result.json", "cline.patch"}:
+            continue
         if not raw or raw.startswith('"') or "\\" in raw: raise SystemExit("Ambiguous changed path rejected.")
         path=Path(raw)
         if path.is_absolute() or ".." in path.parts or any(x in DENIED for x in path.parts) or any(DENIED_FILE.search(x) for x in path.parts): raise SystemExit("Protected/unsafe path changed; rejecting.")
