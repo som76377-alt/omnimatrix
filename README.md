@@ -227,7 +227,7 @@ Render's free web services sleep after 15 minutes without inbound traffic and us
 
 ### Cline coding specialist
 
-The Python CLI and private Codespaces Studio can optionally delegate implementation tasks to the Cline CLI. Fresh Codespaces containers install Node.js and Cline automatically; authenticate Cline once with cline auth before using it. The private Codespaces startup enables the Cline tool only with the workspace read/write permissions already required by that development server. The public Render service does not enable Cline.
+The Python CLI and token-protected Codespaces Studio can optionally delegate implementation tasks to the Cline CLI. Fresh Codespaces containers install Node.js and Cline automatically; authenticate Cline once with cline auth before using it. The Codespaces startup enables the Cline tool only with the workspace read/write permissions already required by that development server. The public Render service does not enable Cline.
 
 Read docs/CLINE_CODING_AGENT.md for setup, limits, and security boundaries. This adapter is an integration, not model training, and Cline's changes still require independent review and passing tests.
 
