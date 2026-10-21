@@ -1,0 +1,58 @@
+name: Cline through Omnitrix integration smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/test_cline_orchestrator_integration.py"
+      - "core/orchestrator/**"
+      - "core/tools/**"
+      - "config/mobile.models.json"
+      - ".github/workflows/cline-integration-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cline-integration-smoke
+  cancel-in-progress: false
+
+jobs:
+  cline-orchestrator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Install Cline CLI
+        run: |
+          npm install --global cline
+          cline --version
+
+      - name: Execute a real Cline coding task through Omnitrix's tool loop
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CLINE_PROVIDER: openrouter
+          CLINE_MODEL: minimax/minimax-m3.1-flash:free
+        run: |
+          set -euo pipefail
+          if [[ -z "$OPENROUTER_API_KEY" ]]; then
+            echo "FAIL: OPENROUTER_API_KEY Actions secret is missing; no coding task was run."
+            exit 1
+          fi
+          python scripts/test_cline_orchestrator_integration.py
