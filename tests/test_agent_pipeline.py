@@ -450,6 +450,116 @@ class SpecialistPipelineTests(unittest.TestCase):
         self.assertEqual(selected.provider, "openrouter")
         self.assertEqual(selected.model_id, "minimax/minimax-m3.1-flash:free")
 
+    def test_coordinated_stages_use_distinct_profiles_until_available_pool_is_exhausted(self):
+        # All six routes are present in the test environment, and Groq's free-quota
+        # use is explicitly enabled here. This tests selection only; it sends no API calls.
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "true",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            lead = models.get("coding-minimax-m31-free")
+            used = {lead.name}
+            chosen = []
+            for role in ("intent_engineer", "orchestrator", "research", "subject_solver", "critic"):
+                selected = omnitrix._select_agent_model(
+                    agents.get(role),
+                    lead,
+                    required_capabilities=frozenset({"reasoning"}),
+                    prefer_independent_provider=role == "critic",
+                    exclude_model_names=frozenset(used),
+                )
+                chosen.append(selected)
+                used.add(selected.name)
+
+            self.assertEqual(len(used), 6, "All six profiles should be assigned before a profile is reused.")
+            self.assertEqual(
+                {model.name for model in chosen},
+                {model.name for model in models.list_enabled()} - {lead.name},
+            )
+            self.assertNotEqual(chosen[-1].provider, lead.provider)
+
+    def test_groq_profiles_remain_gated_without_explicit_free_quota_confirmation(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "false",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            selected = omnitrix._select_agent_model(
+                agents.get("research"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"reasoning"}),
+            )
+            self.assertNotIn(selected.provider, {"groq"})
+            groq = models.get("groq-gpt-oss-120b")
+            cost_class, estimate = omnitrix._effective_model_cost(groq)
+            self.assertEqual(cost_class, "provider_billed_usage")
+            self.assertEqual(estimate, 0.001)
+
+    def test_confirmed_groq_free_quota_uses_zero_cost_budget_class(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_API_KEY_1": "test-gemini-key-2",
+                "OPENROUTER_API_KEY": "test-openrouter-key",
+                "OPENROUTER_API_KEY_1": "test-openrouter-key-2",
+                "GROQ_API_KEY": "test-groq-key",
+                "GROQ_API_KEY_1": "test-groq-key-2",
+                "GROQ_FREE_QUOTA_CONFIRMED": "true",
+            },
+        ):
+            models = ModelConfigLoader().load(ROOT / "config" / "mobile.models.json")
+            adapters = build_adapter_registry(models)
+            agents = AgentRegistry.load(AGENT_CONFIG)
+            omnitrix = Omnitrix(
+                registry=models,
+                adapter_registry=adapters,
+                agent_registry=agents,
+                budget_limits=BudgetLimits(spend_mode="user_provided_free_quota"),
+            )
+            selected = omnitrix._select_agent_model(
+                agents.get("research"),
+                models.get("omnitrix-primary"),
+                required_capabilities=frozenset({"reasoning"}),
+            )
+            self.assertEqual(selected.name, "groq-gpt-oss-120b")
+            cost_class, estimate = omnitrix._effective_model_cost(selected)
+            self.assertEqual(cost_class, "user_provided_free_quota")
+            self.assertEqual(estimate, 0.0)
+
     def test_budget_mode_prevents_free_agent_from_routing_to_user_quota_model(self):
         models = ModelRegistry()
         models.register(ModelDefinition(
