@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,6 +82,65 @@ class AgentBoundaryTests(unittest.TestCase):
         self.assertIn("never fill the gap with invented citations", research)
         self.assertIn("Do not edit files", coding)
         self.assertIn("The lead will integrate your result", research)
+
+    def test_validates_coordinator_work_packages_and_dependency_order(self):
+        plan = {
+            "objective_summary": "Build a causally correct induction explainer.",
+            "work_packages": [
+                {
+                    "role": "research",
+                    "assignment": "Identify the causal claims and evidence gaps.",
+                    "expected_output": "A concise evidence ledger.",
+                    "acceptance_criteria": ["Claims only rely on actual sources."],
+                    "depends_on": [],
+                },
+                {
+                    "role": "subject_solver",
+                    "assignment": "Validate the physical mechanism.",
+                    "expected_output": "Causal sequence and edge cases.",
+                    "acceptance_criteria": ["Field-to-current-to-heat chain is correct."],
+                    "depends_on": ["research"],
+                },
+            ],
+            "integration_order": ["research", "subject_solver"],
+            "final_acceptance_criteria": ["Integrated result retains uncertainty and correct physics."],
+            "cline_handoff": {"task": "", "acceptance_criteria": [], "files_in_scope": []},
+        }
+        validated = Omnitrix._validate_coordination_plan(
+            json.dumps(plan), ("research", "subject_solver"),
+            primary_role="reasoning", cline_available=False,
+        )
+        self.assertIsNotNone(validated)
+        self.assertEqual(validated["integration_order"], ["research", "subject_solver"])
+
+        plan["work_packages"][0]["depends_on"] = ["subject_solver"]
+        self.assertIsNone(Omnitrix._validate_coordination_plan(
+            json.dumps(plan), ("research", "subject_solver"),
+            primary_role="reasoning", cline_available=False,
+        ))
+
+    def test_coordinator_cannot_scope_cline_outside_workspace(self):
+        plan = {
+            "objective_summary": "Implement a code-rendered physics explainer.",
+            "work_packages": [{
+                "role": "subject_solver",
+                "assignment": "Specify the causal physics.",
+                "expected_output": "Causal sequence and checks.",
+                "acceptance_criteria": ["The physical mechanism is accurate."],
+                "depends_on": [],
+            }],
+            "integration_order": ["subject_solver"],
+            "final_acceptance_criteria": ["The final animation matches the causal model."],
+            "cline_handoff": {
+                "task": "Implement the agreed animation and tests.",
+                "acceptance_criteria": ["Relevant tests pass."],
+                "files_in_scope": ["../README.md"],
+            },
+        }
+        self.assertIsNone(Omnitrix._validate_coordination_plan(
+            json.dumps(plan), ("subject_solver",),
+            primary_role="coding", cline_available=True,
+        ))
 
 
 if __name__ == "__main__":
