@@ -1955,6 +1955,22 @@ def make_handler(
             if route == "/api/mobile/creative/video-status":
                 self._send_json(_paid_creative_media_status())
                 return
+            # Native Android chat uses this public, high-entropy job-ID route so
+            # code-rendered MP4 creation does not need to transfer into Studio.
+            if route.startswith("/api/mobile/creative/manim-jobs/"):
+                remainder = route[len("/api/mobile/creative/manim-jobs/"):]
+                if remainder.endswith("/artifact"):
+                    job_id = remainder[:-len("/artifact")].rstrip("/")
+                    artifact = runtime.manim_job_artifact(job_id)
+                    if artifact is None:
+                        self._send_json({"ok": False, "error": "Manim artifact is not available or failed integrity validation."}, 404)
+                    else:
+                        artifact_bytes, filename = artifact
+                        self._send_bytes(artifact_bytes, "video/mp4", filename)
+                else:
+                    result = runtime.manim_job_status(remainder)
+                    self._send_json(result, 200 if result.get("ok") else 404)
+                return
             if route.startswith("/api/mobile/creative/jobs/"):
                 job_id = route.rsplit("/", 1)[-1]
                 result = runtime.creative_job_status(job_id)
@@ -2124,6 +2140,7 @@ def make_handler(
                 "/api/mobile/creative/analyze",
                 "/api/mobile/creative/generate-image",
                 "/api/mobile/creative/generate-video",
+                "/api/mobile/creative/manim-render",
             }
             if route not in public_mobile_routes and not self._authorized():
                 self._send_json(
@@ -2209,6 +2226,7 @@ def make_handler(
                 "/api/mobile/creative/analyze",
                 "/api/mobile/creative/generate-image",
                 "/api/mobile/creative/generate-video",
+                "/api/mobile/creative/manim-render",
             }:
                 forwarded = self.headers.get("X-Forwarded-For", "")
                 client_ip = forwarded.rsplit(",", 1)[-1].strip() if forwarded else self.client_address[0]
@@ -2236,7 +2254,7 @@ def make_handler(
                         self._send_json({"ok": True, "plan": update_shared_production_task(job_id, task_id, payload)})
                 elif route in {"/api/creative/analyze", "/api/mobile/creative/analyze"}:
                     self._send_json(runtime.start_creative_analysis(payload), 202)
-                elif route == "/api/creative/manim-render":
+                elif route in {"/api/creative/manim-render", "/api/mobile/creative/manim-render"}:
                     self._send_json(runtime.start_manim_render(payload), 202)
                 elif route in {"/api/creative/generate-image", "/api/mobile/creative/generate-image"}:
                     self._send_json(generate_creative_image(
