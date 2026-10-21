@@ -98,6 +98,14 @@ class AgentRouterTests(unittest.TestCase):
         self.assertEqual(plan.primary.role, "coding")
         self.assertTrue(plan.needs_critique)
 
+    def test_hybrid_science_animation_routes_implementation_to_coding_lead(self):
+        plan = self.router.route(
+            "Design and implement a code-rendered physics animation about electromagnetic induction.",
+            frozenset({"reasoning", "coding"}),
+        )
+        self.assertEqual(plan.primary.role, "coding")
+        self.assertIn("subject_solver", {agent.role for agent in plan.support_roles})
+
     def test_routes_short_vague_prompt_to_reasoning_with_intent_preflight(self):
         plan = self.router.route("Make it better", frozenset({"reasoning"}))
         self.assertEqual(plan.primary.role, "reasoning")
