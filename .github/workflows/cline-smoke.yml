@@ -41,9 +41,9 @@ jobs:
           cd "$workdir"
           # The CLI is confined to a disposable empty directory; no repository files are checked out.
           cline \
-            --provider openrouter \
-            --model nvidia/nemotron-3-super-120b-a12b:free \
-            --key "$OPENROUTER_API_KEY" \
+            --provider groq \
+            --model openai/gpt-oss-120b \
+            --key "$GROQ_API_KEY" \
             --cwd "$workdir" \
             --data-dir "$datadir" \
             --auto-approve true \
