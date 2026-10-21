@@ -1,0 +1,153 @@
+name: Sync provider keys to Render and verify access
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-provider-keys.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-key-sync
+  cancel-in-progress: false
+
+jobs:
+  verify-and-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify all six provider keys authenticate without revealing them
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+        run: |
+          set -euo pipefail
+          check_key() {
+            local name="$1" provider="$2" value="$3" status
+            if [[ -z "$value" ]]; then
+              echo "FAIL: $name is missing or empty in GitHub Actions secrets."
+              return 1
+            fi
+            case "$provider" in
+              gemini)
+                status=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  -H "x-goog-api-key: $value" \
+                  'https://generativelanguage.googleapis.com/v1beta/models')
+                ;;
+              openrouter)
+                status=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  -H "Authorization: Bearer $value" \
+                  'https://openrouter.ai/api/v1/models')
+                ;;
+              groq)
+                status=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  -H "Authorization: Bearer $value" \
+                  'https://api.groq.com/openai/v1/models')
+                ;;
+            esac
+            if [[ "$status" != "200" ]]; then
+              echo "FAIL: $name authentication check returned HTTP $status."
+              return 1
+            fi
+            echo "PASS: $name authenticated with $provider (model-list endpoint; no generation billed)."
+          }
+          check_key GEMINI_API_KEY gemini "$GEMINI_API_KEY"
+          check_key GEMINI_API_KEY_1 gemini "$GEMINI_API_KEY_1"
+          check_key OPENROUTER_API_KEY openrouter "$OPENROUTER_API_KEY"
+          check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1"
+          check_key GROQ_API_KEY groq "$GROQ_API_KEY"
+          check_key GROQ_API_KEY_1 groq "$GROQ_API_KEY_1"
+
+      - name: Sync provider keys to the existing Render service without replacing other variables
+        shell: bash
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$RENDER_API_KEY" || -z "$RENDER_SERVICE_ID" ]]; then
+            echo "FAIL: RENDER_API_KEY or RENDER_SERVICE_ID is missing."
+            exit 1
+          fi
+          sync_one() {
+            local name="$1" value="$2" body
+            body=$(jq -n --arg value "$value" '{value: $value}')
+            curl -sS --fail --output /dev/null \
+              --request PUT \
+              --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars/$name" \
+              --header "Authorization: Bearer $RENDER_API_KEY" \
+              --header 'Accept: application/json' \
+              --header 'Content-Type: application/json' \
+              --data "$body"
+            echo "Synced $name to Render (value hidden)."
+          }
+          sync_one GEMINI_API_KEY "$GEMINI_API_KEY"
+          sync_one GEMINI_API_KEY_1 "$GEMINI_API_KEY_1"
+          sync_one OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+          sync_one OPENROUTER_API_KEY_1 "$OPENROUTER_API_KEY_1"
+          sync_one GROQ_API_KEY "$GROQ_API_KEY"
+          sync_one GROQ_API_KEY_1 "$GROQ_API_KEY_1"
+
+      - name: Trigger Render deployment to load the updated environment
+        id: deploy
+        shell: bash
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS --fail \
+            --request POST \
+            --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data '{"clearCache":"do_not_clear"}')
+          deploy_id=$(jq -er '.id' <<< "$response")
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "Render deployment requested: $deploy_id"
+
+      - name: Wait for deployment and verify primary keys are visible to the live app
+        shell: bash
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+          status=""
+          for attempt in $(seq 1 60); do
+            response=$(curl -sS --fail \
+              --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$DEPLOY_ID" \
+              --header "Authorization: Bearer $RENDER_API_KEY" \
+              --header 'Accept: application/json')
+            status=$(jq -r '.status // "unknown"' <<< "$response")
+            echo "Render deployment status: $status"
+            [[ "$status" == "live" ]] && break
+            [[ "$status" == "build_failed" || "$status" == "update_failed" || "$status" == "canceled" ]] && exit 1
+            sleep 5
+          done
+          if [[ "$status" != "live" ]]; then
+            echo "FAIL: deployment did not reach live status before timeout."
+            exit 1
+          fi
+          health=$(curl -sS --fail --retry 5 --retry-delay 3 \
+            'https://omnitrix-studio.onrender.com/api/mobile/health')
+          jq -e '.gemini_key_detected == true and .openrouter_key_detected == true' \
+            <<< "$health" >/dev/null
+          echo "PASS: live Omnitrix health endpoint confirms primary Gemini and OpenRouter keys are visible."
+          echo "Note: Groq and secondary-key app support is not implied by environment presence; those require explicit provider integration."
