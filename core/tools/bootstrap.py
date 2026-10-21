@@ -25,7 +25,7 @@ def build_tool_registry(
     if enable_cline:
         if workspace_root is None:
             raise ValueError("Cline coding requires an explicit workspace_root.")
-        registry.register(ClineCodingTool(workspace_root))
+        registry.register(ClineCodingTool(workspace_root, allowed_paths=tuple(allowed_paths) if allowed_paths is not None else None))
     if workspace_root is not None or allowed_paths is not None or supports_secure_workspace_inspection():
         registry.register(WorkspaceInspectTool(workspace_root, allowed_paths=allowed_paths))
 
