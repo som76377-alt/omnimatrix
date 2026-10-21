@@ -14,7 +14,7 @@ services:
       - key: OMNITRIX_PUBLIC_CHAT_ENABLED
         value: "true"
       - key: OMNITRIX_ENABLE_CLINE_API
-        value: "true"
+        value: "false"
       - key: CLINE_PROVIDER
         value: openrouter
       - key: CLINE_MODEL
