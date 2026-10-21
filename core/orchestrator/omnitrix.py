@@ -1545,6 +1545,8 @@ class Omnitrix:
         )
         model_started_at = time.perf_counter()
         response = adapter.generate(request)
+        if not response.tool_calls and not response.content.strip():
+            raise ModelResponseError("Specialist returned an empty final response.")
         self._record_model_activity(
             task,
             stage=stage,
@@ -1897,26 +1899,65 @@ class Omnitrix:
                         prefer_fallback=False,
                         exclude_model_names=frozenset(used_specialist_models),
                     )
+                    support_attempted_models = {support_model.name}
                     used_specialist_models.add(support_model.name)
-                    support_adapter = self.adapter_registry.get(support_model.name)
-                    finding = self._run_agent_stage(
-                        task=task,
-                        stage=f"support_{support_agent.role}",
-                        model=support_model,
-                        adapter=support_adapter,
-                        messages=stage_messages,
-                        instructions=(
-                            support_agent.instructions
-                            + "\n\nSPECIALIST HANDOFF CONTRACT: Provide concise, actionable findings "
-                              "for the lead specialist and any coding worker. Include relevant constraints, "
-                              "evidence, interfaces, risks, and testable acceptance checks. Do not redo another "
-                              "specialist's work, invent evidence, or issue commands; report uncertainty explicitly."
-                            + "\n\n"
-                            + support_assignment_contract(support_agent.role, agent_plan.primary.role)
-                            + package_instructions
-                        ),
-                        budget_guard=budget_guard,
+                    support_instructions = (
+                        support_agent.instructions
+                        + "\n\nSPECIALIST HANDOFF CONTRACT: Provide concise, actionable findings "
+                          "for the lead specialist and any coding worker. Include relevant constraints, "
+                          "evidence, interfaces, risks, and testable acceptance checks. Do not redo another "
+                          "specialist's work, invent evidence, or issue commands; report uncertainty explicitly."
+                        + "\n\n"
+                        + support_assignment_contract(support_agent.role, agent_plan.primary.role)
+                        + package_instructions
                     )
+                    # One bounded retry on a different eligible model keeps a failed
+                    # specialist from silently leaving its assigned package empty.
+                    # A durable journal remains fail-closed rather than retrying an
+                    # unmatched model-request/response transcript.
+                    for support_attempt in range(2):
+                        try:
+                            support_adapter = self.adapter_registry.get(support_model.name)
+                            finding = self._run_agent_stage(
+                                task=task,
+                                stage=f"support_{support_agent.role}",
+                                model=support_model,
+                                adapter=support_adapter,
+                                messages=stage_messages,
+                                instructions=support_instructions,
+                                budget_guard=budget_guard,
+                            )
+                            if not finding.strip():
+                                raise ModelResponseError(
+                                    "Support specialist returned an empty finding."
+                                )
+                            break
+                        except Exception as support_error:
+                            if support_attempt >= 1 or self.journal is not None:
+                                raise
+                            retry_excluded = frozenset(
+                                set(used_specialist_models) | support_attempted_models
+                            )
+                            retry_model = self._select_agent_model(
+                                support_agent,
+                                selected_model,
+                                required_capabilities=frozenset({"reasoning"}),
+                                prefer_independent_provider=True,
+                                exclude_model_names=retry_excluded,
+                            )
+                            if retry_model.name in retry_excluded:
+                                raise support_error
+                            _log_safely(
+                                logging.WARNING,
+                                "support_agent_model_fallback_started",
+                                agent_role=support_agent.role,
+                                failed_model=support_model.name,
+                                fallback_model=retry_model.name,
+                                error_type=type(support_error).__name__,
+                            )
+                            support_model = retry_model
+                            support_attempted_models.add(support_model.name)
+                            used_specialist_models.add(support_model.name)
                     if finding.strip():
                         finding = finding[:6000]
                         support_findings.append((support_agent.role, finding))
