@@ -79,13 +79,22 @@ class ClineCodingTool(Tool):
 
     def runtime_status(self) -> dict[str, object]:
         """Return safe operational facts without exposing executable paths or credentials."""
+        remote_backend = os.environ.get("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions"
+        remote_token_configured = bool(os.environ.get("OMNITRIX_GITHUB_ACTIONS_TOKEN", "").strip())
         executable_found = bool(self._executable and Path(self._executable).is_file())
+        ready = (remote_backend and remote_token_configured) or (not remote_backend and executable_found)
         return {
             "registered": True,
+            "backend": "github_actions" if remote_backend else "local",
             "executable_found": executable_found,
+            "worker_credential_configured": remote_token_configured if remote_backend else None,
             "authentication": "not_verified",
-            "authentication_note": "Cline provider authentication is not tested by the status endpoint.",
-            "ready_to_attempt": executable_found,
+            "authentication_note": (
+                "GitHub Actions token presence is checked, but dispatch permissions and provider inference are not tested by this status endpoint."
+                if remote_backend else
+                "Cline provider authentication is not tested by the status endpoint."
+            ),
+            "ready_to_attempt": ready,
         }
 
     @property
