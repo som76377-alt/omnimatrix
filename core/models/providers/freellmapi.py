@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from urllib.parse import urlsplit
 
-from core.models.base import ModelRequestError, ModelResponseError
+from core.models.base import ModelResponseError
 from core.models.messages import ModelRequest
 from core.models.providers.openrouter import OpenRouterAdapter
 
