@@ -1649,6 +1649,7 @@ class Omnitrix:
         # Track profiles already assigned to this run. Coordination stages share
         # the accepted handoffs but use different model profiles when possible.
         used_specialist_models: set[str] = {selected_model.name}
+        failed_model_profiles: set[str] = set()
         _log_safely(
             logging.INFO,
             "model_selected",
@@ -1862,6 +1863,7 @@ class Omnitrix:
                 ),
             }
             for support_agent in support_order:
+                support_attempted_models: set[str] = set()
                 package = package_map.get(support_agent.role)
                 dependencies = list(package["depends_on"]) if package is not None else []
                 stage_messages = support_messages
@@ -1904,7 +1906,7 @@ class Omnitrix:
                         prefer_fallback=False,
                         exclude_model_names=frozenset(used_specialist_models),
                     )
-                    support_attempted_models = {support_model.name}
+                    support_attempted_models.add(support_model.name)
                     used_specialist_models.add(support_model.name)
                     support_instructions = (
                         support_agent.instructions
@@ -1938,10 +1940,13 @@ class Omnitrix:
                                 )
                             break
                         except Exception as support_error:
+                            failed_model_profiles.add(support_model.name)
                             if support_attempt >= 1 or self.journal is not None:
                                 raise
                             retry_excluded = frozenset(
-                                set(used_specialist_models) | support_attempted_models
+                                set(used_specialist_models)
+                                | failed_model_profiles
+                                | support_attempted_models
                             )
                             retry_model = self._select_agent_model(
                                 support_agent,
@@ -1972,6 +1977,7 @@ class Omnitrix:
                         support_statuses[support_agent.role] = "empty_output"
                 except Exception as exc:
                     support_statuses[support_agent.role] = "failed"
+                    failed_model_profiles.update(support_attempted_models)
                     if self.journal is not None:
                         raise
                     _log_safely(
@@ -2063,7 +2069,8 @@ class Omnitrix:
         )
 
         tool_iterations = 0
-        fallback_attempted = False
+        fallback_attempts = 0
+        failed_final_model_names: set[str] = set()
 
         while True:
             # Fail closed if a future refactor drops the persistent behavioral contract.
@@ -2117,10 +2124,11 @@ class Omnitrix:
                 # One bounded cross-provider fallback keeps transient provider
                 # failures from turning a chat turn into a hard failure. A
                 # durable journal remains fail-closed to preserve transcript order.
+                failed_final_model_names.add(selected_model.name)
                 fallback_model = None
                 if (
                     self.journal is None
-                    and not fallback_attempted
+                    and fallback_attempts < 2
                     and request.continuation is None
                     and tool_iterations == 0
                 ):
@@ -2136,7 +2144,17 @@ class Omnitrix:
                         # specialist stages. Reusing a failed or already-used profile
                         # would make a "fallback" merely repeat the same dependency.
                         excluded_for_fallback = frozenset(
-                            set(used_specialist_models) | {selected_model.name}
+                            (
+                                set(used_specialist_models)
+                                | failed_model_profiles
+                                | {selected_model.name}
+                            )
+                            if fallback_attempts == 0
+                            else (
+                                failed_model_profiles
+                                | failed_final_model_names
+                                | {selected_model.name}
+                            )
                         )
                         candidate = self._select_agent_model(
                             agent_plan.primary,
@@ -2151,9 +2169,18 @@ class Omnitrix:
                             and candidate.name not in excluded_for_fallback
                         ):
                             fallback_model = candidate
-                    if fallback_model is None and default_model.name != selected_model.name:
-                        # Keep a default route as the last-resort fallback only
-                        # when no unused eligible profile exists.
+                    if (
+                        fallback_model is None
+                        and default_model.name != selected_model.name
+                        and default_model.name not in failed_final_model_names
+                        and default_model.name not in failed_model_profiles
+                        and (
+                            fallback_attempts > 0
+                            or default_model.name not in used_specialist_models
+                        )
+                    ):
+                        # Reuse an already-successful profile only after exhausting
+                        # fresh profiles; never retry a profile known to have failed.
                         fallback_model = default_model
 
                 if fallback_model is None:
@@ -2188,7 +2215,7 @@ class Omnitrix:
                     reason_code=reason_code,
                     error_type=type(exc).__name__,
                 )
-                fallback_attempted = True
+                fallback_attempts += 1
                 selected_model = fallback_model
                 adapter = self.adapter_registry.get(selected_model.name)
                 self._set_active_model(
