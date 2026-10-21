@@ -28,3 +28,6 @@ fi
 PATH="$ROOT/.tools/node/bin:$PATH" npm ci --prefix "$ROOT/.tools/freellmapi"
 PATH="$ROOT/.tools/node/bin:$PATH" npm run build --prefix "$ROOT/.tools/freellmapi"
 PATH="$ROOT/.tools/node/bin:$PATH" npm prune --omit=dev --prefix "$ROOT/.tools/freellmapi"
+
+# Install a pinned, read-only ECC skill reference set for role-specific prompt retrieval.
+bash "$ROOT/scripts/install_ecc_reference.sh"
