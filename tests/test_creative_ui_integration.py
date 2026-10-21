@@ -1,4 +1,4 @@
-"""Static integration checks for the online-to-draft Creative Studio workflow."""
+"""Static integration checks for chat-first code-rendered video and Creative Studio."""
 import unittest
 from pathlib import Path
 
@@ -14,13 +14,16 @@ class CreativeUiIntegrationTests(unittest.TestCase):
         cls.studio_html = (ROOT / "webapp" / "creative-studio.html").read_text(encoding="utf-8")
         cls.director = (ROOT / "core" / "creative_director.py").read_text(encoding="utf-8")
 
-    def test_explicit_creation_prompt_hands_off_in_same_tab_without_prompt_in_url(self):
-        self.assertIn("shouldLaunchCreativeStudio(message, readyAttachments.length)", self.chat_js)
-        self.assertIn('sessionStorage.setItem("omnitrix-creative-brief-pending", message)', self.chat_js)
-        self.assertIn('target.searchParams.set("autoDraft", "1")', self.chat_js)
-        self.assertNotIn('target.searchParams.set("creativeBrief"', self.chat_js)
-        self.assertIn('sessionStorage.getItem("omnitrix-creative-brief-pending")', self.studio_js)
-        self.assertIn("await buildDraftFromBrief()", self.studio_js)
+    def test_explicit_video_request_runs_code_render_and_returns_inline_player(self):
+        self.assertIn("isVideoCreationRequest(message, readyAttachments.length)", self.chat_js)
+        self.assertIn("await runChatVideoCreation(submittedText)", self.chat_js)
+        self.assertIn('apiRequest("/creative/manim-render"', self.chat_js)
+        self.assertIn('"/creative/manim-jobs/"', self.chat_js)
+        self.assertIn('"/artifact"', self.chat_js)
+        self.assertIn("chat-generated-video", self.chat_js)
+        self.assertNotIn("window.location.href = target.toString()", self.chat_js)
+        self.assertNotIn('apiRequest("/creative/generate-video"', self.chat_js)
+        self.assertNotIn('href="./creative-studio.html"', (ROOT / "webapp" / "index.html").read_text(encoding="utf-8"))
 
     def test_online_asset_sources_are_explicit_and_license_aware(self):
         for element_id in (

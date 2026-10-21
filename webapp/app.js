@@ -1255,6 +1255,7 @@
     article.append(body);
     byId("chat-messages").append(article);
     byId("chat-messages").scrollTop = byId("chat-messages").scrollHeight;
+    return article;
   }
 
   function showInitialChat() {
@@ -1470,7 +1471,7 @@
     uploadChatFiles(event.target.files);
   });
 
-  function shouldLaunchCreativeStudio(message, attachmentCount) {
+  function isVideoCreationRequest(message, attachmentCount) {
     const text = String(message || "").trim();
     if (!text || text.length > 4000 || attachmentCount > 0) return false;
     const action = /\b(?:create|make|generate|produce|edit|assemble|render|animate|build|turn)\b/i.test(text);
@@ -1483,11 +1484,152 @@
     return true;
   }
 
+  async function runChatVideoCreation(prompt) {
+    const statusArticle = appendMessage("assistant",
+      "1. **Plan** — asking the configured Omnitrix orchestrator for a concise, structured scene sequence. The renderer will create the animation with Manim code; no stock-image search or paid video-generation request is used.",
+      "CODE VIDEO · PLANNING");
+    const statusBubble = statusArticle.querySelector(".message-bubble");
+    const setProgress = (message, source) => {
+      renderRichContent(statusBubble, message);
+      const sourceNode = statusArticle.querySelector(".message-source");
+      if (sourceNode) sourceNode.textContent = source;
+      byId("chat-messages").scrollTop = byId("chat-messages").scrollHeight;
+      byId("chat-thread-subtitle").textContent = message.replace(/\*\*/g, "").slice(0, 180);
+      addActivity("VIDEO", message.replace(/\*\*/g, "").slice(0, 300));
+    };
+
+    const planningPrompt = [
+      "You are the scene-planning specialist for Omnitrix's code-rendered science video workflow.",
+      "Turn the user's brief into a scientifically coherent, concise causal diagram that can be animated by the existing Manim scientific-diagram renderer.",
+      "Return ONLY one valid JSON object, with no Markdown fences or extra text, matching this schema:",
+      '{"title":"short title, max 100 characters","nodes":["label 1","label 2"],"arrows":[[0,1]]}',
+      "Rules: 2 to 8 nodes; each label is concise, accurate, and max 72 characters; arrows are integer index pairs between different nodes; use 2 to 7 causal stages where possible; no decorative filler, fake metrics, or unsupported claims. Keep the sequence scientifically correct. The renderer will draw the diagram as an animation; do not claim it adds narration, photorealistic footage, or a complete edited multi-scene film.",
+      "User's original brief: " + String(prompt || "").slice(0, 3000)
+    ].join("\n\n");
+    const planResult = await apiRequest("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, message: planningPrompt })
+    });
+    const rawReply = String(planResult && planResult.reply || "");
+    const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("The configured orchestrator did not return a parseable scene plan. No render was started.");
+    let scenePlan;
+    try { scenePlan = JSON.parse(jsonMatch[0]); }
+    catch { throw new Error("The scene plan was not valid JSON. No render was started."); }
+    if (!scenePlan || typeof scenePlan.title !== "string" || !Array.isArray(scenePlan.nodes) ||
+        scenePlan.nodes.length < 2 || scenePlan.nodes.length > 8) {
+      throw new Error("The scene plan failed schema validation: it must contain a title and 2–8 nodes. No render was started.");
+    }
+    const labels = scenePlan.nodes.map((item) => String(item || "").trim().slice(0, 72));
+    if (labels.some((label) => !label)) throw new Error("The scene plan contains an empty node label. No render was started.");
+    const suppliedArrows = Array.isArray(scenePlan.arrows) ? scenePlan.arrows : [];
+    const arrows = suppliedArrows.filter((pair) => Array.isArray(pair) && pair.length === 2 &&
+      Number.isInteger(pair[0]) && Number.isInteger(pair[1]) && pair[0] >= 0 &&
+      pair[1] >= 0 && pair[0] < labels.length && pair[1] < labels.length && pair[0] !== pair[1]).slice(0, 12);
+    if (!arrows.length) for (let index = 0; index < labels.length - 1; index += 1) arrows.push([index, index + 1]);
+    const title = scenePlan.title.trim().slice(0, 100) || "Scientific explainer";
+    const portrait = /\b(?:vertical|portrait|tiktok|reels?|shorts?|9\s*[:x/]\s*16)\b/i.test(prompt);
+    const nodes = labels.map((label, index) => ({
+      label,
+      x: portrait ? 0 : (labels.length === 1 ? 0 : -4.2 + (8.4 * index / (labels.length - 1))),
+      y: portrait ? (labels.length === 1 ? 0 : 2.0 - (4.0 * index / (labels.length - 1))) : 0
+    }));
+    const executionTrace = planResult.execution_trace;
+    const trace = describeExecutionTrace(executionTrace);
+    const activity = executionTrace && Array.isArray(executionTrace.activity) ? executionTrace.activity : [];
+    const actualCalls = [];
+    activity.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const stage = String(item.stage || item.role || "model stage");
+      const model = String(item.model || item.configured_model || "model ID not reported");
+      const provider = String(item.provider || "provider not reported");
+      const label = stage + ": " + model + " (" + provider + ")";
+      if (!actualCalls.includes(label)) actualCalls.push(label);
+    });
+    const coordination = executionTrace && executionTrace.coordination && typeof executionTrace.coordination === "object"
+      ? executionTrace.coordination : null;
+    const coordinationEvidence = coordination
+      ? " Coordination status: " + String(coordination.status || "not reported") +
+        "; assigned roles: " + (Array.isArray(coordination.assigned_roles) && coordination.assigned_roles.length
+          ? coordination.assigned_roles.join(", ") : "none reported") + "."
+      : "";
+    const modelEvidence = actualCalls.length
+      ? " Actual model-stage trace: " + actualCalls.slice(0, 8).join("; ") + "."
+      : " The backend returned no per-model activity trace; specialist participation is not verified.";
+    setProgress("1. **Plan validated** — " + labels.length + " nodes and " + arrows.length +
+      " arrows." + modelEvidence + coordinationEvidence +
+      " Next: render this structured plan as code-driven Manim animation.", "CODE VIDEO · PLAN READY");
+
+    setProgress("2. **Rendering with Manim** — submitting the validated diagram to the local code renderer. This step does not call the paid video-generation endpoint.", "CODE VIDEO · RENDER QUEUED");
+    const accepted = await apiRequest("/creative/manim-render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consent: true, title, nodes, arrows, quality: "low" })
+    });
+    if (!accepted || accepted.ok !== true || !accepted.job_id) {
+      throw new Error((accepted && accepted.error) || "The Manim code-render job could not start.");
+    }
+    const jobRoute = "/creative/manim-jobs/" + encodeURIComponent(accepted.job_id);
+    let statusData = null;
+    const deadline = Date.now() + 4 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      statusData = await apiRequest(jobRoute);
+      if (statusData.status === "failed") {
+        throw new Error((statusData.result && statusData.result.error) || statusData.error || "The Manim renderer failed.");
+      }
+      if (statusData.status === "complete") break;
+      setProgress("2. **Rendering with Manim** — live job state: " + String(statusData.status || "unknown") +
+        ". Waiting for the renderer to finish; no invented percentage is shown.", "CODE VIDEO · " + String(statusData.status || "WAITING").toUpperCase());
+    }
+    if (!statusData || statusData.status !== "complete" || !statusData.result || statusData.result.ok !== true) {
+      throw new Error("The Manim render did not complete within four minutes. No finished video was attached.");
+    }
+
+    setProgress("3. **Retrieving and checking the MP4** — Manim reports a completed render. Fetching the server-verified artifact.", "CODE VIDEO · VERIFYING");
+    const artifactResponse = await fetch("./api/creative/manim-jobs/" + encodeURIComponent(accepted.job_id) + "/artifact", {
+      method: "GET", cache: "no-store", headers: baseHeaders()
+    });
+    if (!artifactResponse.ok) {
+      let detail = "";
+      try { const payload = await artifactResponse.json(); detail = payload.error || ""; } catch (_) {}
+      throw new Error(detail || "The completed Manim job did not expose a verified MP4 artifact.");
+    }
+    const blob = await artifactResponse.blob();
+    if (blob.size < 2048 || blob.size > 24 * 1024 * 1024) {
+      throw new Error("The rendered MP4 is empty or exceeds the 24 MB inline playback limit.");
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const finalArticle = appendMessage("assistant",
+      "**4. Code-rendered video received.** The Manim service returned a verified MP4 artifact and its size passed validation. This first code-render path produces a structured animated diagram, not yet a fully edited multi-scene film with narration.",
+      "CODE VIDEO COMPLETE · MANIM · " + Math.round(blob.size / 1024) + " KB");
+    const bubble = finalArticle.querySelector(".message-bubble");
+    const player = document.createElement("video");
+    player.className = "chat-generated-video";
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    player.setAttribute("aria-label", "Code-rendered Manim video");
+    player.src = objectUrl;
+    bubble.appendChild(player);
+    const download = document.createElement("a");
+    download.className = "chat-video-download";
+    download.href = objectUrl;
+    download.download = (title || "omnitrix-science-video").replace(/[^A-Za-z0-9._-]/g, "_") + ".mp4";
+    download.textContent = "Save rendered MP4";
+    bubble.appendChild(download);
+    byId("chat-thread-subtitle").textContent = "Manim MP4 received · " + Math.round(blob.size / 1024) + " KB · code-rendered diagram";
+    byId("chat-mode").textContent = "CODE VIDEO RENDERED";
+    addActivity("VIDEO", "Manim returned " + blob.size + " bytes; verified artifact embedded in chat.");
+  }
+
   async function submitChat(event) {
     event.preventDefault();
     const input = byId("chat-input");
     const message = input.value.trim();
     const readyAttachments = state.attachments.filter((item) => item.attachmentId && item.status === "uploaded");
+    const videoCreationRequest = isVideoCreationRequest(message, readyAttachments.length);
     if ((!message && !readyAttachments.length) || state.busyChat) return;
     if (state.busyUploads > 0) {
       toast("Wait for all selected files to finish uploading before sending.");
@@ -1496,21 +1638,6 @@
     if (!state.connected) {
       toast("Connect the Python runtime before sending a real message.");
       openConnect();
-      return;
-    }
-    if (shouldLaunchCreativeStudio(message, readyAttachments.length)) {
-      addActivity("CREATIVE", "Opening Creative Studio to build a draft from permitted online assets.");
-      byId("chat-thread-subtitle").textContent = "CREATIVE WORKFLOW · Opening the local draft editor";
-      byId("chat-mode").textContent = "CREATIVE STUDIO";
-      try {
-        sessionStorage.setItem("omnitrix-creative-brief-pending", message);
-      } catch (_) {
-        toast("Could not safely pass the brief to Creative Studio. Nothing was submitted.");
-        return;
-      }
-      const target = new URL("./creative-studio.html", window.location.href);
-      target.searchParams.set("autoDraft", "1");
-      window.location.href = target.toString();
       return;
     }
     state.busyChat = true;
@@ -1556,6 +1683,10 @@
       }
     }, 800);
     try {
+      if (videoCreationRequest) {
+        await runChatVideoCreation(submittedText);
+        return;
+      }
       const result = await apiRequest("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

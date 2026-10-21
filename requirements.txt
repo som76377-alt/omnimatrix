@@ -1,1 +1,4 @@
 cryptography>=44.0.0,<48.0.0
+
+Pillow>=11.0,<13.0
+imageio-ffmpeg>=0.6.0,<0.7.0
