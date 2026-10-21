@@ -1,6 +1,10 @@
 name: Cline CLI operational smoke test
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cline-smoke.yml"
   workflow_dispatch:
 
 permissions:
