@@ -31,12 +31,33 @@ class GroqAdapter(OpenRouterAdapter):
     def provider(self) -> str:
         return "groq"
 
+    def is_available(self) -> bool:
+        # Groq's current model catalog is priced per token. Never call it as a
+        # presumed free route unless the operator explicitly confirms a free quota.
+        return (
+            os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() == "true"
+            and super().is_available()
+        )
+
+    def _build_payload(self, request: ModelRequest) -> dict:
+        payload = super()._build_payload(request)
+        # Groq uses OpenAI-compatible reasoning fields, not OpenRouter's
+        # {"reasoning": {...}} extension. Keep internal reasoning hidden and low.
+        payload.pop("reasoning", None)
+        payload.setdefault("reasoning_effort", "low")
+        payload.setdefault("reasoning_format", "hidden")
+        return payload
+
     def generate(self, request: ModelRequest) -> ModelResponse:
         if not isinstance(request, ModelRequest):
             raise TypeError("request must be a ModelRequest.")
         if request.continuation is not None:
             raise ModelRequestError(
                 "Groq uses full conversation history; provider continuation is unsupported."
+            )
+        if os.getenv("GROQ_FREE_QUOTA_CONFIRMED", "").strip().lower() != "true":
+            raise ModelAuthenticationError(
+                "Groq route is gated until GROQ_FREE_QUOTA_CONFIRMED=true; no request was sent."
             )
         api_key = self._api_key or os.getenv(self._api_key_env)
         if not api_key:
