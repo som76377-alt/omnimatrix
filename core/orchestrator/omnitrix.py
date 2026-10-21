@@ -1647,7 +1647,6 @@ class Omnitrix:
                         coordinator,
                         selected_model,
                         required_capabilities=frozenset({"reasoning"}),
-                        prefer_independent_provider=True,
                         prefer_fallback=False,
                     )
                     coordinator_adapter = self.adapter_registry.get(coordinator_model.name)
