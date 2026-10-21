@@ -1,0 +1,50 @@
+name: Cline through Omnitrix orchestration integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cline-orchestrator-integration.yml"
+      - "scripts/test_cline_orchestrator_integration.py"
+      - "core/orchestrator/omnitrix.py"
+      - "core/tools/implementations/cline_coding.py"
+      - "core/tools/bootstrap.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cline-orchestrator-integration
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node for Cline CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies and Cline CLI
+        run: |
+          python -m pip install -r requirements.txt
+          npm install --global cline
+          cline --version
+
+      - name: Run real Cline through Omnitrix's tool-execution loop
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CLINE_PROVIDER: openrouter
+          CLINE_MODEL: minimax/minimax-m3.1-flash:free
+        run: python scripts/test_cline_orchestrator_integration.py
