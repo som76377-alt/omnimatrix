@@ -6,7 +6,7 @@ from core.agents.registry import AgentRegistry
 from core.models.adapters import AdapterRegistry
 from core.models.registry import ModelRegistry
 from core.orchestrator.omnitrix import Omnitrix
-from core.policy.agent_boundaries import ROLE_TOOL_ALLOWLIST, allowed_tools_for_role
+from core.policy.agent_boundaries import ROLE_TOOL_ALLOWLIST, allowed_tools_for_role, support_assignment_contract
 from core.tools.bootstrap import build_tool_registry
 from core.tools.permissions import ToolPermission
 from core.tools.request import ToolRequest
@@ -73,6 +73,14 @@ class AgentBoundaryTests(unittest.TestCase):
 
     def test_unknown_role_fails_closed(self):
         self.assertEqual(allowed_tools_for_role("made_up_role"), frozenset())
+
+    def test_support_assignments_are_narrow_and_report_missing_retrieval(self):
+        research = support_assignment_contract("research", "coding")
+        coding = support_assignment_contract("coding", "reasoning")
+        self.assertIn("BLOCKED", research)
+        self.assertIn("never fill the gap with invented citations", research)
+        self.assertIn("Do not edit files", coding)
+        self.assertIn("The lead will integrate your result", research)
 
 
 if __name__ == "__main__":
