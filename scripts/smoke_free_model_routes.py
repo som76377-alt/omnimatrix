@@ -1,9 +1,9 @@
-"""Tiny, explicit live checks for the six configured zero-price/free-quota routes.
+"""Tiny live checks for the six configured model routes.
 
-One short request is sent to each configured model using that profile's own key.
-No conversation history or user content is sent. Secrets and generated text are
-never printed. A provider's free quota can still be rate-limited or exhausted;
-this script deliberately does not fall back to a paid model.
+One short request is sent to each eligible configured model using that profile's
+own key. No conversation history or user content is sent. Secrets and generated
+text are never printed. Groq routes are skipped unless the operator explicitly
+confirms that a no-cost quota is available; no paid fallback is ever attempted.
 """
 from __future__ import annotations
 
