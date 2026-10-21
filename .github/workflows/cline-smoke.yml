@@ -40,6 +40,7 @@ jobs:
           mkdir -p "$workdir" "$datadir"
           cd "$workdir"
           # The CLI is confined to a disposable empty directory; no repository files are checked out.
+          set +e
           cline \
             --provider groq \
             --model openai/gpt-oss-120b \
