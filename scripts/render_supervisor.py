@@ -70,7 +70,7 @@ def _declarative_config(env: dict[str, str]) -> tuple[dict[str, object], list[tu
             "displayName": label,
             "enabled": True,
             "fallbackEnabled": True,
-            "supportsTools": platform in {"openrouter", "groq"},
+            "supportsTools": True,
         }
         for platform, model_id, _key_env, label in routes
     ]
