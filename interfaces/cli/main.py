@@ -53,7 +53,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--workspace-root",
-        help="Workspace directory to expose; requires --allow-workspace-read. Defaults to the current directory.",
+        help="Explicit workspace root for read-only inspection and/or Cline coding. Required when enabling Cline.",
+    )
+    parser.add_argument(
+        "--enable-cline-coding",
+        action="store_true",
+        help="Explicitly enable Cline coding in a disposable workspace copy; requires --workspace-root and a configured Cline CLI.",
     )
     parser.add_argument(
         "--workspace-allow",
@@ -95,19 +100,26 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     def create_omnitrix(config_path: str, journal: SQLiteJournal | None = None) -> Omnitrix:
-        if args.allow_workspace_read:
+        if args.allow_workspace_read or args.enable_cline_coding:
             workspace_root = Path(args.workspace_root).expanduser() if args.workspace_root else Path.cwd()
             try:
                 tool_registry = build_tool_registry(
-                    workspace_root, allowed_paths=args.workspace_allow
+                    workspace_root if (args.allow_workspace_read or args.enable_cline_coding) else None,
+                    allowed_paths=args.workspace_allow,
+                    enable_cline=args.enable_cline_coding,
                 )
-            except RuntimeError as exc:
+            except (RuntimeError, ValueError) as exc:
                 parser.error(str(exc))
+            capabilities: set[str] = set()
+            if args.allow_workspace_read:
+                capabilities.add("workspace.read")
+            if args.enable_cline_coding:
+                capabilities.add("coding.execute")
             return Omnitrix.from_config(
                 config_path,
                 journal=journal,
                 tool_registry=tool_registry,
-                tool_permission=ToolPermission.from_capabilities({"workspace.read"}),
+                tool_permission=ToolPermission.from_capabilities(capabilities),
             )
         if journal is not None:
             return Omnitrix.from_config(config_path, journal=journal)
@@ -119,8 +131,12 @@ def main(argv: list[str] | None = None) -> None:
         or args.inspect_run is not None
         or args.restart_run is not None
     )
-    if args.workspace_root and not args.allow_workspace_read:
-        parser.error("--workspace-root requires --allow-workspace-read.")
+    if args.workspace_root and not (args.allow_workspace_read or args.enable_cline_coding):
+        parser.error("--workspace-root requires --allow-workspace-read or --enable-cline-coding.")
+    if args.enable_cline_coding and not args.workspace_root:
+        parser.error("--enable-cline-coding requires an explicit --workspace-root.")
+    if args.enable_cline_coding and (args.list_runs or args.inspect_run is not None or args.restart_run is not None):
+        parser.error("--enable-cline-coding cannot be combined with recovery inspection or restart commands.")
     if args.workspace_allow and not args.allow_workspace_read:
         parser.error("--workspace-allow requires --allow-workspace-read.")
     if args.allow_workspace_read and (args.list_runs or args.inspect_run is not None or args.restart_run is not None):
