@@ -20,9 +20,9 @@
         "api_key_env": "GEMINI_API_KEY",
         "timeout_seconds": 60,
         "max_retries": 1,
-        "standard_fallback_model": "groq-gpt-oss-20b",
+        "standard_fallback_model": "gemini-flash-lite",
         "data_policy": "Use only under active free quota. Do not claim browsing unless an actual retrieval tool ran.",
-        "profile_note": "Primary general reasoning and coding route; uses the stable Gemini 3.7 Flash endpoint after repeated Gemini 3.7 Flash high-demand responses and 3.8 timeouts."
+        "profile_note": "Primary general reasoning and coding route; stable Gemini 3.6 Flash after Gemini 3.7/3.8 high-demand failures."
       }
     },
     {
@@ -113,16 +113,17 @@
       "context_window": 131072,
       "enabled": true,
       "metadata": {
-        "cost_class": "user_provided_free_quota",
-        "estimated_cost_usd": 0,
-        "agent_approved_cost": true,
+        "cost_class": "provider_billed_usage",
+        "estimated_cost_usd": 0.001,
+        "agent_approved_cost": false,
         "api_key_env": "GROQ_API_KEY",
         "timeout_seconds": 60,
         "max_output_tokens": 8192,
         "candidate_ids": [
           "openai/gpt-oss-120b"
         ],
-        "profile_note": "Use strictly within Groq Free Plan limits; do not switch to paid/on-demand usage automatically."
+        "profile_note": "Configured Groq route, but gated by GROQ_FREE_QUOTA_CONFIRMED because current Groq model pricing is per token. No automatic paid usage.",
+        "requires_explicit_free_quota_confirmation": true
       }
     },
     {
@@ -138,16 +139,17 @@
       "context_window": 131072,
       "enabled": true,
       "metadata": {
-        "cost_class": "user_provided_free_quota",
-        "estimated_cost_usd": 0,
-        "agent_approved_cost": true,
+        "cost_class": "provider_billed_usage",
+        "estimated_cost_usd": 0.001,
+        "agent_approved_cost": false,
         "api_key_env": "GROQ_API_KEY_1",
         "timeout_seconds": 45,
         "max_output_tokens": 4096,
         "candidate_ids": [
           "openai/gpt-oss-20b"
         ],
-        "profile_note": "Fast calculation/review support within Groq Free Plan limits only."
+        "profile_note": "Configured Groq route, but gated by GROQ_FREE_QUOTA_CONFIRMED because current Groq model pricing is per token. No automatic paid usage.",
+        "requires_explicit_free_quota_confirmation": true
       }
     }
   ]
