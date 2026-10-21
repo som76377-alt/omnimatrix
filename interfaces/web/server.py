@@ -642,7 +642,7 @@ class StudioRuntime:
         if not shutil.which("manim"):
             fallback_available = getattr(tool, "fallback_available", None)
             if not callable(fallback_available) or not fallback_available():
-                raise RuntimeError("Manim is unavailable and the bundled Pillow/imageio-ffmpeg renderer dependencies are missing.")
+                raise RuntimeError("Manim is not installed and the bundled Pillow/imageio-ffmpeg renderer dependencies are missing.")
         now = utc_now()
         job_id = secrets.token_hex(16)
         objective = str(arguments.get("title", "Scientific diagram render"))[:100]
