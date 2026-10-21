@@ -1401,10 +1401,7 @@ class Omnitrix:
     def _team_awareness_contract(self, stage: str, model: ModelDefinition) -> str:
         """Give each model call a shared, grounded colleague roster and route identity."""
         if self.agent_registry is None:
-            return (
-                "\n\nTEAM IDENTITY: No specialist registry is configured for this run. "
-                "Do not invent colleagues, assignments, or model identities."
-            )
+            return ""
 
         model_profiles = self.registry.list_enabled()
         profile_index = {}
