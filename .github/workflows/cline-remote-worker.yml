@@ -67,7 +67,7 @@ jobs:
           auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git -c "http.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"
           if pr_output="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE_REF" --head "$branch" --title "Cline implementation: ${REQUEST_ID}" --body "Automated proposal from Omnitrix remote Cline worker. Review diff and CI; this PR was not auto-merged." 2>&1)"; then
-            python -c "import json; p='cline-result.json'; d=json.load(open(p)); d['pull_request_url']='${pr_output.strip()}'; d['pull_request_created_by']='github_actions_token'; open(p,'w').write(json.dumps(d, indent=2))"
+            python -c "import json; p='cline-result.json'; d=json.load(open(p)); d['pull_request_url']='${pr_output}'; d['pull_request_created_by']='github_actions_token'; open(p,'w').write(json.dumps(d, indent=2))"
           elif grep -qi "GitHub Actions is not permitted to create or approve pull requests" <<< "$pr_output"; then
             echo "WARN: repository policy blocks the built-in Actions token from opening pull requests; the Render runtime may create the review PR using its separately configured credential."
             python -c "import json; p='cline-result.json'; d=json.load(open(p)); d['pull_request_creation_deferred']=True; d['pull_request_creation_error']='Built-in GITHUB_TOKEN is not permitted to create pull requests.'; open(p,'w').write(json.dumps(d, indent=2))"
