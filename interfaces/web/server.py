@@ -830,6 +830,27 @@ class StudioRuntime:
             model["provider"] != "demo" and model["adapter_available"]
             for model in models
         )
+        cline_tool = (
+            self.cline_omnitrix.tool_registry.get("cline.coding")
+            if self.cline_omnitrix is not None
+            and self.cline_omnitrix.tool_registry.has("cline.coding")
+            else None
+        )
+        cline_runtime_status = (
+            cline_tool.runtime_status()
+            if cline_tool is not None and callable(getattr(cline_tool, "runtime_status", None))
+            else {"registered": False, "executable_found": False, "ready_to_attempt": False}
+        )
+        cline_worker = {
+            "enabled": self.cline_omnitrix is not None,
+            "endpoint": "/api/admin/cline/chat",
+            "authentication": "runtime_bearer_token_required",
+            "provider": os.getenv("CLINE_PROVIDER", "openrouter"),
+            "model": os.getenv("CLINE_MODEL", "minimax/minimax-m3.1-flash:free"),
+            "provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
+            **cline_runtime_status,
+            "persistence": "runtime filesystem only; no GitHub commit or pull request is created",
+        }
         tool_details = []
         for tool in self.omnitrix.tool_registry.list():
             tool_details.append(
@@ -873,6 +894,7 @@ class StudioRuntime:
             "gemini_key_detected": bool(os.getenv("GEMINI_API_KEY")),
             "openrouter_key_detected": bool(os.getenv("OPENROUTER_API_KEY")),
             "public_chat_enabled": self.public_chat_enabled,
+            "cline_worker": cline_worker,
             "specialists_configured": specialists_configured,
             "specialist_runtime_active": specialists_configured and live_provider_configured,
             "specialist_settings": (
