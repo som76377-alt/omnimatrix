@@ -7,6 +7,8 @@ import re
 
 from core.agents.registry import AgentDefinition, AgentRegistry
 from core.policy.agent_boundaries import ROLE_BOUNDARIES
+from core.agents.ecc_workflows import workflow_contracts
+from core.agents.ecc_skill_library import load_ecc_skill_references
 
 
 _SUBJECT_TERMS = re.compile(
@@ -268,6 +270,7 @@ class AgentRouter:
         base_instructions: str,
         plan: AgentPlan,
         intent_brief: str | None = None,
+        objective: str = "",
     ) -> str:
         """Compose role behavior while keeping the base policy authoritative."""
         blocks = [base_instructions]
@@ -322,4 +325,7 @@ class AgentRouter:
                 "Do not claim that this review is independent unless a separate provider "
                 "was actually selected."
             )
+        workflow_objective = objective or intent_brief or ""
+        blocks.extend(workflow_contracts(plan.primary.role, plan.domain, workflow_objective))
+        blocks.extend(load_ecc_skill_references(plan.primary.role, workflow_objective))
         return "\n\n".join(blocks)

@@ -99,6 +99,14 @@ Do **not** commit the key or paste it into chat/issues. Selecting this profile i
 
 The core application uses the Python standard library, with one explicit runtime dependency (`cryptography`) for opt-in AES-GCM encrypted model-state snapshots. Install runtime dependencies with `python -m pip install -r requirements.txt`. CI installs this file before tests. The encryption key is supplied separately by the caller and is never stored in the SQLite journal.
 
+### Optional ECC workflow references and FreeLLMAPI gateway
+
+Omnitrix now has native plan/test/review/verify workflow contracts for its specialist roles. A pinned, read-only ECC reference checkout contributes bounded, task-specific skill excerpts when available; ECC hooks, plugins, and setup commands are not executed.
+
+A separate optional model profile connects to a private FreeLLMAPI loopback sidecar. The Render startup supervisor restricts that gateway to the explicitly configured, eligible routes from Omnitrix's six provider/key slots and rejects upstream model identities outside the allowlist. Groq remains excluded unless the operator explicitly configures a no-cost quota. The default six-model profile and normal Codespaces setup remain unchanged.
+
+This optional gateway is not considered live until the Render build, health check, and real inference smoke test succeed. Render's current free service has ephemeral local storage, so FreeLLMAPI's local routing history is not durable across fresh instances. See [ECC and FreeLLMAPI integration notes](docs/ECC_FREELLMAPI_INTEGRATION.md).
+
 ## Project specifications
 
 - [Product Requirements Document](docs/PRD.md) — version 1.31; implementation status snapshot dated 18 October 2026.

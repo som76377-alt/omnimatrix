@@ -28,7 +28,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Compile Python source and tests
-        run: python -m compileall -q core interfaces tests
+        run: python -m compileall -q core interfaces scripts tests
 
       - name: Validate browser JavaScript syntax
         run: node --check webapp/app.js && node --check webapp/rigged-character.js && node --check webapp/creative-studio.js && node --check webapp/sw.js
@@ -38,6 +38,8 @@ jobs:
           python -m json.tool config/demo.models.json > /dev/null
           python -m json.tool config/agents.json > /dev/null
           python -m json.tool config/mobile.models.openrouter-free.example.json > /dev/null
+          python -m json.tool config/mobile.models.freellmapi.json > /dev/null
+          python -m json.tool config/agents.freellmapi.json > /dev/null
           python -m json.tool config/creative-studio-tools.json > /dev/null
           python -m json.tool config/creative-studio-agents.json > /dev/null
           python -m json.tool config/creative-production-contract.json > /dev/null

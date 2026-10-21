@@ -1910,7 +1910,7 @@ class Omnitrix:
 
         instructions = (
             self.agent_router.compose_instructions(
-                self.DEFAULT_INSTRUCTIONS, agent_plan, intent_brief
+                self.DEFAULT_INSTRUCTIONS, agent_plan, intent_brief, task.objective
             )
             if self.agent_router is not None and agent_plan is not None
             else self.DEFAULT_INSTRUCTIONS

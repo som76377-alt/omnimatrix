@@ -1,6 +1,7 @@
 from core.models.adapters import AdapterRegistry
 from core.models.factory import ModelAdapterFactory
 from core.models.providers.builders import build_gemini_adapter
+from core.models.providers.builders import build_freellmapi_adapter
 from core.models.providers.builders import build_groq_adapter
 from core.models.providers.builders import build_openrouter_adapter
 from core.models.providers.demo import DemoAdapter
@@ -18,6 +19,7 @@ def build_adapter_registry(
     factory.register("google", build_gemini_adapter)
     factory.register("openrouter", build_openrouter_adapter)
     factory.register("groq", build_groq_adapter)
+    factory.register("freellmapi", build_freellmapi_adapter)
     factory.register(
         "demo",
         lambda model: DemoAdapter(
