@@ -41,7 +41,7 @@ from core.policy.truthfulness import (
     require_truthfulness_contract,
     with_truthfulness_contract,
 )
-from core.policy.agent_boundaries import allowed_tools_for_role, stage_boundary_contract
+from core.policy.agent_boundaries import allowed_tools_for_role, stage_boundary_contract, support_assignment_contract
 from core.policy.quality import (
     require_quality_contract,
     with_quality_contract,
@@ -1518,6 +1518,8 @@ class Omnitrix:
                               "for the lead specialist and any coding worker. Include relevant constraints, "
                               "evidence, interfaces, risks, and testable acceptance checks. Do not redo another "
                               "specialist's work, invent evidence, or issue commands; report uncertainty explicitly."
+                            + "\n\n"
+                            + support_assignment_contract(support_agent.role, agent_plan.primary.role)
                         ),
                         budget_guard=budget_guard,
                     )
