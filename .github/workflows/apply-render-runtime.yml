@@ -64,22 +64,7 @@ jobs:
             --header 'Accept: application/json' \
             --header 'Content-Type: application/json' \
             --data "$env_body"
-          backend_body='{"value":"github_actions"}'
-          curl -sS --fail --output /dev/null \
-            --request PUT \
-            --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars/CLINE_EXECUTION_BACKEND" \
-            --header "Authorization: Bearer $RENDER_API_KEY" \
-            --header 'Accept: application/json' \
-            --header 'Content-Type: application/json' \
-            --data "$backend_body"
-          base_ref_body='{"value":"main"}'
-          curl -sS --fail --output /dev/null \
-            --request PUT \
-            --url "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars/CLINE_REMOTE_BASE_REF" \
-            --header "Authorization: Bearer $RENDER_API_KEY" \
-            --header 'Accept: application/json' \
-            --header 'Content-Type: application/json' \
-            --data "$base_ref_body"
+          # CLINE_EXECUTION_BACKEND and CLINE_REMOTE_BASE_REF are managed by render.yaml.
           runtime_token="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
           echo "::add-mask::$runtime_token"
           printf 'OMNITRIX_RUNTIME_TOKEN=%s\n' "$runtime_token" >> "$GITHUB_ENV"
