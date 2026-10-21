@@ -849,7 +849,11 @@ class StudioRuntime:
             "model": os.getenv("CLINE_MODEL", "minimax/minimax-m3.1-flash:free"),
             "provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
             **cline_runtime_status,
-            "persistence": "runtime filesystem only; no GitHub commit or pull request is created",
+            "persistence": (
+                "remote worker proposes validated changes as a reviewable pull request; never auto-merges"
+                if os.getenv("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions"
+                else "runtime filesystem only; no GitHub commit or pull request is created"
+            ),
         }
         tool_details = []
         for tool in self.omnitrix.tool_registry.list():
@@ -1190,7 +1194,9 @@ class StudioRuntime:
             "ready_model_route_count": ready_model_route_count,
             "route_readiness_note": "Ready means the configured adapter sees its key. It does not prove a successful model inference; use execution trace/provider response metadata for that.",
             "cline_worker_enabled": self.cline_omnitrix is not None,
-            "cline_cli_ready": bool(cline_runtime_status.get("executable_found") and cline_runtime_status.get("ready_to_attempt")),
+            "cline_cli_ready": bool(cline_runtime_status.get("ready_to_attempt")),
+            "cline_worker_backend": cline_runtime_status.get("backend", "local"),
+            "cline_worker_credential_configured": cline_runtime_status.get("worker_credential_configured"),
             "cline_provider_key_detected": bool(os.getenv(os.getenv("CLINE_API_KEY_ENV", "OPENROUTER_API_KEY"))),
             "reasoning_specialist_available": reasoning_specialist_available,
             "preferred_reasoning_model": (
