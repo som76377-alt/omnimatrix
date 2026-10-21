@@ -11,6 +11,7 @@ on:
       scope_json: {description: "JSON array of target paths", required: false, type: string}
       mode: {description: "plan or implement", required: true, type: choice, options: [plan, implement]}
       base_ref: {description: "Branch to base work on", required: true, default: main, type: string}
+      timeout_seconds: {description: "Cline execution limit in seconds", required: true, default: 300, type: number}
 permissions:
   contents: write
   pull-requests: write
