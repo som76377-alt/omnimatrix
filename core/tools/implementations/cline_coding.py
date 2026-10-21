@@ -143,6 +143,16 @@ class ClineCodingTool(Tool):
                 return ToolResult(success=False, error=f"{field_name} must be a list of at most {limit} bounded non-empty strings.")
         if isinstance(timeout, bool) or not isinstance(timeout, int) or not 30 <= timeout <= _MAX_TIMEOUT_SECONDS:
             return ToolResult(success=False, error="timeout_seconds must be an integer from 30 to 900.")
+        # Hosted deployments must delegate to the disposable GitHub runner. Never
+        # launch the memory-heavy CLI inside the small Render web process.
+        if os.environ.get("CLINE_EXECUTION_BACKEND", "").strip().lower() == "github_actions":
+            from core.tools.implementations.cline_remote import execute_remote
+            return execute_remote(
+                task=task.strip(), mode=mode, context=context.strip(),
+                related_agent_findings=related_agent_findings,
+                acceptance_criteria=acceptance_criteria, files_in_scope=files_in_scope,
+                timeout_seconds=timeout,
+            )
         if not self._executable:
             return ToolResult(
                 success=False,
