@@ -31,40 +31,38 @@ jobs:
         run: |
           set -euo pipefail
           check_key() {
-            local name="$1" provider="$2" value="$3" status
+            local name="$1" provider="$2" value="$3" model="$4" status body
             if [[ -z "$value" ]]; then
               echo "FAIL: $name is missing or empty in GitHub Actions secrets."
               return 1
             fi
             case "$provider" in
               gemini)
-                status=$(curl -sS -o /dev/null -w '%{http_code}' \
-                  -H "x-goog-api-key: $value" \
-                  'https://generativelanguage.googleapis.com/v1beta/models')
+                body=$(jq -n --arg model "$model" '{model:$model,input:"Reply with exactly KEY_OK."}')
+                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
+                  -H "Content-Type: application/json" -H "x-goog-api-key: $value" \
+                  -d "$body" 'https://generativelanguage.googleapis.com/v1beta/interactions')
                 ;;
-              openrouter)
-                status=$(curl -sS -o /dev/null -w '%{http_code}' \
-                  -H "Authorization: Bearer $value" \
-                  'https://openrouter.ai/api/v1/models')
-                ;;
-              groq)
-                status=$(curl -sS -o /dev/null -w '%{http_code}' \
-                  -H "Authorization: Bearer $value" \
-                  'https://api.groq.com/openai/v1/models')
+              openrouter|groq)
+                body=$(jq -n --arg model "$model" '{model:$model,messages:[{role:"user",content:"Reply with exactly KEY_OK."}],max_tokens:8}')
+                if [[ "$provider" == "openrouter" ]]; then endpoint='https://openrouter.ai/api/v1/chat/completions'; else endpoint='https://api.groq.com/openai/v1/chat/completions'; fi
+                status=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' \
+                  -H "Content-Type: application/json" -H "Authorization: Bearer $value" \
+                  -d "$body" "$endpoint")
                 ;;
             esac
             if [[ "$status" != "200" ]]; then
-              echo "FAIL: $name authentication check returned HTTP $status."
+              echo "FAIL: $name generation probe returned HTTP $status for configured provider/model. Key is not confirmed for inference."
               return 1
             fi
-            echo "PASS: $name authenticated with $provider (model-list endpoint; no generation billed)."
+            echo "PASS: $name completed a minimal provider inference request (response body suppressed)."
           }
-          check_key GEMINI_API_KEY gemini "$GEMINI_API_KEY"
-          check_key GEMINI_API_KEY_1 gemini "$GEMINI_API_KEY_1"
-          check_key OPENROUTER_API_KEY openrouter "$OPENROUTER_API_KEY"
-          check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1"
-          check_key GROQ_API_KEY groq "$GROQ_API_KEY"
-          check_key GROQ_API_KEY_1 groq "$GROQ_API_KEY_1"
+          check_key GEMINI_API_KEY gemini "$GEMINI_API_KEY" "gemini-3.8-flash"
+          check_key GEMINI_API_KEY_1 gemini "$GEMINI_API_KEY_1" "gemini-3.5-flash-lite"
+          check_key OPENROUTER_API_KEY openrouter "$OPENROUTER_API_KEY" "minimax/minimax-m3.1-flash:free"
+          check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1" "nvidia/nemotron-3-ultra-550b-a55b:free"
+          check_key GROQ_API_KEY groq "$GROQ_API_KEY" "openai/gpt-oss-120b"
+          check_key GROQ_API_KEY_1 groq "$GROQ_API_KEY_1" "openai/gpt-oss-20b"
 
       - name: Sync provider keys to the existing Render service without replacing other variables
         shell: bash
