@@ -1471,7 +1471,7 @@
     uploadChatFiles(event.target.files);
   });
 
-  function shouldLaunchCreativeStudio(message, attachmentCount) {
+  function isVideoCreationRequest(message, attachmentCount) {
     const text = String(message || "").trim();
     if (!text || text.length > 4000 || attachmentCount > 0) return false;
     const action = /\b(?:create|make|generate|produce|edit|assemble|render|animate|build|turn)\b/i.test(text);
@@ -1571,7 +1571,7 @@
     const download = document.createElement("a");
     download.className = "chat-video-download";
     download.href = objectUrl;
-    download.download = String(result.file_name || "omnitrix-generated-video.mp4").replace(/[\\/\\0]/g, "_");
+    download.download = String(result.file_name || "omnitrix-generated-video.mp4").replace(/[\\/]/g, "_").replace(/\0/g, "_");
     download.textContent = "Save video file";
     bubble.appendChild(download);
     player.addEventListener("error", () => {
@@ -1587,7 +1587,7 @@
     const input = byId("chat-input");
     const message = input.value.trim();
     const readyAttachments = state.attachments.filter((item) => item.attachmentId && item.status === "uploaded");
-    const videoCreationRequest = shouldLaunchCreativeStudio(message, readyAttachments.length);
+    const videoCreationRequest = isVideoCreationRequest(message, readyAttachments.length);
     if ((!message && !readyAttachments.length) || state.busyChat) return;
     if (state.busyUploads > 0) {
       toast("Wait for all selected files to finish uploading before sending.");
