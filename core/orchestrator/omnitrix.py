@@ -2158,7 +2158,7 @@ class Omnitrix:
                         )
                         candidate = self._select_agent_model(
                             agent_plan.primary,
-                            default_model,
+                            selected_model,
                             required_capabilities=task.requirements.capabilities,
                             prefer_fallback=False,
                             prefer_independent_provider=True,
