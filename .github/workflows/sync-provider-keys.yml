@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Verify all six provider keys authenticate without revealing them
+      - name: Verify provider inference only where free-quota use is confirmed
         shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -28,6 +28,7 @@ jobs:
           OPENROUTER_API_KEY_1: ${{ secrets.OPENROUTER_API_KEY_1 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+          GROQ_FREE_QUOTA_CONFIRMED: ${{ vars.GROQ_FREE_QUOTA_CONFIRMED }}
         run: |
           set -euo pipefail
           FAILED=0
@@ -36,6 +37,10 @@ jobs:
             if [[ -z "$value" ]]; then
               echo "FAIL: $name is missing or empty in GitHub Actions secrets."
               FAILED=1
+              return 0
+            fi
+            if [[ "$provider" == "groq" && "${GROQ_FREE_QUOTA_CONFIRMED:-false}" != "true" ]]; then
+              echo "SKIP: $name is configured but Groq inference was not tested because free quota was not explicitly confirmed; no request was sent."
               return 0
             fi
             case "$provider" in
@@ -79,8 +84,11 @@ jobs:
           check_key OPENROUTER_API_KEY_1 openrouter "$OPENROUTER_API_KEY_1" "nvidia/nemotron-3-ultra-550b-a55b:free"
           check_key GROQ_API_KEY groq "$GROQ_API_KEY" "openai/gpt-oss-120b"
           check_key GROQ_API_KEY_1 groq "$GROQ_API_KEY_1" "openai/gpt-oss-20b"
+          if [[ "${GROQ_FREE_QUOTA_CONFIRMED:-false}" != "true" ]]; then
+            echo "NOTE: Gemini and OpenRouter inference were tested. Groq routes remain gated until GROQ_FREE_QUOTA_CONFIRMED=true."
+          fi
           if [[ "$FAILED" -ne 0 ]]; then
-            echo "FAIL: one or more key/model combinations did not complete inference; no environment sync or deployment was performed."
+            echo "FAIL: one or more eligible key/model combinations did not complete inference; no environment sync or deployment was performed."
             exit 1
           fi
 
@@ -165,8 +173,10 @@ jobs:
           fi
           health=$(curl -sS --fail --retry 5 --retry-delay 3 \
             'https://omnitrix-studio.onrender.com/api/mobile/health')
-          jq -e '.gemini_key_detected == true and .openrouter_key_detected == true and .all_six_key_slots_detected == true and .configured_model_route_count == 6 and .ready_model_route_count == 6 and ([.configured_model_routes[].model] | unique | length == 6)' \
+          expected_ready=4
+          if [[ "${GROQ_FREE_QUOTA_CONFIRMED:-false}" == "true" ]]; then expected_ready=6; fi
+          jq -e --argjson expected "$expected_ready" '.gemini_key_detected == true and .openrouter_key_detected == true and .all_six_key_slots_detected == true and .configured_model_route_count == 6 and .ready_model_route_count == $expected and ([.configured_model_routes[].model] | unique | length == 6)' \
             <<< "$health" >/dev/null
-          echo "PASS: all six key slots are visible and all six distinct model routes have registered, ready adapters."
+          echo "PASS: all six key slots are visible and six distinct model profiles are registered; ready inference routes=$expected_ready."
           jq -r '.configured_model_routes[] | "ROUTE: (.profile) | (.provider) | (.model) | (.status) | roles=(.preferred_by_roles|join(","))"' <<< "$health"
           echo "Note: key visibility and adapter readiness do not prove that inference has succeeded; provider response metadata is the execution evidence."
