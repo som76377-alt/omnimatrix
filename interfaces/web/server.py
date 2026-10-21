@@ -450,6 +450,7 @@ class StudioRuntime:
         app: ChatApplication,
         omnitrix: Omnitrix,
         workspace_tool: WorkspaceInspectTool,
+        cline_omnitrix: Omnitrix | None = None,
         access_token: str,
         workspace_read_enabled: bool,
         allowed_paths: list[str] | None,
@@ -501,6 +502,8 @@ class StudioRuntime:
         self.active_chat_session_id: str | None = None
         self.app = app
         self.omnitrix = omnitrix
+        self.cline_omnitrix = cline_omnitrix
+        self.cline_execution_lock = threading.Lock()
         self.workspace_tool = workspace_tool
         self.access_token = access_token
         self.workspace_read_enabled = workspace_read_enabled
@@ -1233,6 +1236,69 @@ class StudioRuntime:
             "activity_history": history[-12:],
             "plan": plan,
         }
+
+    def run_cline_chat(self, payload: Any) -> dict[str, Any]:
+        """Run a coding task through a separate, operator-authenticated Cline-enabled Omnitrix."""
+        if self.cline_omnitrix is None:
+            return {
+                "ok": False,
+                "code": "cline_unavailable",
+                "error": "The authenticated Cline worker is disabled or its CLI/provider is not ready.",
+            }
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object.")
+        task = payload.get("task")
+        if not isinstance(task, str) or not 10 <= len(task.strip()) <= 8000:
+            raise ValueError("task must contain 10–8000 characters.")
+        acceptance = payload.get("acceptance_criteria", [])
+        paths = payload.get("files_in_scope", [])
+        for field_name, values, limit, item_limit in (
+            ("acceptance_criteria", acceptance, 12, 800),
+            ("files_in_scope", paths, 20, 240),
+        ):
+            if not isinstance(values, list) or len(values) > limit or any(
+                not isinstance(value, str) or not value.strip() or len(value) > item_limit
+                for value in values
+            ):
+                raise ValueError(f"{field_name} must be a list of at most {limit} bounded non-empty strings.")
+        criteria_text = "\n".join(f"- {item}" for item in acceptance) if acceptance else "- Implement the requested change with relevant tests."
+        paths_text = "\n".join(f"- {item}" for item in paths) if paths else "- Choose the smallest relevant files within the configured allowlist."
+        prompt = (
+            "The operator explicitly authorized this coding task. You are Omnitrix's coding lead. "
+            "Use the coding specialist and MUST call the cline.coding tool in implement mode; do not answer with a text-only patch. "
+            "Pass the complete task, criteria, and path scope to Cline. Review its execution result and report what actually happened. "
+            "Do not claim changes were committed to GitHub; this worker only changes the current runtime workspace.\n\n"
+            f"CODING TASK:\n{task.strip()}\n\nACCEPTANCE CRITERIA:\n{criteria_text}\n\n"
+            f"TARGET PATHS (still subject to the runtime allowlist):\n{paths_text}"
+        )
+        if not self.cline_execution_lock.acquire(blocking=False):
+            raise RuntimeError("Cline coding task is already running; retry later.")
+        try:
+            conversation = Conversation()
+            answer = self.cline_omnitrix.chat(conversation, prompt)
+            trace = self.cline_omnitrix.last_execution_trace or {}
+            executions = trace.get("tool_executions", [])
+            cline_events = [
+                item for item in executions
+                if isinstance(item, dict) and item.get("tool_name") == "cline.coding"
+            ] if isinstance(executions, list) else []
+            if not cline_events:
+                return {
+                    "ok": False,
+                    "code": "cline_not_invoked",
+                    "answer": answer,
+                    "execution_trace": trace,
+                    "persistence": "runtime_filesystem_only; no GitHub commit or pull request is created",
+                }
+            return {
+                "ok": any(item.get("success") is True for item in cline_events),
+                "answer": answer,
+                "cline_executions": cline_events,
+                "execution_trace": trace,
+                "persistence": "runtime_filesystem_only; no GitHub commit or pull request is created",
+            }
+        finally:
+            self.cline_execution_lock.release()
 
     def chat_public(self, payload: Any, client_ip: str) -> dict[str, Any]:
         """Rate-limited public chat only; this path cannot access workspace or test APIs."""
@@ -2145,6 +2211,9 @@ def make_handler(
                     ), 202)
                 elif route == "/api/chat":
                     self._send_json(runtime.chat(payload))
+                elif route == "/api/admin/cline/chat":
+                    result = runtime.run_cline_chat(payload)
+                    self._send_json(result, 200 if result.get("ok") else 503)
                 elif route == "/api/attachments/delete":
                     self._send_json(runtime.delete_attachment(payload))
                 elif route == "/api/mobile/attachments/delete":
@@ -2296,12 +2365,30 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
         tool_permission=ToolPermission.from_capabilities(capabilities),
         budget_limits=BudgetLimits(spend_mode=spend_mode),
     )
+    cline_omnitrix = None
+    cline_api_enabled = os.getenv("OMNITRIX_ENABLE_CLINE_API", "").strip().lower() == "true"
+    if cline_api_enabled and shutil.which("cline") and os.getenv("OPENROUTER_API_KEY"):
+        # Keep Cline out of the unauthenticated public mobile chat runtime.
+        # Its separate orchestrator is reachable only through token-protected /api routes.
+        cline_allowed_paths = ("core", "tests", "interfaces", "scripts", "config", "webapp", "docs")
+        cline_registry = build_tool_registry(
+            root, allowed_paths=cline_allowed_paths, enable_cline=True
+        )
+        cline_omnitrix = Omnitrix.from_config(
+            config_path,
+            tool_registry=cline_registry,
+            tool_permission=ToolPermission.from_capabilities(
+                {"calculation", "workspace.read", "coding.execute"}
+            ),
+            budget_limits=BudgetLimits(spend_mode=spend_mode),
+        )
     return StudioRuntime(
         root=root,
         config_path=config_path,
         app=ChatApplication(omnitrix),
         omnitrix=omnitrix,
         workspace_tool=registry.get("workspace.inspect"),
+        cline_omnitrix=cline_omnitrix,
         access_token=access_token,
         workspace_read_enabled=args.allow_workspace_read,
         allowed_paths=args.workspace_allow,
