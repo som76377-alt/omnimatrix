@@ -1535,10 +1535,31 @@
       x: portrait ? 0 : (labels.length === 1 ? 0 : -4.2 + (8.4 * index / (labels.length - 1))),
       y: portrait ? (labels.length === 1 ? 0 : 2.0 - (4.0 * index / (labels.length - 1))) : 0
     }));
-    const trace = describeExecutionTrace(planResult.execution_trace);
+    const executionTrace = planResult.execution_trace;
+    const trace = describeExecutionTrace(executionTrace);
+    const activity = executionTrace && Array.isArray(executionTrace.activity) ? executionTrace.activity : [];
+    const actualCalls = [];
+    activity.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const stage = String(item.stage || item.role || "model stage");
+      const model = String(item.model || item.configured_model || "model ID not reported");
+      const provider = String(item.provider || "provider not reported");
+      const label = stage + ": " + model + " (" + provider + ")";
+      if (!actualCalls.includes(label)) actualCalls.push(label);
+    });
+    const coordination = executionTrace && executionTrace.coordination && typeof executionTrace.coordination === "object"
+      ? executionTrace.coordination : null;
+    const coordinationEvidence = coordination
+      ? " Coordination status: " + String(coordination.status || "not reported") +
+        "; assigned roles: " + (Array.isArray(coordination.assigned_roles) && coordination.assigned_roles.length
+          ? coordination.assigned_roles.join(", ") : "none reported") + "."
+      : "";
+    const modelEvidence = actualCalls.length
+      ? " Actual model-stage trace: " + actualCalls.slice(0, 8).join("; ") + "."
+      : " The backend returned no per-model activity trace; specialist participation is not verified.";
     setProgress("1. **Plan validated** — " + labels.length + " nodes and " + arrows.length +
-      " arrows. Planning trace: " + (trace.subtitle || "model identity not reported by the backend") +
-      ". Next: render this structured plan as code-driven Manim animation.", "CODE VIDEO · PLAN READY");
+      " arrows." + modelEvidence + coordinationEvidence +
+      " Next: render this structured plan as code-driven Manim animation.", "CODE VIDEO · PLAN READY");
 
     setProgress("2. **Rendering with Manim** — submitting the validated diagram to the local code renderer. This step does not call the paid video-generation endpoint.", "CODE VIDEO · RENDER QUEUED");
     const accepted = await apiRequest("/creative/manim-render", {
