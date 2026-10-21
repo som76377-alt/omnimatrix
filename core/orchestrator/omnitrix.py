@@ -1091,8 +1091,14 @@ class Omnitrix:
         required_capabilities: frozenset[str] = frozenset(),
         prefer_independent_provider: bool = False,
         prefer_fallback: bool = False,
+        exclude_model_names: frozenset[str] = frozenset(),
     ):
-        """Choose a configured adapter without silently changing spend policy."""
+        """Choose a configured adapter without silently changing spend policy.
+
+        When an orchestration stage supplies excluded model profiles, prefer an
+        unused eligible route. If the eligible pool is exhausted, reuse a safe
+        configured route rather than breaking the task or the spend policy.
+        """
         required = agent.capabilities.union(required_capabilities)
         allowed_zero_cost = {"local", "demo", "zero_cost", "free"}
         if self.budget_limits.spend_mode == "zero_cost_only":
@@ -1164,6 +1170,13 @@ class Omnitrix:
             return len(agent.preferred_models)
 
         ordered = sorted(eligible, key=preference_rank)
+        if exclude_model_names:
+            distinct = [model for model in ordered if model.name not in exclude_model_names]
+            # Avoid model-role collisions whenever another eligible profile is
+            # available. A four-profile free pool cannot uniquely serve every
+            # stage in a six-call pipeline, so reuse is allowed only on exhaustion.
+            if distinct:
+                ordered = distinct
 
         if prefer_independent_provider:
             independent = [
@@ -1615,6 +1628,9 @@ class Omnitrix:
                     prefer_fallback=agent_plan.complexity == "standard",
                 )
         active_agent_role = agent_plan.primary.role if agent_plan is not None else None
+        # Track profiles already assigned to this run. Coordination stages share
+        # the accepted handoffs but use different model profiles when possible.
+        used_specialist_models: set[str] = {selected_model.name}
         _log_safely(
             logging.INFO,
             "model_selected",
@@ -1643,7 +1659,9 @@ class Omnitrix:
                     default_model,
                     required_capabilities=frozenset({"reasoning"}),
                     prefer_fallback=True,
+                    exclude_model_names=frozenset(used_specialist_models),
                 )
+                used_specialist_models.add(intent_model.name)
                 intent_adapter = self.adapter_registry.get(intent_model.name)
                 # The intent stage sees recent conversation context but cannot call tools.
                 preflight_messages = self._bounded_agent_context(messages)
@@ -1706,7 +1724,9 @@ class Omnitrix:
                         selected_model,
                         required_capabilities=frozenset({"reasoning"}),
                         prefer_fallback=False,
+                        exclude_model_names=frozenset(used_specialist_models),
                     )
+                    used_specialist_models.add(coordinator_model.name)
                     coordinator_adapter = self.adapter_registry.get(coordinator_model.name)
                     assignment_roles = [agent.role for agent in support_order]
                     coordinator_instructions = (
@@ -1859,7 +1879,9 @@ class Omnitrix:
                         selected_model,
                         required_capabilities=frozenset({"reasoning"}),
                         prefer_fallback=False,
+                        exclude_model_names=frozenset(used_specialist_models),
                     )
+                    used_specialist_models.add(support_model.name)
                     support_adapter = self.adapter_registry.get(support_model.name)
                     finding = self._run_agent_stage(
                         task=task,
@@ -2132,6 +2154,7 @@ class Omnitrix:
                             selected_model,
                             required_capabilities=frozenset({"reasoning"}),
                             prefer_independent_provider=True,
+                            exclude_model_names=frozenset(used_specialist_models),
                         )
                         critic_adapter = self.adapter_registry.get(critic_model.name)
                         critique_payload = json.dumps(
