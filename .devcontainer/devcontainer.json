@@ -1,7 +1,9 @@
 {
   "name": "Omnitrix Studio",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.14-bookworm",
-  "forwardPorts": [8000],
+  "forwardPorts": [
+    8000
+  ],
   "portsAttributes": {
     "8000": {
       "label": "Omnitrix Studio / Android API",
@@ -9,7 +11,7 @@
       "visibility": "public"
     }
   },
-  "postCreateCommand": "python -m pip install -r requirements.txt",
+  "postCreateCommand": "python -m pip install -r requirements.txt && npm install -g cline",
   "postStartCommand": "bash .devcontainer/start-studio.sh",
   "customizations": {
     "vscode": {
@@ -17,6 +19,11 @@
         "editor.minimap.enabled": false,
         "editor.wordWrap": "on"
       }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
     }
   }
 }

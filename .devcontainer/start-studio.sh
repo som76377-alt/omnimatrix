@@ -36,6 +36,7 @@ nohup bash -c '
       --workspace-root . \
       --allow-workspace-read \
       --allow-workspace-write \
+      --enable-cline-coding \
       --workspace-allow core \
       --workspace-allow interfaces \
       --workspace-allow tests \
@@ -62,3 +63,4 @@ echo "OMNITRIX STUDIO STARTING on private Codespaces port 8000."
 echo "Runtime access token (keep private; paste into the Omnitrix Android app): $TOKEN"
 echo "Server log: tail -f $LOG_FILE"
 echo "The app will fast-forward a clean checkout of main when GitHub changes arrive."
+echo "Cline CLI is installed by the devcontainer. First use: run cline auth once in the Codespaces terminal to configure its model provider."

@@ -2229,10 +2229,12 @@ def build_runtime(args: argparse.Namespace, access_token: str) -> StudioRuntime:
     config_path = Path(args.config).expanduser().resolve(strict=True)
     if not config_path.is_file():
         raise ValueError("Model configuration must be an existing file.")
-    registry = build_tool_registry(root, allowed_paths=args.workspace_allow)
+    registry = build_tool_registry(root, allowed_paths=args.workspace_allow, enable_cline=args.enable_cline_coding)
     capabilities = {"calculation"}
     if args.allow_workspace_read:
         capabilities.add("workspace.read")
+    if args.enable_cline_coding:
+        capabilities.add("coding.execute")
     spend_mode = (
         "user_provided_free_quota"
         if args.allow_free_quota
@@ -2283,6 +2285,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-workspace-read",
         action="store_true",
         help="Explicitly enable read-only workspace browsing and model tool access.",
+    )
+    parser.add_argument(
+        "--enable-cline-coding",
+        action="store_true",
+        help="Enable the Cline coding agent in this trusted private runtime; requires workspace read/write and an authenticated Cline CLI.",
     )
     parser.add_argument(
         "--allow-workspace-write",
@@ -2336,6 +2343,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--workspace-allow requires --allow-workspace-read.")
     if args.allow_workspace_write and not args.allow_workspace_read:
         parser.error("--allow-workspace-write requires --allow-workspace-read.")
+    if args.enable_cline_coding and not (args.allow_workspace_read and args.allow_workspace_write):
+        parser.error("--enable-cline-coding requires --allow-workspace-read and --allow-workspace-write.")
     if args.host not in {"127.0.0.1", "::1", "0.0.0.0"}:
         parser.error("--host must be a loopback address or 0.0.0.0.")
     if args.host == "0.0.0.0":

@@ -224,3 +224,10 @@ The hosted service is designed to expose only one unauthenticated route, the mob
 **Deployment is not complete yet.** Connect the Render integration to the Render account that should own the service, deploy the repository's Blueprint, and set `GEMINI_API_KEY` as a server-side secret using a Google AI Studio Free Tier key with billing disabled. The model profile is `gemini-3.8-flash`; the key is never stored in this repository or APK. After Render provides the service URL, update `config/mobile-backend.json` with that verified HTTPS URL and set `chat_enabled` to `true`. The APK then discovers the service automatically over the internet.
 
 Render's free web services sleep after 15 minutes without inbound traffic and usually need about a minute to wake. This gives the app a stable service address without Codespaces, but it is not an always-awake service. If the backend is offline or its free provider quota is exhausted, chat will not work until the service/quota is available again.
+
+### Cline coding specialist
+
+The Python CLI and private Codespaces Studio can optionally delegate implementation tasks to the Cline CLI. Fresh Codespaces containers install Node.js and Cline automatically; authenticate Cline once with cline auth before using it. The private Codespaces startup enables the Cline tool only with the workspace read/write permissions already required by that development server. The public Render service does not enable Cline.
+
+Read docs/CLINE_CODING_AGENT.md for setup, limits, and security boundaries. This adapter is an integration, not model training, and Cline's changes still require independent review and passing tests.
+

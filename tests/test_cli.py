@@ -223,6 +223,28 @@ class CliTests(unittest.TestCase):
             tool.close()
             run_cli_mock.assert_called_once()
 
+    def test_cline_coding_requires_an_explicit_workspace(self):
+        with self.assertRaises(SystemExit):
+            main([
+                "--config", "config/demo.models.json",
+                "--enable-cline-coding",
+            ])
+
+    def test_cline_coding_is_registered_only_with_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            with patch("interfaces.cli.main.Omnitrix") as omnitrix_class:
+                omnitrix_class.from_config.return_value = FakeOmnitrix()
+                with patch("interfaces.cli.main.run_cli"):
+                    main([
+                        "--config", "config/demo.models.json",
+                        "--workspace-root", workspace,
+                        "--enable-cline-coding",
+                    ])
+            kwargs = omnitrix_class.from_config.call_args.kwargs
+            self.assertEqual(kwargs["tool_permission"].capabilities,
+                             frozenset({"coding.execute"}))
+            self.assertTrue(kwargs["tool_registry"].has("cline.coding"))
+
     def test_workspace_read_flag_is_rejected_for_recovery_inspection(self):
         with self.assertRaises(SystemExit):
             main([
