@@ -26,6 +26,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -134,8 +135,59 @@ private data class ChatMessage(
     val text: String,
     val modelLabel: String? = null,
     val activityLines: List<String> = emptyList(),
-    val videoFilePath: String? = null
+    val videoFilePath: String? = null,
+    val renderCode: String? = null,
+    val renderLanguage: String? = null,
+    val id: String = UUID.randomUUID().toString()
 )
+
+private val ChatCodeFenceRegex = Regex(
+    "(?ms)^ {0,3}(\\x60{3,}|~{3,})([^\\r\\n]*)\\r?\\n([\\s\\S]*?)^ {0,3}\\1[ \\t]*(?:\\r?\\n|$)"
+)
+
+private fun copyPlainText(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, value))
+    android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun CodeSnippetBlock(
+    language: String,
+    code: String,
+    onRenderCode: (String, String) -> Unit,
+    renderEnabled: Boolean
+) {
+    val context = LocalContext.current
+    Column(
+        Modifier.fillMaxWidth().background(Surface, RoundedCornerShape(4.dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(language.ifBlank { "code" }.uppercase(), color = Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { copyPlainText(context, "Code snippet", code) }) {
+                Text("COPY", color = Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = { onRenderCode(language, code) }, enabled = renderEnabled) {
+                Text("RENDER", color = if (renderEnabled) Green else Grey, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        SelectionContainer {
+            Text(
+                code,
+                color = White,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                softWrap = false,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            )
+        }
+        Text("Long-press code to select text. RENDER compiles it in Omnitrix chat.", color = Grey, fontSize = 10.sp, lineHeight = 14.sp)
+    }
+}
+
 private data class ChatAttachment(
     val localId: String,
     val uri: Uri,
@@ -2096,7 +2148,37 @@ internal object MarkwonMathNormalizer {
 }
 
 @Composable
-private fun MarkdownMessage(content: String) {
+private fun MarkdownMessage(
+    content: String,
+    renderEnabled: Boolean,
+    onRenderCode: (String, String) -> Unit
+) {
+    val blocks = remember(content) {
+        val matches = ChatCodeFenceRegex.findAll(content).toList()
+        val result = mutableListOf<Triple<String, String, String>>()
+        var cursor = 0
+        for (match in matches) {
+            if (match.range.first > cursor) result += Triple("markdown", "", content.substring(cursor, match.range.first))
+            val language = match.groups[2]?.value.orEmpty().trim().split(Regex("\\s+")).firstOrNull().orEmpty().lowercase()
+            result += Triple("code", language, match.groups[3]?.value.orEmpty().trimEnd())
+            cursor = match.range.last + 1
+        }
+        if (cursor < content.length || result.isEmpty()) result += Triple("markdown", "", content.substring(cursor))
+        result
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        blocks.forEach { block ->
+            if (block.first == "code") {
+                CodeSnippetBlock(block.second, block.third, onRenderCode, renderEnabled)
+            } else if (block.third.isNotBlank()) {
+                MarkdownText(block.third)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownText(content: String) {
     val context = LocalContext.current
     val markwon = remember(context) {
         Markwon.builder(context)
@@ -2115,7 +2197,6 @@ private fun MarkdownMessage(content: String) {
             .usePlugin(HtmlPlugin.create())
             .build()
     }
-
     AndroidView(
         modifier = Modifier.fillMaxWidth(),
         factory = { viewContext ->
@@ -2129,6 +2210,7 @@ private fun MarkdownMessage(content: String) {
                 setLineSpacing(0f, 1.08f)
                 setPadding(0, 0, 0, 0)
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                setTextIsSelectable(true)
                 movementMethod = LinkMovementMethod.getInstance()
             }
         },
