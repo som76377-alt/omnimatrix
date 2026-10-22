@@ -199,6 +199,11 @@ private class ChatWebMRenderBridge(
     private var output: FileOutputStream? = null
     private var totalBytes: Long = 0L
     private var settled = false
+    private val renderDeadline = Runnable { fail("In-chat rendering timed out after 30 seconds.") }
+
+    init {
+        mainHandler.postDelayed(renderDeadline, 30_000L)
+    }
 
     @Synchronized
     @JavascriptInterface
@@ -234,7 +239,7 @@ private class ChatWebMRenderBridge(
 
     @Synchronized
     @JavascriptInterface
-    fun finish() {
+    fun finish(playbackMetadata: String?) {
         if (settled) return
         try {
             output?.flush()
@@ -252,7 +257,16 @@ private class ChatWebMRenderBridge(
                 failLocked("The renderer output is not a valid WebM container.")
                 return
             }
+            val metadata = JSONObject(playbackMetadata.orEmpty())
+            val duration = metadata.optDouble("duration", -1.0)
+            val width = metadata.optInt("width", 0)
+            val height = metadata.optInt("height", 0)
+            if (!duration.isFinite() || duration <= 0.0 || width <= 0 || height <= 0) {
+                failLocked("The exported WebM could not be reopened for verification.")
+                return
+            }
             settled = true
+            mainHandler.removeCallbacks(renderDeadline)
             mainHandler.post { onComplete(destination) }
         } catch (_: Exception) {
             failLocked("The completed WebM could not be verified.")
@@ -269,6 +283,7 @@ private class ChatWebMRenderBridge(
     private fun failLocked(message: String) {
         if (settled) return
         settled = true
+        mainHandler.removeCallbacks(renderDeadline)
         try { output?.close() } catch (_: Exception) {}
         output = null
         try { destination.delete() } catch (_: Exception) {}
@@ -309,7 +324,58 @@ private fun makeInstrumentedHtml(source: String): String {
               stream.getTracks().forEach((track) => track.stop());
               const blob = new Blob(chunks, {type: recorder.mimeType || "video/webm"});
               if (!blob.size) { fail("The browser returned an empty recording."); return; }
-              parent.postMessage({type: "omnitrix-code-render-complete", blob: blob}, "*");
+              // Reopen and decode the generated WebM before sending it to native chat.
+              const video = document.createElement("video");
+              video.muted = true;
+              video.playsInline = true;
+              video.preload = "auto";
+              video.style.cssText = "position:fixed;left:-10000px;width:2px;height:2px;opacity:0;pointer-events:none";
+              document.body.appendChild(video);
+              const objectUrl = URL.createObjectURL(blob);
+              let verified = false;
+              let verifyTimer = 0;
+              const cleanup = () => {
+                clearTimeout(verifyTimer);
+                video.removeEventListener("loadeddata", onLoaded);
+                video.removeEventListener("error", onError);
+                try { video.pause(); } catch (_) {}
+                video.remove();
+                URL.revokeObjectURL(objectUrl);
+              };
+              const onLoaded = () => {
+                if (verified) return;
+                const duration = Number(video.duration);
+                const width = Number(video.videoWidth);
+                const height = Number(video.videoHeight);
+                if (!Number.isFinite(duration) || duration <= 0 || width <= 0 || height <= 0) {
+                  verified = true;
+                  cleanup();
+                  fail("The exported WebM could not be reopened for verification.");
+                  return;
+                }
+                verified = true;
+                cleanup();
+                parent.postMessage({
+                  type: "omnitrix-code-render-complete", blob: blob,
+                  duration: duration, width: width, height: height
+                }, "*");
+              };
+              const onError = () => {
+                if (verified) return;
+                verified = true;
+                cleanup();
+                fail("The exported WebM could not be reopened for verification.");
+              };
+              verifyTimer = setTimeout(() => {
+                if (verified) return;
+                verified = true;
+                cleanup();
+                fail("Timed out while reopening the rendered WebM for verification.");
+              }, 10000);
+              video.addEventListener("loadeddata", onLoaded, {once: true});
+              video.addEventListener("error", onError, {once: true});
+              video.src = objectUrl;
+              video.load();
             };
             try {
               recorder.start(250);
@@ -363,7 +429,7 @@ private fun chatRendererHostHtml(source: String): String {
               bridge.appendChunk(btoa(binary));
               await new Promise(resolve=>setTimeout(resolve,0));
             }
-            bridge.finish();
+            bridge.finish(JSON.stringify({duration:data.duration,width:data.width,height:data.height}));
             finished=true;
             state.textContent="VIDEO RENDERED · WebM attached to chat";
           } catch(error){reportError(error && error.message || "Could not transfer the rendered video.");}
