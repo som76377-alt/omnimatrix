@@ -188,6 +188,241 @@ private fun CodeSnippetBlock(
     }
 }
 
+
+/** The bridge accepts only a size-bounded WebM stream and never exposes filesystem paths to JavaScript. */
+private class ChatWebMRenderBridge(
+    private val destination: File,
+    private val onComplete: (File) -> Unit,
+    private val onFailure: (String) -> Unit
+) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var output: FileOutputStream? = null
+    private var totalBytes: Long = 0L
+    private var settled = false
+
+    @Synchronized
+    @JavascriptInterface
+    fun begin(mimeType: String?) {
+        if (settled) return
+        try {
+            output?.close()
+            destination.parentFile?.mkdirs()
+            destination.delete()
+            output = FileOutputStream(destination, false)
+            totalBytes = 0L
+        } catch (_: Exception) {
+            failLocked("Could not create a temporary video file.")
+        }
+    }
+
+    @Synchronized
+    @JavascriptInterface
+    fun appendChunk(encoded: String?) {
+        if (settled || output == null) return
+        try {
+            val data = android.util.Base64.decode(encoded.orEmpty(), android.util.Base64.DEFAULT)
+            totalBytes += data.size
+            if (totalBytes > 24L * 1024L * 1024L) {
+                failLocked("The rendered WebM exceeded the 24 MB in-chat limit.")
+                return
+            }
+            output?.write(data)
+        } catch (_: Exception) {
+            failLocked("A rendered video chunk could not be written.")
+        }
+    }
+
+    @Synchronized
+    @JavascriptInterface
+    fun finish() {
+        if (settled) return
+        try {
+            output?.flush()
+            output?.close()
+            output = null
+            if (!destination.isFile || destination.length() < 128L || destination.length() > 24L * 1024L * 1024L) {
+                failLocked("The renderer produced an empty or oversized video file.")
+                return
+            }
+            val header = ByteArray(4)
+            val count = destination.inputStream().use { it.read(header) }
+            if (count != 4 || header[0] != 0x1A.toByte() || header[1] != 0x45.toByte() ||
+                header[2] != 0xDF.toByte() || header[3] != 0xA3.toByte()
+            ) {
+                failLocked("The renderer output is not a valid WebM container.")
+                return
+            }
+            settled = true
+            mainHandler.post { onComplete(destination) }
+        } catch (_: Exception) {
+            failLocked("The completed WebM could not be verified.")
+        }
+    }
+
+    @Synchronized
+    @JavascriptInterface
+    fun fail(message: String?) {
+        if (settled) return
+        failLocked(message.orEmpty().take(220).ifBlank { "The in-chat renderer failed." })
+    }
+
+    private fun failLocked(message: String) {
+        if (settled) return
+        settled = true
+        try { output?.close() } catch (_: Exception) {}
+        output = null
+        try { destination.delete() } catch (_: Exception) {}
+        mainHandler.post { onFailure(message) }
+    }
+}
+
+private fun makeInstrumentedHtml(source: String): String {
+    val hasHtmlRoot = Regex("<html\\\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
+    val document = if (hasHtmlRoot) source else
+        "<!doctype html><html><head><meta charset=\\\\"utf-8\\\\"><meta name=\\\\"viewport\\\\" content=\\\\"width=device-width,initial-scale=1\\\\"><style>html,body{margin:0;min-height:100%;background:#080a07;color:#f0f2e8}canvas{max-width:100%;height:auto}</style></head><body>" +
+            source + "</body></html>"
+    val recorderScript = """
+        <script>
+        (() => {
+          const fail = (message) => { try { parent.postMessage({type: "omnitrix-code-render-error", message: String(message || "Could not record the animation.")}, "*"); } catch (_) {} };
+          let attempts = 0;
+          const start = () => {
+            const canvases = Array.from(document.querySelectorAll("canvas")).sort((a, b) => (b.width * b.height) - (a.width * a.height));
+            const canvas = canvases[0];
+            if (!canvas || canvas.width < 2 || canvas.height < 2 || typeof canvas.captureStream !== "function") {
+              if (attempts++ < 32) { setTimeout(start, 250); return; }
+              fail("No renderable HTML Canvas was found. Use a self-contained HTML5 Canvas animation.");
+              return;
+            }
+            let stream;
+            try { stream = canvas.captureStream(24); }
+            catch (_) { fail("This Android WebView cannot capture the Canvas video."); return; }
+            const types = ["video/webm;codecs=vp8", "video/webm"];
+            const mimeType = types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+            let recorder;
+            try { recorder = new MediaRecorder(stream, mimeType ? {mimeType: mimeType, videoBitsPerSecond: 1200000} : {videoBitsPerSecond: 1200000}); }
+            catch (_) { stream.getTracks().forEach((track) => track.stop()); fail("This Android WebView does not support WebM recording."); return; }
+            const chunks = [];
+            recorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
+            recorder.onerror = () => { stream.getTracks().forEach((track) => track.stop()); fail("The browser video recorder failed."); };
+            recorder.onstop = () => {
+              stream.getTracks().forEach((track) => track.stop());
+              const blob = new Blob(chunks, {type: recorder.mimeType || "video/webm"});
+              if (!blob.size) { fail("The browser returned an empty recording."); return; }
+              parent.postMessage({type: "omnitrix-code-render-complete", blob: blob}, "*");
+            };
+            try {
+              recorder.start(250);
+              setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, 8000);
+            } catch (_) {
+              try { if (recorder.state !== "inactive") recorder.stop(); } catch (ignored) {}
+              stream.getTracks().forEach((track) => track.stop());
+              fail("The WebM recording could not start.");
+            }
+          };
+          setTimeout(start, 800);
+        })();
+        </script>
+    """.trimIndent()
+    val bodyEnd = Regex("</body\\\\s*>", RegexOption.IGNORE_CASE)
+    return if (bodyEnd.containsMatchIn(document)) bodyEnd.replaceFirst(document) { recorderScript + it.value }
+        else document + recorderScript
+}
+
+private fun chatRendererHostHtml(source: String): String {
+    val escapedSource = JSONObject.quote(makeInstrumentedHtml(source))
+    val prefix = """<!doctype html>
+      <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>html,body{margin:0;width:100%;height:100%;background:#080a07;color:#a4ad98;font:13px sans-serif}
+      #state{padding:8px 10px} iframe{display:block;width:100%;height:240px;border:0;background:#080a07}</style></head>
+      <body><div id="state">LOCAL CODE RENDERER · isolated canvas sandbox</div><iframe id="scene" sandbox="allow-scripts" title="Rendered animation"></iframe>
+      <script>
+      (function(){
+        const frame=document.getElementById("scene");
+        const state=document.getElementById("state");
+        const bridge=window.OmnitrixCodeRenderer;
+        let finished=false;
+        const reportError=(message)=>{if(finished)return;finished=true;state.textContent="RENDER FAILED";try{bridge.fail(String(message||"Rendering failed"));}catch(_){}};
+        frame.srcdoc = """
+    val suffix = """;
+        window.addEventListener("message", async (event)=>{
+          if(event.source!==frame.contentWindow || !event.data || finished)return;
+          const data=event.data;
+          if(data.type==="omnitrix-code-render-error"){reportError(data.message);return;}
+          if(data.type!=="omnitrix-code-render-complete" || !data.blob || Object.prototype.toString.call(data.blob)!=="[object Blob]")return;
+          try {
+            if(!data.blob.size || data.blob.size>24*1024*1024)throw new Error("Rendered video is empty or exceeds 24 MB.");
+            state.textContent="RECORDING COMPLETE · verifying WebM container";
+            bridge.begin(data.blob.type || "video/webm");
+            const chunkSize=256*1024;
+            for(let offset=0;offset<data.blob.size;offset+=chunkSize){
+              const bytes=new Uint8Array(await data.blob.slice(offset,offset+chunkSize).arrayBuffer());
+              let binary="";
+              for(let index=0;index<bytes.length;index++)binary+=String.fromCharCode(bytes[index]);
+              bridge.appendChunk(btoa(binary));
+              await new Promise(resolve=>setTimeout(resolve,0));
+            }
+            bridge.finish();
+            finished=true;
+            state.textContent="VIDEO RENDERED · WebM attached to chat";
+          } catch(error){reportError(error && error.message || "Could not transfer the rendered video.");}
+        });
+        frame.addEventListener("load",()=>{state.textContent="COMPILING · recording the Canvas animation locally";});
+      })();
+      </script></body></html>"""
+    return prefix + escapedSource + suffix
+}
+
+@Composable
+private fun ChatCodeRendererSurface(
+    messageId: String,
+    source: String,
+    onComplete: (File) -> Unit,
+    onFailure: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val output = remember(messageId) { File(context.cacheDir, "omnitrix-render-" + messageId + ".webm") }
+    val bridge = remember(messageId) { ChatWebMRenderBridge(output, onComplete, onFailure) }
+    AndroidView(
+        modifier = Modifier.fillMaxWidth().height(260.dp).background(Surface, RoundedCornerShape(4.dp)),
+        factory = { viewContext ->
+            WebView(viewContext).apply {
+                setBackgroundColor(android.graphics.Color.rgb(8, 10, 7))
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.allowFileAccessFromFileURLs = false
+                settings.allowUniversalAccessFromFileURLs = false
+                settings.javaScriptCanOpenWindowsAutomatically = false
+                settings.setSupportMultipleWindows(false)
+                webChromeClient = WebChromeClient()
+                addJavascriptInterface(bridge, "OmnitrixCodeRenderer")
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = true
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): android.webkit.WebResourceResponse? {
+                        val scheme = request?.url?.scheme?.lowercase().orEmpty()
+                        if (scheme == "http" || scheme == "https" || scheme == "file" || scheme == "content") {
+                            return android.webkit.WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                        }
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                }
+                tag = messageId
+                loadDataWithBaseURL("https://omnitrix.invalid/", chatRendererHostHtml(source), "text/html", "UTF-8", null)
+            }
+        },
+        update = { webView ->
+            if (webView.tag != messageId) {
+                webView.tag = messageId
+                webView.loadDataWithBaseURL("https://omnitrix.invalid/", chatRendererHostHtml(source), "text/html", "UTF-8", null)
+            }
+        }
+    )
+}
+
 private data class ChatAttachment(
     val localId: String,
     val uri: Uri,
