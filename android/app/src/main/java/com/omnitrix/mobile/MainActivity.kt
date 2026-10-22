@@ -277,9 +277,9 @@ private class ChatWebMRenderBridge(
 }
 
 private fun makeInstrumentedHtml(source: String): String {
-    val hasHtmlRoot = Regex("<html\\\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
+    val hasHtmlRoot = Regex("<html\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
     val document = if (hasHtmlRoot) source else
-        "<!doctype html><html><head><meta charset=\\\\"utf-8\\\\"><meta name=\\\\"viewport\\\\" content=\\\\"width=device-width,initial-scale=1\\\\"><style>html,body{margin:0;min-height:100%;background:#080a07;color:#f0f2e8}canvas{max-width:100%;height:auto}</style></head><body>" +
+        "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><style>html,body{margin:0;min-height:100%;background:#080a07;color:#f0f2e8}canvas{max-width:100%;height:auto}</style></head><body>" +
             source + "</body></html>"
     val recorderScript = """
         <script>
@@ -324,7 +324,7 @@ private fun makeInstrumentedHtml(source: String): String {
         })();
         </script>
     """.trimIndent()
-    val bodyEnd = Regex("</body\\\\s*>", RegexOption.IGNORE_CASE)
+    val bodyEnd = Regex("</body\\s*>", RegexOption.IGNORE_CASE)
     return if (bodyEnd.containsMatchIn(document)) bodyEnd.replaceFirst(document) { recorderScript + it.value }
         else document + recorderScript
 }
