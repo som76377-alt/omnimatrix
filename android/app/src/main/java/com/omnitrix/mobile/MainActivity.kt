@@ -324,9 +324,10 @@ private fun makeInstrumentedHtml(source: String): String {
         })();
         </script>
     """.trimIndent()
-    val bodyEnd = Regex("</body\\s*>", RegexOption.IGNORE_CASE)
-    return if (bodyEnd.containsMatchIn(document)) bodyEnd.replaceFirst(document) { recorderScript + it.value }
-        else document + recorderScript
+    val bodyEnd = Regex("</body\\s*>", RegexOption.IGNORE_CASE).find(document)
+    return if (bodyEnd != null) {
+        document.substring(0, bodyEnd.range.first) + recorderScript + document.substring(bodyEnd.range.first)
+    } else document + recorderScript
 }
 
 private fun chatRendererHostHtml(source: String): String {
